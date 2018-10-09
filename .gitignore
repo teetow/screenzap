@@ -1,0 +1,7 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs/screenzap/v15
+/packages/Nito.AsyncEx.3.0.1
+/screenzap
