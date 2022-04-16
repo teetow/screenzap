@@ -1,5 +1,9 @@
 Screenzap is a screenshot tool for Windows with similar behavior to the MacOS screenshot feature. It has configurable keyboard shortcuts, and an option to start when logged in.
 
+## Latest release
+
+[Download v1.0.0](https://github.com/teetow/screenzap/releases/download/v1.0.0/screenzap.exe)
+
 ## Installation
 
 Just put Screenzap.exe where you want it. Run it. nbd.
