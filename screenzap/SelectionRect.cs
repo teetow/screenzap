@@ -1,12 +1,16 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace screenzap
 {
-    class OverlayForm : Form
+    class SelectionRectForm : Form
     {
-        public OverlayForm()
+        public SelectionRectForm()
         {
             this.Cursor = Cursors.Cross;
             this.TopMost = true;
@@ -21,7 +25,7 @@ namespace screenzap
             this.DoubleBuffered = true;
         }
     }
-    class Overlay
+    class SelectionRect
     {
         private Form form;
         private Point start;
@@ -71,9 +75,9 @@ namespace screenzap
             return Rectangle.Empty;
         }
 
-        public Overlay()
+        public SelectionRect()
         {
-            form = new OverlayForm();
+            form = new SelectionRectForm();
             form.MouseDown += Form_MouseDown;
             form.MouseMove += Form_MouseMove;
             form.MouseUp += Form_MouseUp;

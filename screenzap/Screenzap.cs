@@ -1,15 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Linq;
 using System.Media;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace screenzap
@@ -21,6 +15,7 @@ namespace screenzap
         string assemblyLocation = Assembly.GetExecutingAssembly().Location;  // Or the EXE path.
         string sndPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + Path.DirectorySeparatorChar + "zap.wav";
         KeyCombo currentCombo;
+        bool isCapturing = false;
 
         public Screenzap()
         {
@@ -31,7 +26,7 @@ namespace screenzap
             this.notifyIcon1.ShowBalloonTip(2000, "Screenzap is running!", $"Press {currentCombo.ToString()} to take a screenshot.", ToolTipIcon.Info);
 
 
-            hook.KeyPressed += new EventHandler<KeyPressedEventArgs>(doCapture);
+            hook.KeyPressed += new EventHandler<KeyPressedEventArgs>(DoCapture);
             try
             {
                 hook.RegisterHotKey(currentCombo.getModifierKeys(), currentCombo.Key);
@@ -52,33 +47,46 @@ namespace screenzap
 
         void updateTooltips(KeyCombo keyCombo)
         {
-            this.notifyIcon1.Text = $"Screenzap is running! \n\nPress {keyCombo.ToString()}.";
+            this.notifyIcon1.Text = $"Screenzap is running! \n\nPress {keyCombo}.";
         }
 
-        void doCapture(object sender, KeyPressedEventArgs e)
+        void DoCapture(object sender, KeyPressedEventArgs e)
         {
-            Overlay ovl = new Overlay();
-            var captureRect = ovl.CaptureRect();
-            if (captureRect == Rectangle.Empty)
-                return;
+            if (this.isCapturing) return;
+            this.isCapturing = true;
+            try
+            {
+                Overlay ovl = new Overlay();
+                var captureRect = ovl.CaptureRect();
 
-            var bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
-            var gfxScreenshot = Graphics.FromImage(bmpScreenshot);
+                if (captureRect.Width <= 0 || captureRect.Height <= 0)
+                {
+                    Console.WriteLine($"Invalid capture area {captureRect.Width}x{captureRect.Height}");
+                    return;
+                }
 
-            gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
-            var rslt = bmpScreenshot.PhysicalDimension.ToString();
+                Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
+                Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot);
+                gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
+                Clipboard.SetImage(bmpScreenshot);
 
-            Clipboard.SetImage(bmpScreenshot);
+                SoundPlayer audio = new SoundPlayer(Properties.Resources.zap);
+                audio.Play();
+            }
+            catch (Exception ex)
+            {
+                Console.Write(ex.ToString());
+            }
 
-            SoundPlayer audio = new SoundPlayer(screenzap.Properties.Resources.zap);
-            audio.Play();
+            this.isCapturing = false;
         }
 
         private void startWhenLoggedInToolStripMenuItem_CheckStateChanged(object sender, EventArgs e)
         {
             if (this.startWhenLoggedInToolStripMenuItem.Checked)
                 Util.SetAutoStart(autostartAppName, assemblyLocation);
-            else {
+            else
+            {
                 if (Util.IsAutoStartEnabled(autostartAppName, assemblyLocation))
                     Util.UnSetAutoStart(autostartAppName);
             }
