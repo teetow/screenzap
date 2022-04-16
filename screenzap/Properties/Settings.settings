@@ -5,5 +5,8 @@
     <Setting Name="currentCombo" Type="System.String" Scope="User">
       <Value Profile="(Default)">Ctrl+Alt+Shift+4</Value>
     </Setting>
+    <Setting Name="showBalloon" Roaming="true" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
   </Settings>
 </SettingsFile>
