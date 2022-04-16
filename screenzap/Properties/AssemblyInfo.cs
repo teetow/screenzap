@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("screenzap")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("Screenzap")]
+[assembly: AssemblyDescription("A minimalist screenshot tool")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("screenzap")]
+[assembly: AssemblyCompany("Teetow")]
+[assembly: AssemblyProduct("Screenzap")]
 [assembly: AssemblyCopyright("Copyright ©  2017")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

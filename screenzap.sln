@@ -1,9 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.26730.12
+# Visual Studio Version 17
+VisualStudioVersion = 17.1.32407.343
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "screenzap", "screenzap\screenzap.csproj", "{834014AB-8686-4A31-95F7-6FBB47F45687}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Screenzap", "screenzap\Screenzap.csproj", "{834014AB-8686-4A31-95F7-6FBB47F45687}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
