@@ -34,6 +34,7 @@
             this.notifyIcon1 = new System.Windows.Forms.NotifyIcon(this.components);
             this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.startWhenLoggedInToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.showBalloonMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.setKeyboardShortcutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.quitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -62,36 +63,44 @@
             this.contextMenuStrip1.ImageScalingSize = new System.Drawing.Size(20, 20);
             this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.startWhenLoggedInToolStripMenuItem,
+            this.showBalloonMenuItem,
             this.setKeyboardShortcutToolStripMenuItem,
             this.toolStripSeparator1,
             this.quitToolStripMenuItem});
             this.contextMenuStrip1.Name = "contextMenuStrip1";
-            this.contextMenuStrip1.Size = new System.Drawing.Size(232, 82);
+            this.contextMenuStrip1.Size = new System.Drawing.Size(266, 106);
             // 
             // startWhenLoggedInToolStripMenuItem
             // 
             this.startWhenLoggedInToolStripMenuItem.CheckOnClick = true;
             this.startWhenLoggedInToolStripMenuItem.Name = "startWhenLoggedInToolStripMenuItem";
-            this.startWhenLoggedInToolStripMenuItem.Size = new System.Drawing.Size(231, 24);
-            this.startWhenLoggedInToolStripMenuItem.Text = "Start when logged in";
+            this.startWhenLoggedInToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.startWhenLoggedInToolStripMenuItem.Text = "Start when &logged in";
             this.startWhenLoggedInToolStripMenuItem.CheckStateChanged += new System.EventHandler(this.startWhenLoggedInToolStripMenuItem_CheckStateChanged);
+            // 
+            // showBalloonMenuItem
+            // 
+            this.showBalloonMenuItem.Name = "showBalloonMenuItem";
+            this.showBalloonMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.showBalloonMenuItem.Text = "Show &notification on startup";
+            this.showBalloonMenuItem.Click += new System.EventHandler(this.showBalloonMenuItem_Click);
             // 
             // setKeyboardShortcutToolStripMenuItem
             // 
             this.setKeyboardShortcutToolStripMenuItem.Name = "setKeyboardShortcutToolStripMenuItem";
-            this.setKeyboardShortcutToolStripMenuItem.Size = new System.Drawing.Size(231, 24);
+            this.setKeyboardShortcutToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
             this.setKeyboardShortcutToolStripMenuItem.Text = "Set &keyboard shortcut...";
             this.setKeyboardShortcutToolStripMenuItem.Click += new System.EventHandler(this.setKeyboardShortcutToolStripMenuItem_Click);
             // 
             // toolStripSeparator1
             // 
             this.toolStripSeparator1.Name = "toolStripSeparator1";
-            this.toolStripSeparator1.Size = new System.Drawing.Size(228, 6);
+            this.toolStripSeparator1.Size = new System.Drawing.Size(262, 6);
             // 
             // quitToolStripMenuItem
             // 
             this.quitToolStripMenuItem.Name = "quitToolStripMenuItem";
-            this.quitToolStripMenuItem.Size = new System.Drawing.Size(231, 24);
+            this.quitToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
             this.quitToolStripMenuItem.Text = "&Quit";
             this.quitToolStripMenuItem.Click += new System.EventHandler(this.quitToolStripMenuItem_Click);
             // 
@@ -101,7 +110,7 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             this.ClientSize = new System.Drawing.Size(437, 282);
             this.Controls.Add(this.label1);
-            this.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.Margin = new System.Windows.Forms.Padding(4);
             this.Name = "Screenzap";
             this.Text = "Form1";
             this.contextMenuStrip1.ResumeLayout(false);
@@ -119,6 +128,7 @@
         private System.Windows.Forms.ToolStripMenuItem quitToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem setKeyboardShortcutToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
+        private System.Windows.Forms.ToolStripMenuItem showBalloonMenuItem;
     }
 }
 

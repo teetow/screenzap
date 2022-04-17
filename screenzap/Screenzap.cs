@@ -13,18 +13,22 @@ namespace screenzap
         KeyboardHook hook = new KeyboardHook();
         string autostartAppName = "Screenzap";
         string assemblyLocation = Assembly.GetExecutingAssembly().Location;  // Or the EXE path.
-        string sndPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + Path.DirectorySeparatorChar + "zap.wav";
         KeyCombo currentCombo;
         bool isCapturing = false;
 
         public Screenzap()
         {
             InitializeComponent();
-            this.currentCombo = new KeyCombo(screenzap.Properties.Settings.Default.currentCombo);
+            this.currentCombo = new KeyCombo(Properties.Settings.Default.currentCombo);
             this.startWhenLoggedInToolStripMenuItem.Checked = Util.IsAutoStartEnabled(autostartAppName, assemblyLocation);
-            updateTooltips(currentCombo);
-            this.notifyIcon1.ShowBalloonTip(2000, "Screenzap is running!", $"Press {currentCombo.ToString()} to take a screenshot.", ToolTipIcon.Info);
+            this.showBalloonMenuItem.Checked = Properties.Settings.Default.showBalloon;
 
+
+            updateTooltips(currentCombo);
+            if (Properties.Settings.Default.showBalloon == true)
+            {
+                this.notifyIcon1.ShowBalloonTip(2000, "Screenzap is running!", $"Press {currentCombo} to take a screenshot.", ToolTipIcon.Info);
+            }
 
             hook.KeyPressed += new EventHandler<KeyPressedEventArgs>(DoCapture);
             try
@@ -61,8 +65,7 @@ namespace screenzap
 
                 if (captureRect.Width <= 0 || captureRect.Height <= 0)
                 {
-                    Console.WriteLine($"Invalid capture area {captureRect.Width}x{captureRect.Height}");
-                    return;
+                    throw new Exception($"Invalid capture area {captureRect.Width}x{captureRect.Height}");
                 }
 
                 Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
@@ -119,6 +122,13 @@ namespace screenzap
                 screenzap.Properties.Settings.Default.currentCombo = currentCombo.ToString();
                 screenzap.Properties.Settings.Default.Save();
             }
+        }
+
+        private void showBalloonMenuItem_Click(object sender, EventArgs e)
+        {
+            showBalloonMenuItem.Checked = !showBalloonMenuItem.Checked;
+            Properties.Settings.Default.showBalloon = showBalloonMenuItem.Checked;
+            Properties.Settings.Default.Save();
         }
     }
 }
