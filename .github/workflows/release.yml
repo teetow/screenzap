@@ -1,0 +1,48 @@
+name: Create release
+on:
+  push:
+    tags:
+      - "*"
+jobs:
+  build:
+    name: Create release and build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@master
+
+      - name: "Build Changelog"
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          commitMode: true
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+          body: ${{steps.build_changelog.outputs.changelog}}
+
+      - name: setup-msbuild
+        uses: microsoft/setup-msbuild@v1.1
+
+      - name: Build
+        run: msbuild Screenzap.sln /property:Configuration=Release
+
+      - name: upload windows artifact
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: D:\a\screenzap\screenzap\screenzap\bin\Release\Screenzap.exe
+          asset_name: Screenzap-latest.exe
+          asset_content_type: application/octet-stream
