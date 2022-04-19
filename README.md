@@ -24,4 +24,3 @@ Press the configured shortcut (default is `ctrl-alt-shift-4`), drag to select a 
 * Not all surfaces will get captured
 * What You See Isn't Quite What You'll Get -- some visual elements, like context menus, will not always get captured
 * DPI awareness is experimental and only Works On My Machine. Bug reports and PR:s welcome!
-* Only puts Bitmap data on the clipboard. Some applications, like Blender, expects PNG.
