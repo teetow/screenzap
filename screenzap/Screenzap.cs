@@ -70,11 +70,26 @@ namespace screenzap
 
                 Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
                 Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot);
-                gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
-                Clipboard.SetImage(bmpScreenshot);
 
-                SoundPlayer audio = new SoundPlayer(Properties.Resources.zap);
-                audio.Play();
+                gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
+
+                using (MemoryStream pngMemStream = new MemoryStream())
+                {
+                    DataObject data = new DataObject();
+
+                    data.SetData(DataFormats.Bitmap, true, bmpScreenshot);
+
+                    bmpScreenshot.Save(pngMemStream, ImageFormat.Png);
+                    data.SetData("PNG", false, pngMemStream);
+
+                    Clipboard.SetDataObject(data, true);
+
+                    Console.Write("ayaya");
+
+                    SoundPlayer audio = new SoundPlayer(Properties.Resources.zap);
+                    audio.Play();
+                }
+
             }
             catch (Exception ex)
             {
