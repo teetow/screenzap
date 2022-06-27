@@ -4,7 +4,7 @@ on:
 jobs:
   build:
     name: Debug Github Actions
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@master
