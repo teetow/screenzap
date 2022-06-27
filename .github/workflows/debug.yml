@@ -10,5 +10,4 @@ jobs:
         uses: actions/checkout@master
 
       - run: echo ${{ github.ref }}
-      - run: echo ${{ github.ref.refs }}
-      - run: echo ${{ github.ref.refs.tags }}
+      - run: echo ${{ github.ref_name }}
