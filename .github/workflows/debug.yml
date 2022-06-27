@@ -9,4 +9,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@master
 
-      - run: echo "hello!"
+      - run: echo ${{ github.ref }}
+      - run: echo ${{ github.ref.refs }}
+      - run: echo ${{ github.ref.refs.tags }}
