@@ -2,7 +2,7 @@ Screenzap is a screenshot tool for Windows with similar behavior to the MacOS sc
 
 ## Latest release
 
-[Download v1.0.0](https://github.com/teetow/screenzap/releases/download/v1.0.0/screenzap.exe)
+[Download here](https://github.com/teetow/screenzap/releases/)
 
 ## Installation
 
