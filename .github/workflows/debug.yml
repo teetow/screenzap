@@ -1,9 +1,9 @@
-name: Create release
+name: Debugger
 on:
   workflow_dispatch:
 jobs:
   build:
-    name: Create release and build
+    name: Debug Github Actions
     runs-on: windows-latest
     steps:
       - name: Checkout
