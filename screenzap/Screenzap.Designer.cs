@@ -38,6 +38,8 @@
             this.setKeyboardShortcutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.quitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.setfolderToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.contextMenuStrip1.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -64,11 +66,13 @@
             this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.startWhenLoggedInToolStripMenuItem,
             this.showBalloonMenuItem,
+            this.toolStripSeparator2,
             this.setKeyboardShortcutToolStripMenuItem,
+            this.setfolderToolStripMenuItem,
             this.toolStripSeparator1,
             this.quitToolStripMenuItem});
             this.contextMenuStrip1.Name = "contextMenuStrip1";
-            this.contextMenuStrip1.Size = new System.Drawing.Size(266, 106);
+            this.contextMenuStrip1.Size = new System.Drawing.Size(266, 164);
             // 
             // startWhenLoggedInToolStripMenuItem
             // 
@@ -104,6 +108,18 @@
             this.quitToolStripMenuItem.Text = "&Quit";
             this.quitToolStripMenuItem.Click += new System.EventHandler(this.quitToolStripMenuItem_Click);
             // 
+            // setfolderToolStripMenuItem
+            // 
+            this.setfolderToolStripMenuItem.Name = "setfolderToolStripMenuItem";
+            this.setfolderToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.setfolderToolStripMenuItem.Text = "Set &folder...";
+            this.setfolderToolStripMenuItem.Click += new System.EventHandler(this.setfolderToolStripMenuItem_Click);
+            // 
+            // toolStripSeparator2
+            // 
+            this.toolStripSeparator2.Name = "toolStripSeparator2";
+            this.toolStripSeparator2.Size = new System.Drawing.Size(262, 6);
+            // 
             // Screenzap
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(120F, 120F);
@@ -129,6 +145,8 @@
         private System.Windows.Forms.ToolStripMenuItem setKeyboardShortcutToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
         private System.Windows.Forms.ToolStripMenuItem showBalloonMenuItem;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
+        private System.Windows.Forms.ToolStripMenuItem setfolderToolStripMenuItem;
     }
 }
 

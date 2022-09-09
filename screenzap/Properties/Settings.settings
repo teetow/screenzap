@@ -8,5 +8,11 @@
     <Setting Name="showBalloon" Roaming="true" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>
+    <Setting Name="captureFolder" Type="System.String" Scope="User">
+      <Value Profile="(Default)">%USERPROFILE%\Documents</Value>
+    </Setting>
+    <Setting Name="seqCaptureCombo" Type="System.String" Scope="User">
+      <Value Profile="(Default)">Ctrl+Shift+F12</Value>
+    </Setting>
   </Settings>
 </SettingsFile>
