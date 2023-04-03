@@ -35,11 +35,13 @@
             this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.startWhenLoggedInToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.showBalloonMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.setKeyboardShortcutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
-            this.quitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.setfolderToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+            this.setKeyboardShortcutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.setfolderToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+            this.sanitizeClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
+            this.quitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.contextMenuStrip1.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -59,6 +61,7 @@
             this.notifyIcon1.Icon = ((System.Drawing.Icon)(resources.GetObject("notifyIcon1.Icon")));
             this.notifyIcon1.Text = "Screenzap";
             this.notifyIcon1.Visible = true;
+            this.notifyIcon1.DoubleClick += new System.EventHandler(this.notifyIcon1_DoubleClick);
             // 
             // contextMenuStrip1
             // 
@@ -70,9 +73,11 @@
             this.setKeyboardShortcutToolStripMenuItem,
             this.setfolderToolStripMenuItem,
             this.toolStripSeparator1,
+            this.sanitizeClipboardToolStripMenuItem,
+            this.toolStripSeparator3,
             this.quitToolStripMenuItem});
             this.contextMenuStrip1.Name = "contextMenuStrip1";
-            this.contextMenuStrip1.Size = new System.Drawing.Size(266, 164);
+            this.contextMenuStrip1.Size = new System.Drawing.Size(266, 166);
             // 
             // startWhenLoggedInToolStripMenuItem
             // 
@@ -89,6 +94,11 @@
             this.showBalloonMenuItem.Text = "Show &notification on startup";
             this.showBalloonMenuItem.Click += new System.EventHandler(this.showBalloonMenuItem_Click);
             // 
+            // toolStripSeparator2
+            // 
+            this.toolStripSeparator2.Name = "toolStripSeparator2";
+            this.toolStripSeparator2.Size = new System.Drawing.Size(262, 6);
+            // 
             // setKeyboardShortcutToolStripMenuItem
             // 
             this.setKeyboardShortcutToolStripMenuItem.Name = "setKeyboardShortcutToolStripMenuItem";
@@ -96,10 +106,29 @@
             this.setKeyboardShortcutToolStripMenuItem.Text = "Set &keyboard shortcut...";
             this.setKeyboardShortcutToolStripMenuItem.Click += new System.EventHandler(this.setKeyboardShortcutToolStripMenuItem_Click);
             // 
+            // setfolderToolStripMenuItem
+            // 
+            this.setfolderToolStripMenuItem.Name = "setfolderToolStripMenuItem";
+            this.setfolderToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.setfolderToolStripMenuItem.Text = "Set &folder...";
+            this.setfolderToolStripMenuItem.Click += new System.EventHandler(this.setFolderToolStripMenuItem_Click);
+            // 
             // toolStripSeparator1
             // 
             this.toolStripSeparator1.Name = "toolStripSeparator1";
             this.toolStripSeparator1.Size = new System.Drawing.Size(262, 6);
+            // 
+            // sanitizeClipboardToolStripMenuItem
+            // 
+            this.sanitizeClipboardToolStripMenuItem.Name = "sanitizeClipboardToolStripMenuItem";
+            this.sanitizeClipboardToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.sanitizeClipboardToolStripMenuItem.Text = "Edit &Clipboard";
+            this.sanitizeClipboardToolStripMenuItem.Click += new System.EventHandler(this.sanitizeClipboardToolStripMenuItem_Click);
+            // 
+            // toolStripSeparator3
+            // 
+            this.toolStripSeparator3.Name = "toolStripSeparator3";
+            this.toolStripSeparator3.Size = new System.Drawing.Size(262, 6);
             // 
             // quitToolStripMenuItem
             // 
@@ -107,18 +136,6 @@
             this.quitToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
             this.quitToolStripMenuItem.Text = "&Quit";
             this.quitToolStripMenuItem.Click += new System.EventHandler(this.quitToolStripMenuItem_Click);
-            // 
-            // setfolderToolStripMenuItem
-            // 
-            this.setfolderToolStripMenuItem.Name = "setfolderToolStripMenuItem";
-            this.setfolderToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
-            this.setfolderToolStripMenuItem.Text = "Set &folder...";
-            this.setfolderToolStripMenuItem.Click += new System.EventHandler(this.setfolderToolStripMenuItem_Click);
-            // 
-            // toolStripSeparator2
-            // 
-            this.toolStripSeparator2.Name = "toolStripSeparator2";
-            this.toolStripSeparator2.Size = new System.Drawing.Size(262, 6);
             // 
             // Screenzap
             // 
@@ -147,6 +164,8 @@
         private System.Windows.Forms.ToolStripMenuItem showBalloonMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
         private System.Windows.Forms.ToolStripMenuItem setfolderToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem sanitizeClipboardToolStripMenuItem;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
     }
 }
 

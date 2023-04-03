@@ -1,0 +1,554 @@
+﻿using screenzap.lib;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Windows.Forms;
+
+namespace screenzap
+{
+    enum SelectionMode
+    {
+        None,
+        Selecting,
+    }
+
+    enum ResizeMode
+    {
+        None,
+        Move,
+        ResizeTL,
+        ResizeT,
+        ResizeTR,
+        ResizeL,
+        ResizeR,
+        ResizeBL,
+        ResizeB,
+        ResizeBR
+    }
+
+
+    public partial class ImageEditor : Form
+    {
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == NativeMethods.WM_CLIPBOARDUPDATE)
+            {
+                Image imgData = Clipboard.GetImage();
+                if (imgData != null)
+                {
+                    LoadImage(imgData);
+                }
+                else
+                {
+                    ShowPlaceholder();
+                }
+
+            }
+            //Called for any unhandled messages
+            base.WndProc(ref m);
+        }
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= 0x02000000;  // Turn on WS_EX_COMPOSITED
+                return cp;
+            }
+        }
+
+        UndoRedo undoStack;
+
+        Point MouseInPixel;
+        Point MouseOutPixel;
+        bool isDrawingRubberBand;
+        bool isMovingSelection;
+        Point MoveInPixel;
+
+        private Rectangle Selection;
+        private Rectangle SelectionGrabOrigin;
+
+        private void ClearSelection()
+        {
+            Selection = new Rectangle(0, 0, 0, 0);
+        }
+
+        ResizeMode rzMode;
+
+        private void SetSelectionEdge(Point pixel)
+        {
+            if (rzMode == ResizeMode.ResizeTL)
+                Selection = RectangleExt.fromPoints(pixel, new Point(Selection.Right, Selection.Bottom));
+
+            if (rzMode == ResizeMode.ResizeT)
+                Selection = RectangleExt.fromPoints(new Point(Selection.Left, pixel.Y), new Point(Selection.Right, Selection.Bottom));
+
+            if (rzMode == ResizeMode.ResizeTR)
+                Selection = RectangleExt.fromPoints(
+                    new Point(Selection.Left, pixel.Y),
+                    new Point(pixel.X, Selection.Bottom)
+                );
+
+            if (rzMode == ResizeMode.ResizeL)
+                Selection = RectangleExt.fromPoints(
+                    new Point(pixel.X, Selection.Y),
+                    new Point(Selection.Right, Selection.Bottom)
+                );
+
+            if (rzMode == ResizeMode.ResizeR)
+                Selection = RectangleExt.fromPoints(
+                    new Point(Selection.Left, Selection.Top),
+                    new Point(pixel.X, Selection.Bottom)
+                );
+
+            if (rzMode == ResizeMode.ResizeBL)
+                Selection = RectangleExt.fromPoints(
+                    new Point(pixel.X, Selection.Top),
+                    new Point(Selection.Right, pixel.Y)
+                );
+
+            if (rzMode == ResizeMode.ResizeB)
+                Selection = RectangleExt.fromPoints(
+                    new Point(Selection.Left, Selection.Top),
+                    new Point(Selection.Right, pixel.Y)
+                );
+
+            if (rzMode == ResizeMode.ResizeBR)
+                Selection = RectangleExt.fromPoints(
+                    new Point(Selection.Left, Selection.Top),
+                    pixel
+                );
+
+            if (rzMode == ResizeMode.Move)
+            {
+                var Delta = MouseInPixel.Subtract(pixel);
+                Selection.Location = new Point(SelectionGrabOrigin.X - Delta.X, SelectionGrabOrigin.Y - Delta.Y);
+            }
+        }
+
+        //Point PanIn;
+        bool isPanning;
+
+        static readonly Dictionary<ResizeMode, Cursor> ResizeCursors = new Dictionary<ResizeMode, Cursor>
+        {
+            { ResizeMode.ResizeTL, Cursors.SizeNWSE},
+            { ResizeMode.ResizeT, Cursors.SizeNS},
+            { ResizeMode.ResizeTR, Cursors.SizeNESW},
+
+            { ResizeMode.ResizeL, Cursors.SizeWE},
+            { ResizeMode.ResizeR, Cursors.SizeWE},
+
+            { ResizeMode.ResizeBL, Cursors.SizeNESW},
+            { ResizeMode.ResizeB, Cursors.SizeNS},
+            { ResizeMode.ResizeBR, Cursors.SizeNWSE},
+
+            { ResizeMode.Move, Cursors.SizeAll }
+        };
+
+        readonly int rzTolerance = 5;
+
+        decimal _zoomlevel = 1;
+        private decimal ZoomLevel
+        {
+            get { return _zoomlevel; }
+            set
+            {
+                _zoomlevel = value;
+                if (pictureBox1.Image != null)
+                {
+                    pictureBox1.Size = pictureBox1.Image.Size.Multiply(_zoomlevel);
+                }
+            }
+        }
+
+
+        private void ShowPlaceholder()
+        {
+            Bitmap bmp = new Bitmap(640, 200);
+            Graphics gr = Graphics.FromImage(bmp);
+            var sf = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
+
+            gr.DrawString("No image data in clipboard", SystemFonts.CaptionFont, Brushes.White, new PointF(320, 100), sf);
+
+            ResetZoom();
+            LoadImage(bmp);
+            this.Size = pictureBox1.Size;
+        }
+
+        private Point PixelToFormCoord(Point pt)
+        {
+            return pt.Multiply(ZoomLevel);
+        }
+        private Rectangle PixelToFormCoord(Rectangle rect)
+        {
+            return RectangleExt.fromPoints(PixelToFormCoord(rect.Location), PixelToFormCoord(rect.Location.Add(rect.Size)));
+        }
+
+        private Point FormCoordToPixel(Point pt)
+        {
+            return pt.Divide(ZoomLevel);
+        }
+
+        private Rectangle GetNormalizedRect(Point a, Point b)
+        {
+            return new Rectangle(
+                Math.Min(a.X, b.X),
+                Math.Min(a.Y, b.Y),
+                Math.Abs(a.X - b.X),
+                Math.Abs(a.Y - b.Y)
+            );
+        }
+
+        private void Init()
+        {
+            NativeMethods.AddClipboardFormatListener(Handle);
+
+            BackColor = Color.Gray;
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, true);
+
+            InitializeComponent();
+
+            MouseWheel += ImageEditor_MouseWheel;
+            pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+
+            ClearSelection();
+        }
+
+        public ImageEditor()
+        {
+            Init();
+            ShowPlaceholder();
+        }
+
+        public ImageEditor(Image image)
+        {
+            Init();
+            LoadImage(image);
+        }
+        internal void LoadImage(Image imgData)
+        {
+            ClearSelection();
+            ResetZoom();
+
+            pictureBox1.Image = imgData;
+            pictureBox1.Location = new Point(0, 0);
+
+            pictureBox1.Size = imgData.Size;
+            ClientSize = imgData.Size;
+            HandleResize();
+
+            this.undoStack = new UndoRedo(new UndoState((Image)imgData.Clone(), new Rectangle(0, 0, 0, 0)));
+        }
+
+        internal void ResetZoom()
+        {
+            ZoomLevel = 1;
+        }
+
+        internal void HandleResize()
+        {
+            int newLeft = 0;
+            int newTop = 0;
+
+            if (pictureBox1.Width < ClientSize.Width)
+            {
+                newLeft = ClientSize.Width / 2 - pictureBox1.Width / 2;
+            }
+            if (pictureBox1.Height < ClientSize.Height)
+            {
+                newTop = ClientSize.Height / 2 - pictureBox1.Height / 2;
+            }
+
+            pictureBox1.Location = new Point(newLeft, newTop);
+            Invalidate();
+        }
+
+        readonly decimal[] ZoomLevels = {
+           0.25m, 0.5m, 0.75m, 1m, 1.25m, 1.5m, 2m, 3m, 4m, 5m, 6m, 7m, 8m };
+
+        private decimal FindZoomIn(decimal level)
+        {
+            var levels = ZoomLevels.OrderBy(n => n).Where(n => n > level);
+            return levels.Count() > 0 ? levels.ElementAt(0) : level;
+        }
+
+        private decimal FindZoomOut(decimal level)
+        {
+            var levels = ZoomLevels.OrderByDescending(n => n).Where(n => n < level);
+            return levels.Count() > 0 ? levels.ElementAt(0) : level;
+        }
+
+        private void ImageEditor_MouseWheel(object sender, MouseEventArgs e)
+        {
+            if (pictureBox1.Image == null)
+                return;
+            var targetPixel = FormCoordToPixel(e.Location.Subtract(pictureBox1.Location));
+
+            var pol = e.Delta / Math.Abs(e.Delta);
+
+            ZoomLevel = pol > 0 ? FindZoomIn(ZoomLevel) : FindZoomOut(ZoomLevel);
+
+            var newTargetPixel = FormCoordToPixel(e.Location.Subtract(pictureBox1.Location));
+            var offset = PixelToFormCoord(targetPixel.Subtract(newTargetPixel));
+            pictureBox1.Location = pictureBox1.Location.Subtract(offset);
+
+            if (pictureBox1.Size.Subtract(Size).Width < 0 && pictureBox1.Size.Subtract(Size).Height < 0)
+            {
+                HandleResize();
+            }
+        }
+
+        private bool IsClose(int a, int b) => Math.Abs(Math.Max(a, b) - Math.Min(a, b)) < rzTolerance;
+        private bool IsClose(Point a, Point b) => IsCloseHor(a, b) && IsCloseVer(a, b);
+        private bool IsCloseHor(Point a, Point b) => Math.Abs(a.X - b.X) < rzTolerance;
+        private bool IsCloseVer(Point a, Point b) => Math.Abs(a.Y - b.Y) < rzTolerance;
+        private bool IsWithin(int val, int a, int b) => val >= Math.Min(a, b) && val <= Math.Max(a, b);
+
+        private ResizeMode GetResizeMode(Point pt)
+        {
+            var formPt = PixelToFormCoord(pt);
+            var formSelection = PixelToFormCoord(Selection);
+            // corners
+            if (IsClose(formPt, new Point(formSelection.Right, formSelection.Top))) return ResizeMode.ResizeTR;
+            if (IsClose(formPt, new Point(formSelection.Right, formSelection.Bottom))) return ResizeMode.ResizeBR;
+            if (IsClose(formPt, new Point(formSelection.Left, formSelection.Bottom))) return ResizeMode.ResizeBL;
+            if (IsClose(formPt, new Point(formSelection.Left, formSelection.Top))) return ResizeMode.ResizeTL;
+
+            // top and bottom edges
+            if (IsWithin(formPt.X, formSelection.Left, formSelection.Right))
+            {
+                if (IsClose(formPt.Y, formSelection.Top)) return ResizeMode.ResizeT;
+                if (IsClose(formPt.Y, formSelection.Bottom)) return ResizeMode.ResizeB;
+            }
+
+            // left and right edges
+            if (IsWithin(formPt.Y, formSelection.Top, formSelection.Bottom))
+            {
+                if (IsClose(formPt.X, formSelection.Left)) return ResizeMode.ResizeL;
+                if (IsClose(formPt.X, formSelection.Right)) return ResizeMode.ResizeR;
+            }
+
+            if (formSelection.Contains(formPt))
+                return ResizeMode.Move;
+
+            return ResizeMode.None;
+        }
+
+        private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
+        {
+            MouseInPixel = FormCoordToPixel(e.Location);
+            MouseOutPixel = MouseInPixel;
+
+            if (e.Button == MouseButtons.Left)
+            {
+                rzMode = GetResizeMode(MouseInPixel);
+
+                if (rzMode != ResizeMode.None)
+                {
+                    SelectionGrabOrigin = Selection;
+                    Cursor = ResizeCursors[rzMode];
+                }
+                else
+                {
+                    isDrawingRubberBand = true;
+                }
+
+            }
+            else if (e.Button == MouseButtons.Middle)
+            {
+                isPanning = true;
+                MouseInPixel = e.Location;
+                Cursor = Cursors.SizeAll;
+            }
+
+            base.OnMouseDown(e);
+        }
+
+        private void pictureBox1_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                if (rzMode != ResizeMode.None)
+                {
+                    // we're currently resizing the selection
+                    SetSelectionEdge(FormCoordToPixel(e.Location));
+                    pictureBox1.Invalidate();
+                }
+
+                if (isDrawingRubberBand)
+                {
+                    if (isMovingSelection)
+                    {
+                        var MoveOffset = FormCoordToPixel(e.Location).Subtract(MoveInPixel);
+                        MouseInPixel = MouseInPixel.Add(MoveOffset);
+                        MouseOutPixel = MouseOutPixel.Add(MoveOffset);
+                        MoveInPixel = FormCoordToPixel(e.Location);
+                    }
+                    else if (ModifierKeys.HasFlag(Keys.Shift))
+                    {
+                        Rectangle currentRubberBand = RectangleExt.fromPoints(MouseInPixel, FormCoordToPixel(e.Location));
+                        var square = Math.Max(currentRubberBand.Width, currentRubberBand.Height);
+                        MouseOutPixel = MouseInPixel.Add(square);
+                    }
+                    else
+                    {
+                        MouseOutPixel = FormCoordToPixel(e.Location);
+
+                    }
+                    pictureBox1.Invalidate();
+                }
+            }
+
+
+            else if (e.Button == MouseButtons.Middle && isPanning)
+            {
+                var ofs = new Size(e.Location.Subtract(MouseInPixel));
+                pictureBox1.Location += ofs;
+            }
+            else // no mouse button held
+            {
+                var hoverResizeMode = GetResizeMode(FormCoordToPixel(e.Location));
+                if (hoverResizeMode != ResizeMode.None)
+                {
+                    Cursor = ResizeCursors[hoverResizeMode];
+                }
+                else
+                {
+                    Cursor = Cursors.Default;
+                }
+
+            }
+
+            base.OnMouseMove(e);
+        }
+
+        private void pictureBox1_MouseUp(object sender, MouseEventArgs e)
+        {
+            Cursor = Cursors.Default;
+
+            if (e.Button == MouseButtons.Left && isDrawingRubberBand)
+            {
+                Selection = GetNormalizedRect(MouseInPixel, MouseOutPixel);
+                isDrawingRubberBand = false;
+                pictureBox1.Invalidate();
+            }
+            else if (e.Button == MouseButtons.Middle)
+            {
+                isPanning = false;
+            }
+
+            base.OnMouseUp(e);
+        }
+
+        private void pictureBox1_Paint(object sender, PaintEventArgs e)
+        {
+            if (isDrawingRubberBand)
+            {
+                var pen = new Pen(Pens.White.Brush, 2);
+                e.Graphics.DrawRectangle(pen, PixelToFormCoord(RectangleExt.fromPoints(MouseInPixel, MouseOutPixel)));
+            }
+            else if (!Selection.IsEmpty)
+            {
+                var pen = new Pen(Pens.Cyan.Brush, 2);
+                e.Graphics.DrawRectangle(pen, PixelToFormCoord(Selection));
+            }
+            base.OnPaint(e);
+        }
+
+        private void ImageEditor_ResizeEnd(object sender, EventArgs e)
+        {
+            HandleResize();
+        }
+
+        private void ImageEditor_Paint(object sender, PaintEventArgs e)
+        {
+            //e.Graphics.DrawString($"{ZoomLevel}x", SystemFonts.CaptionFont, Brushes.White, 0, 0);
+        }
+
+        private void CensorSelection()
+        {
+            if (!Selection.IsEmpty)
+            {
+                var bmp = new Bitmap(Selection.Width, 1);
+                var gBmp = Graphics.FromImage(bmp);
+                //gBmp.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                gBmp.DrawImage(pictureBox1.Image, RectangleExt.fromPoints(new Point(0, 0), new Point(bmp.Size)),
+                    RectangleExt.fromPoints(
+                        new Point(Selection.Left, Selection.Top + (Selection.Height / 2) - 1),
+                        new Point(Selection.Right, Selection.Top + (Selection.Height / 2))
+                        ),
+                    GraphicsUnit.Pixel);
+
+                var gImg = Graphics.FromImage(pictureBox1.Image);
+                gImg.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                gImg.DrawImage(bmp, Selection);
+
+                undoStack.Push(new UndoState((Image)pictureBox1.Image.Clone(), Selection));
+
+                pictureBox1.Invalidate();
+            }
+        }
+
+        private void ImageEditor_KeyDown(object sender, KeyEventArgs e)
+        {
+            //Console.WriteLine(e.Modifiers);
+
+            if (isDrawingRubberBand && e.KeyCode == Keys.Space)
+            {
+                isMovingSelection = true;
+                MoveInPixel = MouseOutPixel;
+            }
+            else if (e.KeyCode == Keys.C)
+            {
+                CensorSelection();
+            }
+            else if (e.KeyCode == Keys.Z)
+            {
+                UndoState? state = null;
+                if (e.Modifiers == (Keys.Shift | Keys.Control))
+                {
+                    state = undoStack.GetNextState();
+                }
+                else if (e.Modifiers == Keys.Control)
+                {
+                    state = undoStack.GetPrevState();
+                }
+
+                if (!(!(state is UndoState) && state is null))
+                {
+                    pictureBox1.Image = state?.Image;
+                    Selection = (Rectangle)(state?.Selection);
+                    this.pictureBox1.Invalidate();
+                }
+            }
+        }
+        private void ImageEditor_KeyUp(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.C && e.Modifiers == Keys.Control)
+            {
+                var bmp = new Bitmap(Selection.Width, Selection.Height);
+                var gr = Graphics.FromImage(bmp);
+                gr.DrawImage(pictureBox1.Image, Selection.X * -1, Selection.Y * -1);
+                Clipboard.SetImage(bmp);
+                ClearSelection();
+            }
+
+
+            if (e.KeyCode == Keys.Space)
+            {
+                isMovingSelection = false;
+            }
+        }
+
+
+    }
+}

@@ -78,6 +78,20 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Autorun.cs" />
+    <Compile Include="ImageEditor.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ImageEditor.Designer.cs">
+      <DependentUpon>ImageEditor.cs</DependentUpon>
+    </Compile>
+    <Compile Include="lib\ClipboardMonitor.cs" />
+    <Compile Include="lib\utils.cs" />
+    <Compile Include="ScalingPictureBox.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="ScalingPictureBox.Designer.cs">
+      <DependentUpon>ScalingPictureBox.cs</DependentUpon>
+    </Compile>
     <Compile Include="Screenzap.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -96,6 +110,10 @@
     <Compile Include="ShortcutEditor.Designer.cs">
       <DependentUpon>ShortcutEditor.cs</DependentUpon>
     </Compile>
+    <Compile Include="UndoRedo.cs" />
+    <EmbeddedResource Include="ImageEditor.resx">
+      <DependentUpon>ImageEditor.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Screenzap.resx">
       <DependentUpon>Screenzap.cs</DependentUpon>
       <SubType>Designer</SubType>
@@ -136,6 +154,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="res\screenzap-icon.ico" />
+    <Content Include="res\screenzap0001_fav.ico" />
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.6.1">
