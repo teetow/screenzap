@@ -38,13 +38,6 @@ namespace screenzap.lib
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
     }
-    internal class ClipboardMonitor
-    {
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        public static extern IntPtr SetClipboardViewer(IntPtr hWndNewViewer);
-
-
-    }
 }
 
 
