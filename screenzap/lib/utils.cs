@@ -1,13 +1,32 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace screenzap.lib
 {
+
+    static class FileUtils
+    {
+        public static string SaveImage(Image image)
+        {
+            Bitmap bmpScreenshot = new Bitmap(image);
+
+            var dateStr = DateTime.Now.ToString("yyyy-MM-ddTHH-mm-ss") + (".png");
+            var userPath = Environment.ExpandEnvironmentVariables(Properties.Settings.Default.captureFolder);
+            var filePath = Path.Combine(userPath, dateStr);
+
+            using (FileStream pngFileStream = new FileStream(filePath, FileMode.Create))
+            {
+                bmpScreenshot.Save(pngFileStream, ImageFormat.Png);
+            }
+            return filePath;
+        }
+    }
     static class RectangleExt
     {
         public static Rectangle fromPoints(Point pt, Point pt2)

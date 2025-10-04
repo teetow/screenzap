@@ -39,7 +39,8 @@
             this.setKeyboardShortcutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.setfolderToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
-            this.sanitizeClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.editClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.saveClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.quitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.contextMenuStrip1.SuspendLayout();
@@ -73,11 +74,12 @@
             this.setKeyboardShortcutToolStripMenuItem,
             this.setfolderToolStripMenuItem,
             this.toolStripSeparator1,
-            this.sanitizeClipboardToolStripMenuItem,
+            this.editClipboardToolStripMenuItem,
+            this.saveClipboardToolStripMenuItem,
             this.toolStripSeparator3,
             this.quitToolStripMenuItem});
             this.contextMenuStrip1.Name = "contextMenuStrip1";
-            this.contextMenuStrip1.Size = new System.Drawing.Size(266, 166);
+            this.contextMenuStrip1.Size = new System.Drawing.Size(266, 218);
             // 
             // startWhenLoggedInToolStripMenuItem
             // 
@@ -118,12 +120,19 @@
             this.toolStripSeparator1.Name = "toolStripSeparator1";
             this.toolStripSeparator1.Size = new System.Drawing.Size(262, 6);
             // 
-            // sanitizeClipboardToolStripMenuItem
+            // editClipboardToolStripMenuItem
             // 
-            this.sanitizeClipboardToolStripMenuItem.Name = "sanitizeClipboardToolStripMenuItem";
-            this.sanitizeClipboardToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
-            this.sanitizeClipboardToolStripMenuItem.Text = "Edit &Clipboard";
-            this.sanitizeClipboardToolStripMenuItem.Click += new System.EventHandler(this.sanitizeClipboardToolStripMenuItem_Click);
+            this.editClipboardToolStripMenuItem.Name = "editClipboardToolStripMenuItem";
+            this.editClipboardToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.editClipboardToolStripMenuItem.Text = "Edit &Clipboard Image";
+            this.editClipboardToolStripMenuItem.Click += new System.EventHandler(this.sanitizeClipboardToolStripMenuItem_Click);
+            // 
+            // saveClipboardToolStripMenuItem
+            // 
+            this.saveClipboardToolStripMenuItem.Name = "saveClipboardToolStripMenuItem";
+            this.saveClipboardToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.saveClipboardToolStripMenuItem.Text = "&Save Clipboard Image";
+            this.saveClipboardToolStripMenuItem.Click += new System.EventHandler(this.saveClipboardToolStripMenuItem_Click);
             // 
             // toolStripSeparator3
             // 
@@ -164,8 +173,9 @@
         private System.Windows.Forms.ToolStripMenuItem showBalloonMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
         private System.Windows.Forms.ToolStripMenuItem setfolderToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem sanitizeClipboardToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem editClipboardToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
+        private System.Windows.Forms.ToolStripMenuItem saveClipboardToolStripMenuItem;
     }
 }
 

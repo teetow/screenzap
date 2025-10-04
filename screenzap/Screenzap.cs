@@ -1,4 +1,6 @@
-﻿using System;
+﻿using screenzap.lib;
+using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -98,7 +100,8 @@ namespace screenzap
 
                 if (captureRect.Width <= 0 || captureRect.Height <= 0)
                 {
-                    throw new Exception($"Invalid capture area {captureRect.Width}x{captureRect.Height}");
+                    isCapturing = false;
+                    return;
                 }
 
                 Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
@@ -170,7 +173,7 @@ namespace screenzap
 
             if (imgData == null)
                 return;
-
+            ImageEditor = new ImageEditor();
             ImageEditor.LoadImage(imgData);
             ImageEditor.ShowDialog();
         }
@@ -186,9 +189,28 @@ namespace screenzap
             }
         }
 
-        private void quitToolStripMenuItem_Click(object sender, EventArgs e)
+        private void saveClipboardToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Close();
+            var img = Clipboard.GetImage();
+            if (img == null) return;
+
+            var fname = FileUtils.SaveImage(img);
+            notifyIcon1.ShowBalloonTip(2000, $"Image saved", $"Saved to {fname}", ToolTipIcon.Info);
+
+
+            var pStartInfo = new ProcessStartInfo();
+            pStartInfo.FileName = "explorer";
+            pStartInfo.Arguments = $"/e, /select,\"{fname}\"";
+
+            EventHandler handler = null;
+
+            handler = (s, ev) =>
+            {
+                Process.Start(pStartInfo);
+                notifyIcon1.BalloonTipClicked -= handler;
+            };
+
+            notifyIcon1.BalloonTipClicked += handler;
         }
 
         private void setKeyboardShortcutToolStripMenuItem_Click(object sender, EventArgs e)
@@ -241,6 +263,11 @@ namespace screenzap
             Image imgData = Clipboard.GetImage();
             ImageEditor.LoadImage(imgData);
             ImageEditor.Show();
+        }
+
+        private void quitToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Close();
         }
     }
 }

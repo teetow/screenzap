@@ -62,6 +62,7 @@ namespace screenzap
         private bool doPan = false;
         private bool doSquare = false;
         private bool doCenter = false;
+        private bool doSnapToGrid = false;
 
         public Rectangle CaptureRect()
         {
@@ -120,6 +121,12 @@ namespace screenzap
                 form.DialogResult = DialogResult.Cancel;
                 form.Close();
             }
+
+            if (e.KeyCode == Keys.ControlKey)
+            {
+                doSnapToGrid = true;
+
+            }
         }
 
         private void Form_KeyUp(object sender, KeyEventArgs e)
@@ -132,6 +139,11 @@ namespace screenzap
 
             if (!e.Modifiers.HasFlag(Keys.Shift))
                 doSquare = false;
+
+            if (!e.Modifiers.HasFlag(Keys.Control))
+            {
+                doSnapToGrid = false;
+            }
         }
 
         private Point getDiff(Point oldEnd, Point end)
@@ -167,6 +179,18 @@ namespace screenzap
                     }
                 }
 
+                if (doSnapToGrid)
+                {
+                    Console.WriteLine("Snap to grid");
+                    var grid = 16;
+                    var delta = new Point(end.X - start.X, end.Y - start.Y);
+
+                    delta.X = (int)Math.Round((double)delta.X / grid) * grid;
+                    delta.Y = (int)Math.Round((double)delta.Y / grid) * grid;
+                
+                    end.X = start.X + delta.X;
+                    end.Y = start.Y + delta.Y;
+                }
             }
             form.Invalidate();
         }

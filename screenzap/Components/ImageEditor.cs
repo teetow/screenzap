@@ -235,6 +235,9 @@ namespace screenzap
         }
         internal void LoadImage(Image imgData)
         {
+            if (imgData == null)
+                return;
+
             ClearSelection();
             ResetZoom();
 
@@ -403,6 +406,17 @@ namespace screenzap
                         MouseOutPixel = FormCoordToPixel(e.Location);
 
                     }
+                    if (ModifierKeys.HasFlag(Keys.ControlKey))
+                    {
+                        var delta = MouseOutPixel.Subtract(MouseInPixel);
+                        // round to 16 pixels
+                        delta = new Point(
+                            (int)(Math.Round(delta.X / 16.0) * 16),
+                            (int)(Math.Round(delta.Y / 16.0) * 16)
+                        );
+
+                        MouseOutPixel = delta;
+                    }
                     pictureBox1.Invalidate();
                 }
             }
@@ -507,10 +521,29 @@ namespace screenzap
                 isMovingSelection = true;
                 MoveInPixel = MouseOutPixel;
             }
+
             else if (e.KeyCode == Keys.C)
             {
-                CensorSelection();
+                if (e.Control == true)
+                {
+                    var bmp = new Bitmap(Selection.Width, Selection.Height);
+                    var gr = Graphics.FromImage(bmp);
+                    gr.DrawImage(pictureBox1.Image, Selection.X * -1, Selection.Y * -1);
+                    Clipboard.SetImage(bmp);
+                    ClearSelection();
+                }
+                else
+                {
+                    CensorSelection();
+
+                }
             }
+
+            else if (e.KeyCode == Keys.S && e.Control == true)
+            {
+
+            }
+
             else if (e.KeyCode == Keys.Z)
             {
                 UndoState? state = null;
@@ -533,16 +566,6 @@ namespace screenzap
         }
         private void ImageEditor_KeyUp(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.C && e.Modifiers == Keys.Control)
-            {
-                var bmp = new Bitmap(Selection.Width, Selection.Height);
-                var gr = Graphics.FromImage(bmp);
-                gr.DrawImage(pictureBox1.Image, Selection.X * -1, Selection.Y * -1);
-                Clipboard.SetImage(bmp);
-                ClearSelection();
-            }
-
-
             if (e.KeyCode == Keys.Space)
             {
                 isMovingSelection = false;
