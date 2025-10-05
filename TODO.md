@@ -26,10 +26,6 @@ Any selection in the Image Editor can receive the current contents of the clipbo
 
 When pasting content, a floating Paste toolbar appears. It shows inputs for X and Y, width and height, as well as a "scaling algorithm" dropdown that has Nearest Neighbor as well as whatever other scaling algos supported by the Graphics API. I assume linear or bilinear, no need to make it more complex than that. It also contains Cancel and OK buttons for aborting or committing the paste.
 
-## Feature: "Replace with background" tool (Ctrl-B)
-
-Selected area edges bleed towards the middle pixel (primitive "object removal")
-
 ## Feature: Text censor tool (Ctrl-E)
 
 Text masses in the selected area get their meaning garbled but still recognizable as having been text.
@@ -53,6 +49,10 @@ Text masses in the selected area get their meaning garbled but still recognizabl
 ## Feature: Crop (Ctrl-T)
 
 - The current selection becomes the new image dimensions. Selection is cleared afterwards so the next action starts fresh.
+
+## Feature: "Replace with background" tool (Ctrl-B)
+
+- Selected area edges bleed towards the middle pixel, filling the selection with colors sampled from the border to provide a quick object removal.
 
 # Deferred (ignore for now)
 

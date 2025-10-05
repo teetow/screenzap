@@ -34,6 +34,7 @@
             this.saveToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.saveAsToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.cropToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.replaceToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.pictureBox1 = new screenzap.ScalingPictureBox();
             this.mainToolStrip.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
@@ -46,7 +47,8 @@
             this.mainToolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.saveToolStripButton,
             this.saveAsToolStripButton,
-            this.cropToolStripButton});
+            this.cropToolStripButton,
+            this.replaceToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
             this.mainToolStrip.Name = "mainToolStrip";
             this.mainToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
@@ -83,6 +85,16 @@
             this.cropToolStripButton.Text = "Crop";
             this.cropToolStripButton.ToolTipText = "Crop Selection (Ctrl+T)";
             this.cropToolStripButton.Click += new System.EventHandler(this.cropToolStripButton_Click);
+            // 
+            // replaceToolStripButton
+            // 
+            this.replaceToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.replaceToolStripButton.Enabled = false;
+            this.replaceToolStripButton.Name = "replaceToolStripButton";
+            this.replaceToolStripButton.Size = new System.Drawing.Size(82, 23);
+            this.replaceToolStripButton.Text = "Replace BG";
+            this.replaceToolStripButton.ToolTipText = "Replace with Background (Ctrl+B)";
+            this.replaceToolStripButton.Click += new System.EventHandler(this.replaceToolStripButton_Click);
             // 
             // pictureBox1
             // 
@@ -131,5 +143,6 @@
         private System.Windows.Forms.ToolStripButton saveAsToolStripButton;
     private ScalingPictureBox pictureBox1;
     private System.Windows.Forms.ToolStripButton cropToolStripButton;
+    private System.Windows.Forms.ToolStripButton replaceToolStripButton;
     }
 }

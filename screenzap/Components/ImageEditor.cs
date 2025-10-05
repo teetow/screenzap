@@ -8,6 +8,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace screenzap
@@ -690,6 +691,175 @@ namespace screenzap
             }
         }
 
+        private bool ExecuteReplaceWithBackground()
+        {
+            if (!HasEditableImage || Selection.IsEmpty)
+            {
+                return false;
+            }
+
+            var clampedSelection = ClampToImage(Selection);
+            if (clampedSelection.Width <= 0 || clampedSelection.Height <= 0)
+            {
+                return false;
+            }
+
+            var selectionBefore = Selection;
+
+            var before = CaptureRegion(clampedSelection);
+            if (before == null)
+            {
+                return false;
+            }
+
+            Bitmap after = null;
+
+            try
+            {
+                after = new Bitmap(before.Width, before.Height, PixelFormat.Format32bppArgb);
+
+                Rectangle lockRect = new Rectangle(0, 0, before.Width, before.Height);
+                var sourceData = before.LockBits(lockRect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                var targetData = after.LockBits(lockRect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+                try
+                {
+                    int stridePixels = sourceData.Stride / 4;
+                    int width = before.Width;
+                    int height = before.Height;
+                    int totalPixels = stridePixels * height;
+
+                    int[] sourcePixels = new int[totalPixels];
+                    Marshal.Copy(sourceData.Scan0, sourcePixels, 0, totalPixels);
+
+                    int[] workingPixels = new int[totalPixels];
+                    Array.Copy(sourcePixels, workingPixels, totalPixels);
+
+                    bool[] filled = new bool[totalPixels];
+                    Queue<Point> queue = new Queue<Point>();
+
+                    for (int y = 0; y < height; y++)
+                    {
+                        for (int x = 0; x < width; x++)
+                        {
+                            int idx = y * stridePixels + x;
+                            bool isBorder = x == 0 || y == 0 || x == width - 1 || y == height - 1;
+                            filled[idx] = isBorder;
+                            if (isBorder)
+                            {
+                                queue.Enqueue(new Point(x, y));
+                            }
+                        }
+                    }
+
+                    int[] offsets = new[] { -1, 1, -stridePixels, stridePixels };
+
+                    while (queue.Count > 0)
+                    {
+                        var pt = queue.Dequeue();
+                        int baseIdx = pt.Y * stridePixels + pt.X;
+
+                        foreach (var offset in offsets)
+                        {
+                            int neighborIdx = baseIdx + offset;
+
+                            int nx = pt.X;
+                            int ny = pt.Y;
+                            if (offset == -1)
+                                nx = pt.X - 1;
+                            else if (offset == 1)
+                                nx = pt.X + 1;
+                            else if (offset == -stridePixels)
+                                ny = pt.Y - 1;
+                            else if (offset == stridePixels)
+                                ny = pt.Y + 1;
+
+                            if (nx < 0 || nx >= width || ny < 0 || ny >= height)
+                            {
+                                continue;
+                            }
+
+                            int idx = ny * stridePixels + nx;
+                            if (!filled[idx])
+                            {
+                                workingPixels[idx] = workingPixels[baseIdx];
+                                filled[idx] = true;
+                                queue.Enqueue(new Point(nx, ny));
+                            }
+                        }
+                    }
+
+                    int[] tempPixels = new int[totalPixels];
+                    Array.Copy(workingPixels, tempPixels, totalPixels);
+
+                    int blurIterations = Math.Max(Math.Max(width, height) / 8, 3);
+                    blurIterations = Math.Min(blurIterations, 20);
+
+                    for (int iteration = 0; iteration < blurIterations; iteration++)
+                    {
+                        Array.Copy(workingPixels, tempPixels, totalPixels);
+
+                        for (int y = 1; y < height - 1; y++)
+                        {
+                            for (int x = 1; x < width - 1; x++)
+                            {
+                                int idx = y * stridePixels + x;
+
+                                int a = 0, r = 0, g = 0, b = 0, count = 0;
+                                int[] neighborOffsets = { 0, -1, 1, -stridePixels, stridePixels };
+                                foreach (var neighbor in neighborOffsets)
+                                {
+                                    int nIdx = idx + neighbor;
+                                    int color = workingPixels[nIdx];
+                                    b += color & 0xFF;
+                                    g += (color >> 8) & 0xFF;
+                                    r += (color >> 16) & 0xFF;
+                                    a += (color >> 24) & 0xFF;
+                                    count++;
+                                }
+
+                                int newColor =
+                                    ((a / count) << 24) |
+                                    ((r / count) << 16) |
+                                    ((g / count) << 8) |
+                                    (b / count);
+
+                                tempPixels[idx] = newColor;
+                            }
+                        }
+
+                        Array.Copy(tempPixels, workingPixels, totalPixels);
+                    }
+
+                    Marshal.Copy(workingPixels, 0, targetData.Scan0, totalPixels);
+                }
+                finally
+                {
+                    before.UnlockBits(sourceData);
+                    after.UnlockBits(targetData);
+                }
+
+                using (var gImg = Graphics.FromImage(pictureBox1.Image))
+                {
+                    gImg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                    gImg.DrawImage(after, clampedSelection);
+                }
+
+                PushUndoStep(clampedSelection, before, after, selectionBefore, Selection);
+
+                pictureBox1.Invalidate();
+                UpdateCommandUI();
+                return true;
+            }
+            catch
+            {
+                before.Dispose();
+                after?.Dispose();
+                throw;
+            }
+        }
+
         private bool ExecuteCrop()
         {
             if (!HasEditableImage || Selection.IsEmpty)
@@ -753,6 +923,10 @@ namespace screenzap
             if (cropToolStripButton != null)
             {
                 cropToolStripButton.Enabled = enable && !Selection.IsEmpty;
+            }
+            if (replaceToolStripButton != null)
+            {
+                replaceToolStripButton.Enabled = enable && !Selection.IsEmpty;
             }
         }
 
@@ -938,6 +1112,14 @@ namespace screenzap
 
                 }
             }
+            else if (e.KeyCode == Keys.B && e.Control)
+            {
+                if (ExecuteReplaceWithBackground())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
+            }
 
             else if (e.KeyCode == Keys.S && e.Control == true)
             {
@@ -1017,6 +1199,11 @@ namespace screenzap
         private void cropToolStripButton_Click(object sender, EventArgs e)
         {
             ExecuteCrop();
+        }
+
+        private void replaceToolStripButton_Click(object sender, EventArgs e)
+        {
+            ExecuteReplaceWithBackground();
         }
 
 

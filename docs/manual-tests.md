@@ -14,6 +14,12 @@
 2. Press `Ctrl+T` or click **Crop** on the toolbar; the editor window should resize around the cropped content and the selection should clear.
 3. Press `Ctrl+Z` to restore the original image dimensions and selection, then `Ctrl+Shift+Z` to reapply the crop.
 
+## Replace with Background
+
+1. Capture or paste an image, draw a selection around an object, and press `Ctrl+B` or click **Replace BG**.
+2. Confirm the selection fills with surrounding colors that bleed inward, softening the object.
+3. Press `Ctrl+Z` and `Ctrl+Shift+Z` to verify the operation integrates with undo/redo.
+
 ## Save / Save As (regression spot check)
 
 1. After editing, press `Ctrl+S` to trigger an automatic timestamped save and confirm the file appears in the configured capture folder.
