@@ -89,6 +89,7 @@ namespace screenzap
         private void ClearSelection()
         {
             Selection = new Rectangle(0, 0, 0, 0);
+            UpdateCommandUI();
         }
 
         ResizeMode rzMode;
@@ -286,7 +287,7 @@ namespace screenzap
 
             undoStack.Clear();
 
-            UpdateSaveUI();
+            UpdateCommandUI();
             UpdateWindowTitle();
         }
 
@@ -352,27 +353,28 @@ namespace screenzap
             return snapshot;
         }
 
-        private void PushUndoStep(Rectangle region, Bitmap before, Bitmap after, Rectangle selectionBefore, Rectangle selectionAfter)
+        private void PushUndoStep(Rectangle region, Bitmap before, Bitmap after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage = false)
         {
-            if (before == null || after == null || region.Width <= 0 || region.Height <= 0)
+            if (before == null || after == null)
             {
                 before?.Dispose();
                 after?.Dispose();
                 return;
             }
 
-            undoStack.Push(new ImageUndoStep(region, before, after, selectionBefore, selectionAfter));
+            if (!replacesImage && (region.Width <= 0 || region.Height <= 0))
+            {
+                before.Dispose();
+                after.Dispose();
+                return;
+            }
+
+            undoStack.Push(new ImageUndoStep(region, before, after, selectionBefore, selectionAfter, replacesImage));
         }
 
         private void ApplyUndoStep(ImageUndoStep step, bool applyAfterState)
         {
             if (step == null || pictureBox1.Image == null)
-            {
-                return;
-            }
-
-            var region = ClampToImage(step.Region);
-            if (region.Width <= 0 || region.Height <= 0)
             {
                 return;
             }
@@ -383,14 +385,33 @@ namespace screenzap
                 return;
             }
 
-            using (var g = Graphics.FromImage(pictureBox1.Image))
+            if (step.ReplacesImage)
             {
-                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-                g.DrawImage(source, region);
+                var replacement = new Bitmap(source);
+                pictureBox1.Image?.Dispose();
+                pictureBox1.Image = replacement;
+                pictureBox1.Size = pictureBox1.Image.Size.Multiply(ZoomLevel);
+                ClientSize = new Size(Math.Max(pictureBox1.Image.Width, MinimumSize.Width), Math.Max(pictureBox1.Image.Height + ToolbarHeight, MinimumSize.Height));
+                HandleResize();
+            }
+            else
+            {
+                var region = ClampToImage(step.Region);
+                if (region.Width <= 0 || region.Height <= 0)
+                {
+                    return;
+                }
+
+                using (var g = Graphics.FromImage(pictureBox1.Image))
+                {
+                    g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                    g.DrawImage(source, region);
+                }
             }
 
             Selection = applyAfterState ? step.SelectionAfter : step.SelectionBefore;
+            UpdateCommandUI();
             pictureBox1.Invalidate();
         }
 
@@ -574,6 +595,7 @@ namespace screenzap
                 Selection = GetNormalizedRect(MouseInPixel, MouseOutPixel);
                 isDrawingRubberBand = false;
                 pictureBox1.Invalidate();
+                UpdateCommandUI();
             }
             else if (e.Button == MouseButtons.Middle)
             {
@@ -659,6 +681,7 @@ namespace screenzap
 
                 PushUndoStep(clampedSelection, before, after, selectionBefore, Selection);
                 pictureBox1.Invalidate();
+                UpdateCommandUI();
             }
             catch
             {
@@ -667,7 +690,56 @@ namespace screenzap
             }
         }
 
-        private void UpdateSaveUI()
+        private bool ExecuteCrop()
+        {
+            if (!HasEditableImage || Selection.IsEmpty)
+            {
+                return false;
+            }
+
+            var clampedSelection = ClampToImage(Selection);
+            if (clampedSelection.Width <= 0 || clampedSelection.Height <= 0)
+            {
+                return false;
+            }
+
+            var selectionBefore = Selection;
+            var selectionAfter = Rectangle.Empty;
+
+            var beforeImage = new Bitmap(pictureBox1.Image);
+
+            Bitmap afterSnapshot = new Bitmap(clampedSelection.Width, clampedSelection.Height, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(afterSnapshot))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                g.DrawImage(pictureBox1.Image, new Rectangle(Point.Empty, clampedSelection.Size), clampedSelection, GraphicsUnit.Pixel);
+            }
+
+            var newImage = new Bitmap(afterSnapshot);
+
+            pictureBox1.Image?.Dispose();
+            pictureBox1.Image = newImage;
+            pictureBox1.Size = pictureBox1.Image.Size.Multiply(ZoomLevel);
+
+            ClientSize = new Size(
+                Math.Max(pictureBox1.Image.Width, MinimumSize.Width),
+                Math.Max(pictureBox1.Image.Height + ToolbarHeight, MinimumSize.Height));
+
+            HandleResize();
+
+            Selection = selectionAfter;
+            isPlaceholderImage = false;
+
+            PushUndoStep(Rectangle.Empty, beforeImage, afterSnapshot, selectionBefore, selectionAfter, true);
+
+            UpdateCommandUI();
+            pictureBox1.Invalidate();
+            return true;
+        }
+
+        private void UpdateCommandUI()
         {
             bool enable = HasEditableImage;
             if (saveToolStripButton != null)
@@ -677,6 +749,10 @@ namespace screenzap
             if (saveAsToolStripButton != null)
             {
                 saveAsToolStripButton.Enabled = enable;
+            }
+            if (cropToolStripButton != null)
+            {
+                cropToolStripButton.Enabled = enable && !Selection.IsEmpty;
             }
         }
 
@@ -791,7 +867,7 @@ namespace screenzap
             if (PersistImage(targetPath))
             {
                 currentSavePath = targetPath;
-                UpdateSaveUI();
+                UpdateCommandUI();
                 UpdateWindowTitle();
                 return true;
             }
@@ -826,7 +902,7 @@ namespace screenzap
                     if (PersistImage(dialog.FileName))
                     {
                         currentSavePath = dialog.FileName;
-                        UpdateSaveUI();
+                        UpdateCommandUI();
                         UpdateWindowTitle();
                         return true;
                     }
@@ -881,6 +957,14 @@ namespace screenzap
                     e.Handled = true;
                 }
             }
+            else if (e.KeyCode == Keys.T && e.Control)
+            {
+                if (ExecuteCrop())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
+            }
 
             else if (e.KeyCode == Keys.Z)
             {
@@ -906,7 +990,7 @@ namespace screenzap
 
                 if (handled)
                 {
-                    UpdateSaveUI();
+                    UpdateCommandUI();
                     e.SuppressKeyPress = true;
                     e.Handled = true;
                 }
@@ -928,6 +1012,11 @@ namespace screenzap
         private void saveAsToolStripButton_Click(object sender, EventArgs e)
         {
             ExecuteSaveAs();
+        }
+
+        private void cropToolStripButton_Click(object sender, EventArgs e)
+        {
+            ExecuteCrop();
         }
 
 

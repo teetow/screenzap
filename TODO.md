@@ -18,10 +18,6 @@ In order to allow more advanced editing features, when opening the image editor 
 
 Since the image editor now is no longer just showing the clipboard state, on launch, we copy the buffer to an "original" that can be recalled at any time. This will not be updated -- subsequent clipboard copy operations will not touch it as long as the Image Editor is open. This is so that the user can always Revert to this state at will.
 
-## Feature: Crop (Ctrl-T)
-
-The current selection becomes the new image dimensions.
-
 ## Feature: Copy and paste (Ctrl-C, Ctrl-V)
 
 Any selection in the Image Editor can receive the current contents of the clipboard buffer, resized to fit the current selection. A secondary paste command, **Paste Original Size**, will resize the selection to fit the content rather than vice versa. A recently pasted selection is left in its transient state, meaning it can be moved and resized non-destructively. The transient state is committed by clicking outside the selection or hitting enter. It can be aborted by hitting Esc
@@ -53,6 +49,10 @@ Text masses in the selected area get their meaning garbled but still recognizabl
 
 - Any changes to the Image Editor buffer are recorded on an undo stack that stores the affected region along with its before/after state.
 - Redo re-applies the latest change using the same stored data, keeping undo and redo within a single mechanism.
+
+## Feature: Crop (Ctrl-T)
+
+- The current selection becomes the new image dimensions. Selection is cleared afterwards so the next action starts fresh.
 
 # Deferred (ignore for now)
 
