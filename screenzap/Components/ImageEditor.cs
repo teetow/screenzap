@@ -63,7 +63,7 @@ namespace screenzap
             }
         }
 
-    UndoRedo undoStack;
+        private UndoRedo undoStack;
 
     private const string WindowTitleBase = "Screenzap Image Editor";
 
@@ -234,6 +234,7 @@ namespace screenzap
             MouseWheel += ImageEditor_MouseWheel;
             pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
 
+            undoStack = new UndoRedo();
             ClearSelection();
         }
 
@@ -283,7 +284,7 @@ namespace screenzap
 
             HandleResize();
 
-            this.undoStack = new UndoRedo(new UndoState((Image)pictureBox1.Image.Clone(), new Rectangle(0, 0, 0, 0)));
+            undoStack.Clear();
 
             UpdateSaveUI();
             UpdateWindowTitle();
@@ -313,6 +314,84 @@ namespace screenzap
 
             pictureBox1.Location = new Point(newLeft, newTop);
             Invalidate();
+        }
+
+        private Rectangle GetImageBounds()
+        {
+            return pictureBox1.Image == null
+                ? Rectangle.Empty
+                : new Rectangle(Point.Empty, pictureBox1.Image.Size);
+        }
+
+        private Rectangle ClampToImage(Rectangle region)
+        {
+            if (pictureBox1.Image == null)
+            {
+                return Rectangle.Empty;
+            }
+
+            var bounds = GetImageBounds();
+            var intersection = Rectangle.Intersect(bounds, region);
+            return intersection;
+        }
+
+        private Bitmap CaptureRegion(Rectangle region)
+        {
+            if (pictureBox1.Image == null || region.Width <= 0 || region.Height <= 0)
+            {
+                return null;
+            }
+
+            var snapshot = new Bitmap(region.Width, region.Height, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(snapshot))
+            {
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                g.DrawImage(pictureBox1.Image, new Rectangle(Point.Empty, region.Size), region, GraphicsUnit.Pixel);
+            }
+
+            return snapshot;
+        }
+
+        private void PushUndoStep(Rectangle region, Bitmap before, Bitmap after, Rectangle selectionBefore, Rectangle selectionAfter)
+        {
+            if (before == null || after == null || region.Width <= 0 || region.Height <= 0)
+            {
+                before?.Dispose();
+                after?.Dispose();
+                return;
+            }
+
+            undoStack.Push(new ImageUndoStep(region, before, after, selectionBefore, selectionAfter));
+        }
+
+        private void ApplyUndoStep(ImageUndoStep step, bool applyAfterState)
+        {
+            if (step == null || pictureBox1.Image == null)
+            {
+                return;
+            }
+
+            var region = ClampToImage(step.Region);
+            if (region.Width <= 0 || region.Height <= 0)
+            {
+                return;
+            }
+
+            var source = applyAfterState ? step.After : step.Before;
+            if (source == null)
+            {
+                return;
+            }
+
+            using (var g = Graphics.FromImage(pictureBox1.Image))
+            {
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                g.DrawImage(source, region);
+            }
+
+            Selection = applyAfterState ? step.SelectionAfter : step.SelectionBefore;
+            pictureBox1.Invalidate();
         }
 
         readonly decimal[] ZoomLevels = {
@@ -531,26 +610,60 @@ namespace screenzap
 
         private void CensorSelection()
         {
-            if (!Selection.IsEmpty)
+            if (Selection.IsEmpty || pictureBox1.Image == null)
             {
-                var bmp = new Bitmap(Selection.Width, 1);
-                var gBmp = Graphics.FromImage(bmp);
-                //gBmp.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-                gBmp.DrawImage(pictureBox1.Image, RectangleExt.fromPoints(new Point(0, 0), new Point(bmp.Size)),
-                    RectangleExt.fromPoints(
-                        new Point(Selection.Left, Selection.Top + (Selection.Height / 2) - 1),
-                        new Point(Selection.Right, Selection.Top + (Selection.Height / 2))
-                        ),
-                    GraphicsUnit.Pixel);
+                return;
+            }
 
-                var gImg = Graphics.FromImage(pictureBox1.Image);
-                gImg.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-                gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-                gImg.DrawImage(bmp, Selection);
+            var clampedSelection = ClampToImage(Selection);
+            if (clampedSelection.Width <= 0 || clampedSelection.Height <= 0)
+            {
+                return;
+            }
 
-                undoStack.Push(new UndoState((Image)pictureBox1.Image.Clone(), Selection));
+            var selectionBefore = Selection;
+            var before = CaptureRegion(clampedSelection);
+            if (before == null)
+            {
+                return;
+            }
 
+            try
+            {
+                using (var smearRow = new Bitmap(clampedSelection.Width, 1, PixelFormat.Format32bppArgb))
+                {
+                    using (var gRow = Graphics.FromImage(smearRow))
+                    {
+                        int sampleOffset = clampedSelection.Height > 1 ? clampedSelection.Height / 2 : 0;
+                        sampleOffset = Math.Max(0, Math.Min(clampedSelection.Height - 1, sampleOffset));
+                        var sourceRect = new Rectangle(clampedSelection.Left, clampedSelection.Top + sampleOffset, clampedSelection.Width, 1);
+                        gRow.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                        gRow.DrawImage(pictureBox1.Image, new Rectangle(Point.Empty, smearRow.Size), sourceRect, GraphicsUnit.Pixel);
+                    }
+
+                    using (var gImg = Graphics.FromImage(pictureBox1.Image))
+                    {
+                        gImg.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                        gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                        gImg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                        gImg.DrawImage(smearRow, clampedSelection);
+                    }
+                }
+
+                var after = CaptureRegion(clampedSelection);
+                if (after == null)
+                {
+                    before.Dispose();
+                    return;
+                }
+
+                PushUndoStep(clampedSelection, before, after, selectionBefore, Selection);
                 pictureBox1.Invalidate();
+            }
+            catch
+            {
+                before.Dispose();
+                throw;
             }
         }
 
@@ -771,21 +884,31 @@ namespace screenzap
 
             else if (e.KeyCode == Keys.Z)
             {
-                UndoState? state = null;
-                if (e.Modifiers == (Keys.Shift | Keys.Control))
+                bool handled = false;
+                if (e.Modifiers == (Keys.Control | Keys.Shift))
                 {
-                    state = undoStack.GetNextState();
+                    var redoStep = undoStack.Redo();
+                    if (redoStep != null)
+                    {
+                        ApplyUndoStep(redoStep, true);
+                        handled = true;
+                    }
                 }
                 else if (e.Modifiers == Keys.Control)
                 {
-                    state = undoStack.GetPrevState();
+                    var undoStep = undoStack.Undo();
+                    if (undoStep != null)
+                    {
+                        ApplyUndoStep(undoStep, false);
+                        handled = true;
+                    }
                 }
 
-                if (!(!(state is UndoState) && state is null))
+                if (handled)
                 {
-                    pictureBox1.Image = state?.Image;
-                    Selection = (Rectangle)(state?.Selection);
-                    this.pictureBox1.Invalidate();
+                    UpdateSaveUI();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
                 }
             }
         }

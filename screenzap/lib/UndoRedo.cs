@@ -1,73 +1,99 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace screenzap
 {
-    public struct UndoState
+    internal sealed class ImageUndoStep : IDisposable
     {
-        public Image Image;
-        public Rectangle Selection;
-
-        public UndoState(Image image, Rectangle selection)
+        public ImageUndoStep(Rectangle region, Bitmap before, Bitmap after, Rectangle selectionBefore, Rectangle selectionAfter)
         {
-            Image = (Image)image.Clone();
-            Selection = selection;
+            Region = region;
+            Before = before;
+            After = after;
+            SelectionBefore = selectionBefore;
+            SelectionAfter = selectionAfter;
+        }
+
+        public Rectangle Region { get; }
+        public Bitmap Before { get; }
+        public Bitmap After { get; }
+        public Rectangle SelectionBefore { get; }
+        public Rectangle SelectionAfter { get; }
+
+        public void Dispose()
+        {
+            Before?.Dispose();
+            After?.Dispose();
         }
     }
-    internal class UndoRedo
+
+    internal sealed class UndoRedo : IDisposable
     {
-        private List<UndoState> _undos;
-        //private List<UndoState> _redos;
-        int currentUndo;
+        private readonly List<ImageUndoStep> _steps = new List<ImageUndoStep>();
+        private int _currentIndex = -1;
 
-        private void Init()
-        {
-            _undos = new List<UndoState>();
-            currentUndo = -1;
-        }
+        public bool CanUndo => _currentIndex >= 0;
+        public bool CanRedo => _currentIndex < _steps.Count - 1;
 
-        public UndoRedo()
+        public void Clear()
         {
-            this.Init();
-        }
-
-        public UndoRedo(UndoState state)
-        {
-            Init();
-            Push(state);
-        }
-        public bool hasUndo { get { return _undos.Count > 0 && currentUndo < 0; } }
-        public void Push(UndoState state)
-        {
-            if (_undos.Count > (currentUndo + 1))
+            foreach (var step in _steps)
             {
-                _undos = _undos.GetRange(0, currentUndo + 1);
+                step.Dispose();
             }
-            _undos.Add(state);
-            currentUndo = _undos.Count - 1;
-        }
-        public UndoState? GetPrevState()
-        {
-            if (currentUndo > 0 && _undos.Count > 0)
-            {
-                currentUndo--;
-                return _undos[currentUndo];
-            }
-            return null;
+
+            _steps.Clear();
+            _currentIndex = -1;
         }
 
-        public UndoState? GetNextState()
+        public void Push(ImageUndoStep step)
         {
-            if (_undos.Count >= currentUndo - 2 && currentUndo < _undos.Count - 1)
+            if (step == null)
             {
-                currentUndo++;
-                return _undos[currentUndo];
+                return;
             }
-            return null;
+
+            if (_currentIndex < _steps.Count - 1)
+            {
+                for (int i = _currentIndex + 1; i < _steps.Count; i++)
+                {
+                    _steps[i].Dispose();
+                }
+
+                _steps.RemoveRange(_currentIndex + 1, _steps.Count - (_currentIndex + 1));
+            }
+
+            _steps.Add(step);
+            _currentIndex = _steps.Count - 1;
+        }
+
+        public ImageUndoStep Undo()
+        {
+            if (!CanUndo)
+            {
+                return null;
+            }
+
+            var step = _steps[_currentIndex];
+            _currentIndex--;
+            return step;
+        }
+
+        public ImageUndoStep Redo()
+        {
+            if (!CanRedo)
+            {
+                return null;
+            }
+
+            _currentIndex++;
+            return _steps[_currentIndex];
+        }
+
+        public void Dispose()
+        {
+            Clear();
         }
     }
 }
