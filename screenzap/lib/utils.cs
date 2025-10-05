@@ -27,6 +27,10 @@ namespace screenzap.lib
             return filePath;
         }
     }
+    static class ClipboardMetadata
+    {
+        public static DateTime? LastCaptureTimestamp { get; set; }
+    }
     static class RectangleExt
     {
         public static Rectangle fromPoints(Point pt, Point pt2)

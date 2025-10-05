@@ -86,6 +86,7 @@ namespace screenzap
                 data.SetData("PNG", false, pngMemStream);
 
                 Clipboard.SetDataObject(data, true);
+                ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
             }
         }
 

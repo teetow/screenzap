@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
@@ -61,9 +63,21 @@ namespace screenzap
             }
         }
 
-        UndoRedo undoStack;
+    UndoRedo undoStack;
 
-        Point MouseInPixel;
+    private const string WindowTitleBase = "Screenzap Image Editor";
+
+    private DateTime? bufferTimestamp;
+    private string currentSavePath;
+    private bool isPlaceholderImage;
+
+    private bool HasEditableImage => pictureBox1.Image != null && !isPlaceholderImage;
+
+    private int ToolbarHeight => mainToolStrip?.Height ?? 0;
+
+    private Size GetCanvasSize() => new Size(ClientSize.Width, Math.Max(0, ClientSize.Height - ToolbarHeight));
+
+    Point MouseInPixel;
         Point MouseOutPixel;
         bool isDrawingRubberBand;
         bool isMovingSelection;
@@ -168,19 +182,20 @@ namespace screenzap
 
         private void ShowPlaceholder()
         {
-            Bitmap bmp = new Bitmap(640, 200);
-            Graphics gr = Graphics.FromImage(bmp);
-            var sf = new StringFormat
+            using (Bitmap bmp = new Bitmap(640, 200))
+            using (Graphics gr = Graphics.FromImage(bmp))
             {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center
-            };
+                var sf = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
 
-            gr.DrawString("No image data in clipboard", SystemFonts.CaptionFont, Brushes.White, new PointF(320, 100), sf);
+                gr.DrawString("No image data in clipboard", SystemFonts.CaptionFont, Brushes.White, new PointF(320, 100), sf);
 
-            ResetZoom();
-            LoadImage(bmp);
-            this.Size = pictureBox1.Size;
+                ResetZoom();
+                LoadImage(bmp, true);
+            }
         }
 
         private Point PixelToFormCoord(Point pt)
@@ -235,20 +250,43 @@ namespace screenzap
         }
         internal void LoadImage(Image imgData)
         {
+            LoadImage(imgData, false);
+        }
+
+        internal void LoadImage(Image imgData, bool treatAsPlaceholder)
+        {
             if (imgData == null)
                 return;
+
+            isPlaceholderImage = treatAsPlaceholder;
+            bufferTimestamp = treatAsPlaceholder ? (DateTime?)null : (ClipboardMetadata.LastCaptureTimestamp ?? DateTime.Now);
+            currentSavePath = null;
 
             ClearSelection();
             ResetZoom();
 
-            pictureBox1.Image = imgData;
-            pictureBox1.Location = new Point(0, 0);
+            var replacementImage = new Bitmap(imgData);
 
+            if (pictureBox1.Image != null)
+            {
+                pictureBox1.Image.Dispose();
+            }
+
+            pictureBox1.Image = replacementImage;
+            pictureBox1.Location = new Point(0, ToolbarHeight);
             pictureBox1.Size = imgData.Size;
-            ClientSize = imgData.Size;
+
+            var toolbarHeight = ToolbarHeight;
+            var targetWidth = Math.Max(imgData.Size.Width, MinimumSize.Width);
+            var targetHeight = Math.Max(imgData.Size.Height + toolbarHeight, MinimumSize.Height);
+            ClientSize = new Size(targetWidth, targetHeight);
+
             HandleResize();
 
-            this.undoStack = new UndoRedo(new UndoState((Image)imgData.Clone(), new Rectangle(0, 0, 0, 0)));
+            this.undoStack = new UndoRedo(new UndoState((Image)pictureBox1.Image.Clone(), new Rectangle(0, 0, 0, 0)));
+
+            UpdateSaveUI();
+            UpdateWindowTitle();
         }
 
         internal void ResetZoom()
@@ -258,16 +296,19 @@ namespace screenzap
 
         internal void HandleResize()
         {
-            int newLeft = 0;
-            int newTop = 0;
+            var canvasSize = GetCanvasSize();
 
-            if (pictureBox1.Width < ClientSize.Width)
+            int newLeft = 0;
+            int newTop = ToolbarHeight;
+
+            if (pictureBox1.Width < canvasSize.Width)
             {
-                newLeft = ClientSize.Width / 2 - pictureBox1.Width / 2;
+                newLeft = (canvasSize.Width - pictureBox1.Width) / 2;
             }
-            if (pictureBox1.Height < ClientSize.Height)
+
+            if (pictureBox1.Height < canvasSize.Height)
             {
-                newTop = ClientSize.Height / 2 - pictureBox1.Height / 2;
+                newTop = ToolbarHeight + (canvasSize.Height - pictureBox1.Height) / 2;
             }
 
             pictureBox1.Location = new Point(newLeft, newTop);
@@ -303,7 +344,8 @@ namespace screenzap
             var offset = PixelToFormCoord(targetPixel.Subtract(newTargetPixel));
             pictureBox1.Location = pictureBox1.Location.Subtract(offset);
 
-            if (pictureBox1.Size.Subtract(Size).Width < 0 && pictureBox1.Size.Subtract(Size).Height < 0)
+            var canvasSize = GetCanvasSize();
+            if (pictureBox1.Width <= canvasSize.Width && pictureBox1.Height <= canvasSize.Height)
             {
                 HandleResize();
             }
@@ -512,6 +554,175 @@ namespace screenzap
             }
         }
 
+        private void UpdateSaveUI()
+        {
+            bool enable = HasEditableImage;
+            if (saveToolStripButton != null)
+            {
+                saveToolStripButton.Enabled = enable;
+            }
+            if (saveAsToolStripButton != null)
+            {
+                saveAsToolStripButton.Enabled = enable;
+            }
+        }
+
+        private void UpdateWindowTitle()
+        {
+            string title = WindowTitleBase;
+
+            if (HasEditableImage)
+            {
+                if (!string.IsNullOrWhiteSpace(currentSavePath))
+                {
+                    title = $"{WindowTitleBase} - {Path.GetFileName(currentSavePath)}";
+                }
+                else if (bufferTimestamp.HasValue)
+                {
+                    title = $"{WindowTitleBase} - {bufferTimestamp.Value:yyyy-MM-dd HH:mm:ss}";
+                }
+            }
+
+            Text = title;
+        }
+
+        private string BuildDefaultSavePath()
+        {
+            var folder = Environment.ExpandEnvironmentVariables(Properties.Settings.Default.captureFolder);
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                folder = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            }
+
+            try
+            {
+                Directory.CreateDirectory(folder);
+            }
+            catch
+            {
+                folder = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+                Directory.CreateDirectory(folder);
+            }
+
+            var timestamp = (bufferTimestamp ?? DateTime.Now).ToString("yyyy-MM-ddTHH-mm-ss");
+            return Path.Combine(folder, $"{timestamp}.png");
+        }
+
+        private string EnsureUniquePath(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return path;
+            }
+
+            string directory = Path.GetDirectoryName(path) ?? string.Empty;
+            string filename = Path.GetFileNameWithoutExtension(path);
+            string extension = Path.GetExtension(path);
+            int counter = 1;
+
+            string candidate;
+            do
+            {
+                candidate = Path.Combine(directory, $"{filename}_{counter}{extension}");
+                counter++;
+            } while (File.Exists(candidate));
+
+            return candidate;
+        }
+
+        private bool PersistImage(string targetPath)
+        {
+            if (!HasEditableImage)
+            {
+                return false;
+            }
+
+            try
+            {
+                var directory = Path.GetDirectoryName(targetPath);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                using (var bmp = new Bitmap(pictureBox1.Image))
+                {
+                    bmp.Save(targetPath, ImageFormat.Png);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to save image.\n{ex.Message}", "Save failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        private bool ExecuteSave()
+        {
+            if (!HasEditableImage)
+            {
+                return false;
+            }
+
+            var targetPath = currentSavePath;
+            bool generatedPath = false;
+
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                targetPath = EnsureUniquePath(BuildDefaultSavePath());
+                generatedPath = true;
+            }
+
+            if (PersistImage(targetPath))
+            {
+                currentSavePath = targetPath;
+                UpdateSaveUI();
+                UpdateWindowTitle();
+                return true;
+            }
+
+            if (generatedPath)
+            {
+                currentSavePath = null;
+            }
+
+            return false;
+        }
+
+        private bool ExecuteSaveAs()
+        {
+            if (!HasEditableImage)
+            {
+                return false;
+            }
+
+            string defaultPath = EnsureUniquePath(BuildDefaultSavePath());
+
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.DefaultExt = "png";
+                dialog.Filter = "PNG Image|*.png|All Files|*.*";
+                dialog.FileName = Path.GetFileName(defaultPath);
+                dialog.InitialDirectory = Path.GetDirectoryName(defaultPath);
+                dialog.OverwritePrompt = true;
+
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    if (PersistImage(dialog.FileName))
+                    {
+                        currentSavePath = dialog.FileName;
+                        UpdateSaveUI();
+                        UpdateWindowTitle();
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         private void ImageEditor_KeyDown(object sender, KeyEventArgs e)
         {
             //Console.WriteLine(e.Modifiers);
@@ -541,7 +752,21 @@ namespace screenzap
 
             else if (e.KeyCode == Keys.S && e.Control == true)
             {
+                bool handled = false;
+                if ((e.Modifiers & Keys.Shift) == Keys.Shift)
+                {
+                    handled = ExecuteSaveAs();
+                }
+                else
+                {
+                    handled = ExecuteSave();
+                }
 
+                if (handled)
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
             }
 
             else if (e.KeyCode == Keys.Z)
@@ -570,6 +795,16 @@ namespace screenzap
             {
                 isMovingSelection = false;
             }
+        }
+
+        private void saveToolStripButton_Click(object sender, EventArgs e)
+        {
+            ExecuteSave();
+        }
+
+        private void saveAsToolStripButton_Click(object sender, EventArgs e)
+        {
+            ExecuteSaveAs();
         }
 
 
