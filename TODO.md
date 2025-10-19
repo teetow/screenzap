@@ -4,31 +4,24 @@
 
 Unless specified otherwise, all actions are destructive, but undoable.
 
-## Image Editor Toolbar
-
-- Save to file
-- Crop
-- Each tool below as we add them
-
-## Feature: Image Editor now has a dedicated buffer
-
-In order to allow more advanced editing features, when opening the image editor the contents of the clipboard is copied to a dedicated buffer, detaching it from the clipboard buffer. This allows us to copy and paste areas of the image editor buffer (which would otherwise always show the copied area).
-
 ## Feature: Revert
 
 Since the image editor now is no longer just showing the clipboard state, on launch, we copy the buffer to an "original" that can be recalled at any time. This will not be updated -- subsequent clipboard copy operations will not touch it as long as the Image Editor is open. This is so that the user can always Revert to this state at will.
 
-## Feature: Copy and paste (Ctrl-C, Ctrl-V)
+## Feature: Copy and paste (Ctrl+C, Ctrl+V)
 
-Any selection in the Image Editor can receive the current contents of the clipboard buffer, resized to fit the current selection. A secondary paste command, **Paste Original Size**, will resize the selection to fit the content rather than vice versa. A recently pasted selection is left in its transient state, meaning it can be moved and resized non-destructively. The transient state is committed by clicking outside the selection or hitting enter. It can be aborted by hitting Esc
+- Ctrl+C already copies the current selection to the clipboard buffer.
+- Implement Ctrl+V to paste the clipboard contents into the current selection, resizing to fit.
+- Add a **Paste Original Size** command that resizes the selection to fit the pasted content instead.
+- Keep freshly pasted content in a transient state until committed (Enter) or canceled (Esc).
 
 ## Feature: Paste Toolbar
 
 When pasting content, a floating Paste toolbar appears. It shows inputs for X and Y, width and height, as well as a "scaling algorithm" dropdown that has Nearest Neighbor as well as whatever other scaling algos supported by the Graphics API. I assume linear or bilinear, no need to make it more complex than that. It also contains Cancel and OK buttons for aborting or committing the paste.
 
-## Feature: Text censor tool (Ctrl-E)
+## Feature: Text censor tool (hotkey TBD)
 
-Text masses in the selected area get their meaning garbled but still recognizable as having been text.
+Text masses in the selected area get their meaning garbled but still recognizable as having been text. The current prototype smears the selection when the `C` key is pressed; revisit the algorithm and settle on a final shortcut (originally planned for Ctrl+E).
 
 - Detect lines of text in selection (use a vertical histogram -- five or more consecutive rows of extrema is deemed a line separator)
 - Using line separators, make a local selection around each line of text
@@ -40,6 +33,10 @@ Text masses in the selected area get their meaning garbled but still recognizabl
 
 - Save generates a file name from the timestamp when the clipboard buffer was taken
 - Save As... opens a standard file save dialog
+
+## Feature: Image Editor now has a dedicated buffer
+
+In order to allow more advanced editing features, when opening the image editor the contents of the clipboard is copied to a dedicated buffer, detaching it from the clipboard buffer. This allows us to copy and paste areas of the image editor buffer (which would otherwise always show the copied area).
 
 ## Feature: Undo and Redo (Ctrl-Z, Ctrl-Shift-Z)
 
@@ -55,10 +52,6 @@ Text masses in the selected area get their meaning garbled but still recognizabl
 - Selected area edges bleed towards the middle pixel, filling the selection with colors sampled from the border to provide a quick object removal.
 
 # Deferred (ignore for now)
-
-## Image editor enhancements
-
-- [ ] Implement the `Ctrl+S` shortcut in `Components/ImageEditor.cs` (within `ImageEditor_KeyDown`). The handler block is empty, so saving the edited image or selection never occurs.
 
 ## Secondary hotkey configurability
 
