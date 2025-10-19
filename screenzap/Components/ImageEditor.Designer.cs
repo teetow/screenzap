@@ -93,7 +93,7 @@
             this.replaceToolStripButton.Name = "replaceToolStripButton";
             this.replaceToolStripButton.Size = new System.Drawing.Size(82, 23);
             this.replaceToolStripButton.Text = "Replace BG";
-            this.replaceToolStripButton.ToolTipText = "Replace with Background (Ctrl+B)";
+            this.replaceToolStripButton.ToolTipText = "Replace with Background (Ctrl+B or Backspace)";
             this.replaceToolStripButton.Click += new System.EventHandler(this.replaceToolStripButton_Click);
             // 
             // pictureBox1

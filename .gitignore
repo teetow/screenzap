@@ -8,3 +8,5 @@
 /screenzap/bin
 .vscode/
 *.user
+
+.fake

@@ -1112,7 +1112,7 @@ namespace screenzap
 
                 }
             }
-            else if (e.KeyCode == Keys.B && e.Control)
+            else if ((e.KeyCode == Keys.B && e.Control) || (e.KeyCode == Keys.Back && e.Modifiers == Keys.None))
             {
                 if (ExecuteReplaceWithBackground())
                 {

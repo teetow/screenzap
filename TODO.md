@@ -50,7 +50,7 @@ Text masses in the selected area get their meaning garbled but still recognizabl
 
 - The current selection becomes the new image dimensions. Selection is cleared afterwards so the next action starts fresh.
 
-## Feature: "Replace with background" tool (Ctrl-B)
+## Feature: "Replace with background" tool (Ctrl-B / Backspace)
 
 - Selected area edges bleed towards the middle pixel, filling the selection with colors sampled from the border to provide a quick object removal.
 

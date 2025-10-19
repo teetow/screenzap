@@ -16,7 +16,7 @@
 
 ## Replace with Background
 
-1. Capture or paste an image, draw a selection around an object, and press `Ctrl+B` or click **Replace BG**.
+1. Capture or paste an image, draw a selection around an object, and press `Ctrl+B`, tap `Backspace`, or click **Replace BG**.
 2. Confirm the selection fills with surrounding colors that bleed inward, softening the object.
 3. Press `Ctrl+Z` and `Ctrl+Shift+Z` to verify the operation integrates with undo/redo.
 
