@@ -35,8 +35,10 @@
             this.saveAsToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.cropToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.replaceToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.canvasPanel = new System.Windows.Forms.Panel();
             this.pictureBox1 = new screenzap.ScalingPictureBox();
             this.mainToolStrip.SuspendLayout();
+            this.canvasPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.SuspendLayout();
             // 
@@ -96,14 +98,24 @@
             this.replaceToolStripButton.ToolTipText = "Replace with Background (Ctrl+B or Backspace)";
             this.replaceToolStripButton.Click += new System.EventHandler(this.replaceToolStripButton_Click);
             // 
+            // canvasPanel
+            // 
+            this.canvasPanel.BackColor = System.Drawing.SystemColors.ControlDarkDark;
+            this.canvasPanel.Controls.Add(this.pictureBox1);
+            this.canvasPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.canvasPanel.Location = new System.Drawing.Point(0, 27);
+            this.canvasPanel.Name = "canvasPanel";
+            this.canvasPanel.Size = new System.Drawing.Size(413, 276);
+            this.canvasPanel.TabIndex = 1;
+            // 
             // pictureBox1
             // 
             this.pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Default;
-            this.pictureBox1.Location = new System.Drawing.Point(0, 27);
+            this.pictureBox1.Location = new System.Drawing.Point(0, 0);
             this.pictureBox1.Name = "pictureBox1";
             this.pictureBox1.Size = new System.Drawing.Size(207, 139);
             this.pictureBox1.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
-            this.pictureBox1.TabIndex = 1;
+            this.pictureBox1.TabIndex = 0;
             this.pictureBox1.TabStop = false;
             this.pictureBox1.Paint += new System.Windows.Forms.PaintEventHandler(this.pictureBox1_Paint);
             this.pictureBox1.MouseDown += new System.Windows.Forms.MouseEventHandler(this.pictureBox1_MouseDown);
@@ -116,7 +128,7 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.SystemColors.Desktop;
             this.ClientSize = new System.Drawing.Size(413, 303);
-            this.Controls.Add(this.pictureBox1);
+            this.Controls.Add(this.canvasPanel);
             this.Controls.Add(this.mainToolStrip);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MinimumSize = new System.Drawing.Size(320, 200);
@@ -128,6 +140,7 @@
             this.Paint += new System.Windows.Forms.PaintEventHandler(this.ImageEditor_Paint);
             this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyDown);
             this.KeyUp += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyUp);
+            this.canvasPanel.ResumeLayout(false);
             this.mainToolStrip.ResumeLayout(false);
             this.mainToolStrip.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
@@ -141,6 +154,7 @@
         private System.Windows.Forms.ToolStrip mainToolStrip;
         private System.Windows.Forms.ToolStripButton saveToolStripButton;
         private System.Windows.Forms.ToolStripButton saveAsToolStripButton;
+    private System.Windows.Forms.Panel canvasPanel;
     private ScalingPictureBox pictureBox1;
     private System.Windows.Forms.ToolStripButton cropToolStripButton;
     private System.Windows.Forms.ToolStripButton replaceToolStripButton;

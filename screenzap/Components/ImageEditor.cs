@@ -76,7 +76,15 @@ namespace screenzap
 
     private int ToolbarHeight => mainToolStrip?.Height ?? 0;
 
-    private Size GetCanvasSize() => new Size(ClientSize.Width, Math.Max(0, ClientSize.Height - ToolbarHeight));
+    private Size GetCanvasSize()
+    {
+        if (canvasPanel != null)
+        {
+            return canvasPanel.ClientSize;
+        }
+
+        return new Size(ClientSize.Width, Math.Max(0, ClientSize.Height - ToolbarHeight));
+    }
 
     Point MouseInPixel;
         Point MouseOutPixel;
@@ -276,7 +284,7 @@ namespace screenzap
             }
 
             pictureBox1.Image = replacementImage;
-            pictureBox1.Location = new Point(0, ToolbarHeight);
+            pictureBox1.Location = Point.Empty;
             pictureBox1.Size = imgData.Size;
 
             var toolbarHeight = ToolbarHeight;
@@ -299,23 +307,46 @@ namespace screenzap
 
         internal void HandleResize()
         {
-            var canvasSize = GetCanvasSize();
-
-            int newLeft = 0;
-            int newTop = ToolbarHeight;
-
-            if (pictureBox1.Width < canvasSize.Width)
-            {
-                newLeft = (canvasSize.Width - pictureBox1.Width) / 2;
-            }
-
-            if (pictureBox1.Height < canvasSize.Height)
-            {
-                newTop = ToolbarHeight + (canvasSize.Height - pictureBox1.Height) / 2;
-            }
-
-            pictureBox1.Location = new Point(newLeft, newTop);
+            ClampImageLocationWithinCanvas();
             Invalidate();
+        }
+
+        private void ClampImageLocationWithinCanvas()
+        {
+            if (pictureBox1.Image == null)
+            {
+                return;
+            }
+
+            var canvasSize = GetCanvasSize();
+            if (canvasSize.Width <= 0 || canvasSize.Height <= 0)
+            {
+                return;
+            }
+
+            var constrainedLeft = pictureBox1.Location.X;
+            if (pictureBox1.Width <= canvasSize.Width)
+            {
+                constrainedLeft = (canvasSize.Width - pictureBox1.Width) / 2;
+            }
+            else
+            {
+                var minLeft = canvasSize.Width - pictureBox1.Width;
+                constrainedLeft = Math.Min(0, Math.Max(minLeft, constrainedLeft));
+            }
+
+            var constrainedTop = pictureBox1.Location.Y;
+            if (pictureBox1.Height <= canvasSize.Height)
+            {
+                constrainedTop = (canvasSize.Height - pictureBox1.Height) / 2;
+            }
+            else
+            {
+                var minTop = canvasSize.Height - pictureBox1.Height;
+                constrainedTop = Math.Min(0, Math.Max(minTop, constrainedTop));
+            }
+
+            pictureBox1.Location = new Point(constrainedLeft, constrainedTop);
         }
 
         private Rectangle GetImageBounds()
@@ -435,13 +466,18 @@ namespace screenzap
         {
             if (pictureBox1.Image == null)
                 return;
-            var targetPixel = FormCoordToPixel(e.Location.Subtract(pictureBox1.Location));
+            if (canvasPanel == null)
+                return;
+            var cursorScreen = PointToScreen(e.Location);
+            var cursorInPanel = canvasPanel.PointToClient(cursorScreen);
+            var targetPixel = FormCoordToPixel(cursorInPanel.Subtract(pictureBox1.Location));
 
             var pol = e.Delta / Math.Abs(e.Delta);
 
             ZoomLevel = pol > 0 ? FindZoomIn(ZoomLevel) : FindZoomOut(ZoomLevel);
 
-            var newTargetPixel = FormCoordToPixel(e.Location.Subtract(pictureBox1.Location));
+            cursorInPanel = canvasPanel.PointToClient(cursorScreen);
+            var newTargetPixel = FormCoordToPixel(cursorInPanel.Subtract(pictureBox1.Location));
             var offset = PixelToFormCoord(targetPixel.Subtract(newTargetPixel));
             pictureBox1.Location = pictureBox1.Location.Subtract(offset);
 
@@ -449,6 +485,10 @@ namespace screenzap
             if (pictureBox1.Width <= canvasSize.Width && pictureBox1.Height <= canvasSize.Height)
             {
                 HandleResize();
+            }
+            else
+            {
+                ClampImageLocationWithinCanvas();
             }
         }
 
@@ -569,6 +609,7 @@ namespace screenzap
             {
                 var ofs = new Size(e.Location.Subtract(MouseInPixel));
                 pictureBox1.Location += ofs;
+                ClampImageLocationWithinCanvas();
             }
             else // no mouse button held
             {
