@@ -28,3 +28,7 @@ Press the configured shortcut (default is `ctrl-alt-shift-4`), drag to select a 
 ## Development
 
 Screenzap is built as a 64-bit (`x64`) Windows application. When using Visual Studio Code, stick to the default Debug configuration or run `dotnet build screenzap/screenzap.csproj` so the debugger can attach to the x64 process successfully.
+
+### Text detection prerequisites
+
+The text-region detector now prefers [Tesseract OCR](https://github.com/tesseract-ocr/tesseract). Copy the appropriate `tessdata` directory next to the executable (for example `screenzap\tessdata`) or point the environment variable `SCREENZAP_TESSDATA_PATH` to a folder containing `eng.traineddata` (or your chosen language). If no trained data is found the legacy heuristic detector is used instead.

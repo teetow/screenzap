@@ -5,6 +5,10 @@ VisualStudioVersion = 17.1.32407.343
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Screenzap", "screenzap\Screenzap.csproj", "{834014AB-8686-4A31-95F7-6FBB47F45687}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TextDetection", "TextDetection\TextDetection.csproj", "{5A6C6BFA-7B6F-4D90-8A01-9B6A956AE2A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TextDetection.DebugApp", "TextDetection.DebugApp\TextDetection.DebugApp.csproj", "{6E4F63E5-8D28-42C9-8CA9-D048B7F1761B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +19,14 @@ Global
 		{834014AB-8686-4A31-95F7-6FBB47F45687}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{834014AB-8686-4A31-95F7-6FBB47F45687}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{834014AB-8686-4A31-95F7-6FBB47F45687}.Release|Any CPU.Build.0 = Release|Any CPU
+			{5A6C6BFA-7B6F-4D90-8A01-9B6A956AE2A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+			{5A6C6BFA-7B6F-4D90-8A01-9B6A956AE2A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+			{5A6C6BFA-7B6F-4D90-8A01-9B6A956AE2A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+			{5A6C6BFA-7B6F-4D90-8A01-9B6A956AE2A2}.Release|Any CPU.Build.0 = Release|Any CPU
+			{6E4F63E5-8D28-42C9-8CA9-D048B7F1761B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+			{6E4F63E5-8D28-42C9-8CA9-D048B7F1761B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+			{6E4F63E5-8D28-42C9-8CA9-D048B7F1761B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+			{6E4F63E5-8D28-42C9-8CA9-D048B7F1761B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -19,14 +19,6 @@ Since the image editor now is no longer just showing the clipboard state, on lau
 
 When pasting content, a floating Paste toolbar appears. It shows inputs for X and Y, width and height, as well as a "scaling algorithm" dropdown that has Nearest Neighbor as well as whatever other scaling algos supported by the Graphics API. I assume linear or bilinear, no need to make it more complex than that. It also contains Cancel and OK buttons for aborting or committing the paste.
 
-## Feature: Text censor tool (hotkey TBD)
-
-Text masses in the selected area get their meaning garbled but still recognizable as having been text. The current prototype smears the selection when the `C` key is pressed; revisit the algorithm and settle on a final shortcut (originally planned for Ctrl+E).
-
-- Detect lines of text in selection (use a vertical histogram -- five or more consecutive rows of extrema is deemed a line separator)
-- Using line separators, make a local selection around each line of text
-- Each local selection gets its columns of pixels garbled
-
 # Done
 
 ## Feature: Save, Save As (Ctrl-S, Ctrl-Shift-S)
@@ -50,6 +42,11 @@ In order to allow more advanced editing features, when opening the image editor 
 ## Feature: "Replace with background" tool (Ctrl-B / Backspace)
 
 - Selected area edges bleed towards the middle pixel, filling the selection with colors sampled from the border to provide a quick object removal.
+
+## Feature: Text censor tool (Ctrl+E)
+
+- Detects dense text rows inside the selection, trims to their horizontal footprint, then shuffles column-sized blocks per line to render the content unreadable while preserving the overall silhouette.
+- Exposed on Ctrl+E and fully undoable.
 
 # Deferred (ignore for now)
 

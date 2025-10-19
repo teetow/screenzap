@@ -6,6 +6,8 @@
 /packages
 /screenzap/obj
 /screenzap/bin
+bin/
+obj/
 .vscode/
 *.user
 
