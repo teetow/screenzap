@@ -12,20 +12,20 @@ namespace screenzap
 {
     public partial class Screenzap : Form
     {
-        KeyboardHook rectCaptureHook = new KeyboardHook();
-        KeyboardHook seqCaptureHook = new KeyboardHook();
-        string autostartAppName = "Screenzap";
-        string assemblyLocation = Assembly.GetExecutingAssembly().Location;  // Or the EXE path.
-        KeyCombo rectCaptureCombo;
-        KeyCombo seqCaptureCombo;
-        bool isCapturing = false;
-        ImageEditor ImageEditor;
+        private readonly KeyboardHook rectCaptureHook = new KeyboardHook();
+        private readonly KeyboardHook seqCaptureHook = new KeyboardHook();
+        private readonly string autostartAppName = "Screenzap";
+        private readonly string assemblyLocation = Assembly.GetExecutingAssembly().Location;  // Or the EXE path.
+        private KeyCombo rectCaptureCombo;
+        private KeyCombo seqCaptureCombo;
+        private bool isCapturing;
+        private ImageEditor? imageEditor;
 
         public Screenzap()
         {
             InitializeComponent();
-            rectCaptureCombo = new KeyCombo(Properties.Settings.Default.currentCombo);
-            seqCaptureCombo = new KeyCombo(Properties.Settings.Default.seqCaptureCombo);
+            rectCaptureCombo = ParseKeyCombo(Properties.Settings.Default.currentCombo);
+            seqCaptureCombo = ParseKeyCombo(Properties.Settings.Default.seqCaptureCombo);
             startWhenLoggedInToolStripMenuItem.Checked = Util.IsAutoStartEnabled(autostartAppName, assemblyLocation);
             showBalloonMenuItem.Checked = Properties.Settings.Default.showBalloon;
 
@@ -56,8 +56,7 @@ namespace screenzap
                 MessageBox.Show("Can't register the instant capture hotkey. Please pick a better one.");
             }
 
-            ImageEditor = new ImageEditor();
-
+            imageEditor = new ImageEditor();
         }
 
         protected override void OnLoad(EventArgs e)
@@ -76,6 +75,8 @@ namespace screenzap
 
         void setClipboard(Bitmap bitmap)
         {
+            ArgumentNullException.ThrowIfNull(bitmap);
+
             using (MemoryStream pngMemStream = new MemoryStream())
             {
                 DataObject data = new DataObject();
@@ -90,7 +91,7 @@ namespace screenzap
             }
         }
 
-        void DoCapture(object sender, KeyPressedEventArgs e)
+        void DoCapture(object? sender, KeyPressedEventArgs e)
         {
             if (isCapturing) return;
             isCapturing = true;
@@ -106,13 +107,14 @@ namespace screenzap
                 }
 
                 Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
-                Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot);
-
-                gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
+                using (Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot))
+                {
+                    gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
+                }
 
                 setClipboard(bmpScreenshot);
 
-                SoundPlayer audio = new SoundPlayer(Properties.Resources.zap);
+                var audio = CreateZapSoundPlayer();
                 audio.Play();
 
             }
@@ -124,7 +126,7 @@ namespace screenzap
             isCapturing = false;
         }
 
-        void DoInstantCapture(object sender, KeyPressedEventArgs e)
+        void DoInstantCapture(object? sender, KeyPressedEventArgs e)
         {
             if (isCapturing) return;
             isCapturing = true;
@@ -132,8 +134,9 @@ namespace screenzap
             {
                 var captureAreaLeft = 0;
                 var captureAreaTop = 0;
-                var captureAreaWidth = Screen.PrimaryScreen.Bounds.Width;
-                var captureAreaHeight = Screen.PrimaryScreen.Bounds.Height;
+                var primaryScreen = ResolveScreen();
+                var captureAreaWidth = primaryScreen.Bounds.Width;
+                var captureAreaHeight = primaryScreen.Bounds.Height;
                 var captureRect = new Rectangle(captureAreaLeft, captureAreaTop, captureAreaWidth, captureAreaHeight);
 
                 if (captureRect.Width <= 0 || captureRect.Height <= 0)
@@ -142,9 +145,10 @@ namespace screenzap
                 }
 
                 Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
-                Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot);
-
-                gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
+                using (Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot))
+                {
+                    gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
+                }
 
                 var dateStr = DateTime.Now.ToString("yyyy-MM-ddTHH-mm-ss") + (".png");
                 var userPath = Environment.ExpandEnvironmentVariables(Properties.Settings.Default.captureFolder);
@@ -157,7 +161,7 @@ namespace screenzap
 
                 setClipboard(bmpScreenshot);
 
-                SoundPlayer audio = new SoundPlayer(Properties.Resources.zap);
+                var audio = CreateZapSoundPlayer();
                 audio.Play();
             }
             catch (Exception ex)
@@ -168,18 +172,18 @@ namespace screenzap
             isCapturing = false;
         }
 
-        private void sanitizeClipboardToolStripMenuItem_Click(object sender, EventArgs e)
+        private void sanitizeClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
         {
-            Image imgData = Clipboard.GetImage();
+            Image? imgData = Clipboard.GetImage();
 
             if (imgData == null)
                 return;
-            ImageEditor = new ImageEditor();
-            ImageEditor.LoadImage(imgData);
-            ImageEditor.ShowDialog();
+            imageEditor = new ImageEditor();
+            imageEditor.LoadImage(imgData);
+            imageEditor.ShowDialog();
         }
 
-        private void startWhenLoggedInToolStripMenuItem_CheckStateChanged(object sender, EventArgs e)
+        private void startWhenLoggedInToolStripMenuItem_CheckStateChanged(object? sender, EventArgs e)
         {
             if (startWhenLoggedInToolStripMenuItem.Checked)
                 Util.SetAutoStart(autostartAppName, assemblyLocation);
@@ -190,7 +194,7 @@ namespace screenzap
             }
         }
 
-        private void saveClipboardToolStripMenuItem_Click(object sender, EventArgs e)
+        private void saveClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             var img = Clipboard.GetImage();
             if (img == null) return;
@@ -199,11 +203,14 @@ namespace screenzap
             notifyIcon1.ShowBalloonTip(2000, $"Image saved", $"Saved to {fname}", ToolTipIcon.Info);
 
 
-            var pStartInfo = new ProcessStartInfo();
-            pStartInfo.FileName = "explorer";
-            pStartInfo.Arguments = $"/e, /select,\"{fname}\"";
+            var pStartInfo = new ProcessStartInfo
 
-            EventHandler handler = null;
+            {
+                FileName = "explorer",
+                Arguments = $"/e, /select,\"{fname}\""
+            };
+
+            EventHandler? handler = null;
 
             handler = (s, ev) =>
             {
@@ -214,7 +221,7 @@ namespace screenzap
             notifyIcon1.BalloonTipClicked += handler;
         }
 
-        private void setKeyboardShortcutToolStripMenuItem_Click(object sender, EventArgs e)
+        private void setKeyboardShortcutToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             ShortcutEditor shortcutEditor = new ShortcutEditor(rectCaptureCombo);
             var rslt = shortcutEditor.ShowDialog();
@@ -238,37 +245,86 @@ namespace screenzap
             }
         }
 
-        private void showBalloonMenuItem_Click(object sender, EventArgs e)
+        private void showBalloonMenuItem_Click(object? sender, EventArgs e)
         {
             showBalloonMenuItem.Checked = !showBalloonMenuItem.Checked;
             Properties.Settings.Default.showBalloon = showBalloonMenuItem.Checked;
             Properties.Settings.Default.Save();
         }
 
-        private void setFolderToolStripMenuItem_Click(object sender, EventArgs e)
+        private void setFolderToolStripMenuItem_Click(object? sender, EventArgs e)
         {
-            var b = new FolderBrowserDialog();
-            if (b.ShowDialog() == DialogResult.OK)
+            using var dialog = new FolderBrowserDialog();
+            if (dialog.ShowDialog() == DialogResult.OK)
             {
-                Properties.Settings.Default.captureFolder = b.SelectedPath;
+                Properties.Settings.Default.captureFolder = dialog.SelectedPath;
                 Properties.Settings.Default.Save();
             }
         }
 
-        private void notifyIcon1_DoubleClick(object sender, EventArgs e)
+        private void notifyIcon1_DoubleClick(object? sender, EventArgs e)
         {
-            if (ImageEditor == null || ImageEditor.IsDisposed)
+            if (imageEditor == null || imageEditor.IsDisposed)
             {
-                ImageEditor = new ImageEditor();
+                imageEditor = new ImageEditor();
             }
-            Image imgData = Clipboard.GetImage();
-            ImageEditor.LoadImage(imgData);
-            ImageEditor.Show();
+            Image? imgData = Clipboard.GetImage();
+            if (imgData != null)
+            {
+                imageEditor.LoadImage(imgData);
+            }
+            imageEditor.ShowAndFocus();
         }
 
-        private void quitToolStripMenuItem_Click(object sender, EventArgs e)
+        private void quitToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             Close();
+        }
+
+        private static KeyCombo ParseKeyCombo(string? combo)
+        {
+            if (string.IsNullOrWhiteSpace(combo))
+            {
+                return new KeyCombo(Keys.Control, Keys.PrintScreen);
+            }
+
+            try
+            {
+                return new KeyCombo(combo);
+            }
+            catch (ArgumentException)
+            {
+                return new KeyCombo(Keys.Control, Keys.PrintScreen);
+            }
+        }
+
+        private static Screen ResolveScreen()
+        {
+            var primary = Screen.PrimaryScreen;
+            if (primary != null)
+            {
+                return primary;
+            }
+
+            var screens = Screen.AllScreens;
+            if (screens.Length > 0)
+            {
+                return screens[0];
+            }
+
+            throw new InvalidOperationException("No display devices detected.");
+        }
+
+        private static SoundPlayer CreateZapSoundPlayer()
+        {
+            var data = Properties.Resources.zap;
+            if (data == null || data.Length == 0)
+            {
+                throw new InvalidOperationException("Zap sound resource is missing.");
+            }
+
+            var stream = new MemoryStream(data, writable: false);
+            return new SoundPlayer(stream);
         }
     }
 }

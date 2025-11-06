@@ -40,12 +40,11 @@ public sealed class KeyboardHook : IDisposable
                 ModifierKeys modifier = (ModifierKeys)((int)m.LParam & 0xFFFF);
 
                 // invoke the event to notify the parent.
-                if (KeyPressed != null)
-                    KeyPressed(this, new KeyPressedEventArgs(modifier, key));
+                KeyPressed?.Invoke(this, new KeyPressedEventArgs(modifier, key));
             }
         }
 
-        public event EventHandler<KeyPressedEventArgs> KeyPressed;
+        public event EventHandler<KeyPressedEventArgs>? KeyPressed;
 
         #region IDisposable Members
 
@@ -57,17 +56,13 @@ public sealed class KeyboardHook : IDisposable
         #endregion
     }
 
-    private Window _window = new Window();
+    private readonly Window _window = new Window();
     private int _currentId;
 
     public KeyboardHook()
     {
         // register the event of the inner native window.
-        _window.KeyPressed += delegate (object sender, KeyPressedEventArgs args)
-        {
-            if (KeyPressed != null)
-                KeyPressed(this, args);
-        };
+        _window.KeyPressed += (sender, args) => KeyPressed?.Invoke(this, args);
     }
 
     /// <summary>
@@ -100,7 +95,7 @@ public sealed class KeyboardHook : IDisposable
     /// <summary>
     /// A hot key has been pressed.
     /// </summary>
-    public event EventHandler<KeyPressedEventArgs> KeyPressed;
+    public event EventHandler<KeyPressedEventArgs>? KeyPressed;
 
     #region IDisposable Members
 
@@ -161,12 +156,15 @@ public struct KeyCombo
 {
     public Keys Modifiers;
     public Keys Key;
-    private static KeysConverter converter = new KeysConverter();
+    private static readonly KeysConverter converter = new KeysConverter();
 
-    public KeyCombo(object comboObj) : this()
+    public KeyCombo(object? comboObj) : this()
     {
-        this.Modifiers = (Keys)comboObj & Keys.Modifiers;
-        this.Key = (Keys)comboObj & ~Keys.Modifiers;
+        if (comboObj is not Keys comboKeys)
+            throw new ArgumentException("Invalid key combination.", nameof(comboObj));
+
+        this.Modifiers = comboKeys & Keys.Modifiers;
+        this.Key = comboKeys & ~Keys.Modifiers;
     }
 
     public KeyCombo(Keys modifiers, Keys key)
@@ -177,14 +175,17 @@ public struct KeyCombo
 
     public KeyCombo(string keyCombo)
     {
+        if (keyCombo == null)
+            throw new ArgumentNullException(nameof(keyCombo));
+
         keyCombo = keyCombo.Replace("-", "+");
-        var comboObj = converter.ConvertFromString(keyCombo);
+        var comboObj = converter.ConvertFromString(keyCombo) ?? throw new ArgumentException("Invalid key combination.", nameof(keyCombo));
         this = new KeyCombo(comboObj);
     }
 
     public override string ToString()
     {
-        return converter.ConvertToString(this.Modifiers | this.Key);
+        return converter.ConvertToString(this.Modifiers | this.Key) ?? string.Empty;
     }
 
     internal ModifierKeys getModifierKeys()

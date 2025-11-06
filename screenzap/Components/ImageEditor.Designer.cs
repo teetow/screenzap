@@ -16,6 +16,7 @@
             if (disposing)
             {
                 undoStack?.Dispose();
+                ReleaseCensorPreviewBuffer();
                 components?.Dispose();
             }
             base.Dispose(disposing);
@@ -35,11 +36,26 @@
             this.saveAsToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.cropToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.replaceToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.censorToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.censorToolStrip = new System.Windows.Forms.ToolStrip();
+            this.selectAllToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.selectNoneToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.censorToolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+            this.confidenceToolStripLabel = new System.Windows.Forms.ToolStripLabel();
+            this.confidenceTrackBar = new System.Windows.Forms.TrackBar();
+            this.confidenceToolStripHost = new System.Windows.Forms.ToolStripControlHost(this.confidenceTrackBar);
+            this.confidenceValueLabel = new System.Windows.Forms.ToolStripLabel();
+            this.censorProgressBar = new System.Windows.Forms.ToolStripProgressBar();
+            this.censorToolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+            this.applyCensorToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.cancelCensorToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.canvasPanel = new System.Windows.Forms.Panel();
             this.pictureBox1 = new screenzap.ScalingPictureBox();
             this.mainToolStrip.SuspendLayout();
+            this.censorToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).BeginInit();
             this.SuspendLayout();
             // 
             // mainToolStrip
@@ -50,13 +66,122 @@
             this.saveToolStripButton,
             this.saveAsToolStripButton,
             this.cropToolStripButton,
-            this.replaceToolStripButton});
+            this.replaceToolStripButton,
+            this.censorToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
             this.mainToolStrip.Name = "mainToolStrip";
             this.mainToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
             this.mainToolStrip.Size = new System.Drawing.Size(413, 27);
             this.mainToolStrip.TabIndex = 0;
             this.mainToolStrip.Text = "toolStrip1";
+            // 
+            // censorToolStrip
+            // 
+            this.censorToolStrip.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
+            this.censorToolStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.censorToolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.selectAllToolStripButton,
+            this.selectNoneToolStripButton,
+            this.censorToolStripSeparator1,
+            this.confidenceToolStripLabel,
+            this.confidenceToolStripHost,
+            this.confidenceValueLabel,
+            this.censorProgressBar,
+            this.censorToolStripSeparator2,
+            this.applyCensorToolStripButton,
+            this.cancelCensorToolStripButton});
+            this.censorToolStrip.Location = new System.Drawing.Point(0, 27);
+            this.censorToolStrip.Name = "censorToolStrip";
+            this.censorToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
+            this.censorToolStrip.Size = new System.Drawing.Size(413, 27);
+            this.censorToolStrip.TabIndex = 1;
+            this.censorToolStrip.Text = "censorToolStrip";
+            this.censorToolStrip.Visible = false;
+            // 
+            // selectAllToolStripButton
+            // 
+            this.selectAllToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.selectAllToolStripButton.Name = "selectAllToolStripButton";
+            this.selectAllToolStripButton.Size = new System.Drawing.Size(69, 23);
+            this.selectAllToolStripButton.Text = "Select All";
+            this.selectAllToolStripButton.Click += new System.EventHandler(this.selectAllToolStripButton_Click);
+            // 
+            // selectNoneToolStripButton
+            // 
+            this.selectNoneToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.selectNoneToolStripButton.Name = "selectNoneToolStripButton";
+            this.selectNoneToolStripButton.Size = new System.Drawing.Size(87, 23);
+            this.selectNoneToolStripButton.Text = "Select None";
+            this.selectNoneToolStripButton.Click += new System.EventHandler(this.selectNoneToolStripButton_Click);
+            // 
+            // censorToolStripSeparator1
+            // 
+            this.censorToolStripSeparator1.Name = "censorToolStripSeparator1";
+            this.censorToolStripSeparator1.Size = new System.Drawing.Size(6, 23);
+            // 
+            // confidenceToolStripLabel
+            // 
+            this.confidenceToolStripLabel.Name = "confidenceToolStripLabel";
+            this.confidenceToolStripLabel.Size = new System.Drawing.Size(84, 23);
+            this.confidenceToolStripLabel.Text = "Min Confidence";
+            // 
+            // confidenceTrackBar
+            // 
+            this.confidenceTrackBar.AutoSize = false;
+            this.confidenceTrackBar.LargeChange = 10;
+            this.confidenceTrackBar.Location = new System.Drawing.Point(0, 0);
+            this.confidenceTrackBar.Maximum = 100;
+            this.confidenceTrackBar.Name = "confidenceTrackBar";
+            this.confidenceTrackBar.Size = new System.Drawing.Size(140, 24);
+            this.confidenceTrackBar.TabIndex = 0;
+            this.confidenceTrackBar.TickFrequency = 10;
+            this.confidenceTrackBar.ValueChanged += new System.EventHandler(this.confidenceTrackBar_ValueChanged);
+            // 
+            // confidenceToolStripHost
+            // 
+            this.confidenceToolStripHost.AutoSize = false;
+            this.confidenceToolStripHost.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
+            this.confidenceToolStripHost.Name = "confidenceToolStripHost";
+            this.confidenceToolStripHost.Size = new System.Drawing.Size(146, 23);
+            this.confidenceToolStripHost.Text = "confidenceToolStripHost";
+            // 
+            // confidenceValueLabel
+            // 
+            this.confidenceValueLabel.Name = "confidenceValueLabel";
+            this.confidenceValueLabel.Size = new System.Drawing.Size(29, 23);
+            this.confidenceValueLabel.Text = "0%";
+            // 
+            // censorProgressBar
+            // 
+            this.censorProgressBar.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.censorProgressBar.AutoSize = false;
+            this.censorProgressBar.MarqueeAnimationSpeed = 30;
+            this.censorProgressBar.Name = "censorProgressBar";
+            this.censorProgressBar.Size = new System.Drawing.Size(120, 19);
+            this.censorProgressBar.Style = System.Windows.Forms.ProgressBarStyle.Marquee;
+            this.censorProgressBar.Visible = false;
+            // 
+            // censorToolStripSeparator2
+            // 
+            this.censorToolStripSeparator2.Name = "censorToolStripSeparator2";
+            this.censorToolStripSeparator2.Size = new System.Drawing.Size(6, 23);
+            // 
+            // applyCensorToolStripButton
+            // 
+            this.applyCensorToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.applyCensorToolStripButton.Enabled = false;
+            this.applyCensorToolStripButton.Name = "applyCensorToolStripButton";
+            this.applyCensorToolStripButton.Size = new System.Drawing.Size(44, 23);
+            this.applyCensorToolStripButton.Text = "Apply";
+            this.applyCensorToolStripButton.Click += new System.EventHandler(this.applyCensorToolStripButton_Click);
+            // 
+            // cancelCensorToolStripButton
+            // 
+            this.cancelCensorToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.cancelCensorToolStripButton.Name = "cancelCensorToolStripButton";
+            this.cancelCensorToolStripButton.Size = new System.Drawing.Size(53, 23);
+            this.cancelCensorToolStripButton.Text = "Cancel";
+            this.cancelCensorToolStripButton.Click += new System.EventHandler(this.cancelCensorToolStripButton_Click);
             // 
             // saveToolStripButton
             // 
@@ -98,6 +223,16 @@
             this.replaceToolStripButton.ToolTipText = "Replace with Background (Ctrl+B or Backspace)";
             this.replaceToolStripButton.Click += new System.EventHandler(this.replaceToolStripButton_Click);
             // 
+            // censorToolStripButton
+            // 
+            this.censorToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.censorToolStripButton.Enabled = false;
+            this.censorToolStripButton.Name = "censorToolStripButton";
+            this.censorToolStripButton.Size = new System.Drawing.Size(92, 23);
+            this.censorToolStripButton.Text = "Censor Tool";
+            this.censorToolStripButton.ToolTipText = "Detect text and censor selections (Ctrl+E)";
+            this.censorToolStripButton.Click += new System.EventHandler(this.censorToolStripButton_Click);
+            // 
             // canvasPanel
             // 
             this.canvasPanel.BackColor = System.Drawing.SystemColors.ControlDarkDark;
@@ -106,7 +241,7 @@
             this.canvasPanel.Location = new System.Drawing.Point(0, 27);
             this.canvasPanel.Name = "canvasPanel";
             this.canvasPanel.Size = new System.Drawing.Size(413, 276);
-            this.canvasPanel.TabIndex = 1;
+            this.canvasPanel.TabIndex = 2;
             // 
             // pictureBox1
             // 
@@ -129,6 +264,7 @@
             this.BackColor = System.Drawing.SystemColors.Desktop;
             this.ClientSize = new System.Drawing.Size(413, 303);
             this.Controls.Add(this.canvasPanel);
+            this.Controls.Add(this.censorToolStrip);
             this.Controls.Add(this.mainToolStrip);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MinimumSize = new System.Drawing.Size(320, 200);
@@ -141,9 +277,12 @@
             this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyDown);
             this.KeyUp += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyUp);
             this.canvasPanel.ResumeLayout(false);
+            this.censorToolStrip.ResumeLayout(false);
+            this.censorToolStrip.PerformLayout();
             this.mainToolStrip.ResumeLayout(false);
             this.mainToolStrip.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -154,9 +293,22 @@
         private System.Windows.Forms.ToolStrip mainToolStrip;
         private System.Windows.Forms.ToolStripButton saveToolStripButton;
         private System.Windows.Forms.ToolStripButton saveAsToolStripButton;
-    private System.Windows.Forms.Panel canvasPanel;
-    private ScalingPictureBox pictureBox1;
-    private System.Windows.Forms.ToolStripButton cropToolStripButton;
-    private System.Windows.Forms.ToolStripButton replaceToolStripButton;
+        private System.Windows.Forms.Panel canvasPanel;
+        private ScalingPictureBox pictureBox1;
+        private System.Windows.Forms.ToolStripButton cropToolStripButton;
+        private System.Windows.Forms.ToolStripButton replaceToolStripButton;
+    private System.Windows.Forms.ToolStripButton censorToolStripButton;
+        private System.Windows.Forms.ToolStrip censorToolStrip;
+        private System.Windows.Forms.ToolStripButton selectAllToolStripButton;
+        private System.Windows.Forms.ToolStripButton selectNoneToolStripButton;
+        private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator1;
+        private System.Windows.Forms.ToolStripLabel confidenceToolStripLabel;
+        private System.Windows.Forms.TrackBar confidenceTrackBar;
+        private System.Windows.Forms.ToolStripControlHost confidenceToolStripHost;
+        private System.Windows.Forms.ToolStripLabel confidenceValueLabel;
+        private System.Windows.Forms.ToolStripProgressBar censorProgressBar;
+        private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator2;
+        private System.Windows.Forms.ToolStripButton applyCensorToolStripButton;
+        private System.Windows.Forms.ToolStripButton cancelCensorToolStripButton;
     }
 }

@@ -10,7 +10,7 @@ namespace screenzap
 {
     class SelectionRectForm : Form
     {
-        public SelectionRectForm()
+        public SelectionRectForm(Screen screen)
         {
             this.Cursor = Cursors.Cross;
             this.TopMost = true;
@@ -19,15 +19,17 @@ namespace screenzap
             this.BackColor = Color.Gray;
             this.TransparencyKey = Color.Red;
             this.Opacity = 0.5;
-            this.Width = Screen.PrimaryScreen.WorkingArea.Width;
-            this.Height = Screen.PrimaryScreen.WorkingArea.Height;
+            this.Width = screen.WorkingArea.Width;
+            this.Height = screen.WorkingArea.Height;
             this.WindowState = FormWindowState.Maximized;
             this.DoubleBuffered = true;
         }
     }
     class SelectionRect
     {
-        private Form form;
+        private readonly Form form;
+        private readonly Screen screen;
+        private readonly Font captionFont;
         private Point start;
         private Point end;
 
@@ -57,8 +59,10 @@ namespace screenzap
             {
                 var captureAreaLeft = Math.Max(left, 0);
                 var captureAreaTop = Math.Max(top, 0);
-                var captureAreaWidth = Math.Min(width, Screen.PrimaryScreen.Bounds.Width - left);
-                var captureAreaHeight = Math.Min(height, Screen.PrimaryScreen.Bounds.Height - top);
+                var captureAreaWidth = Math.Min(width, screen.Bounds.Width - captureAreaLeft);
+                var captureAreaHeight = Math.Min(height, screen.Bounds.Height - captureAreaTop);
+                captureAreaWidth = Math.Max(0, captureAreaWidth);
+                captureAreaHeight = Math.Max(0, captureAreaHeight);
                 return new Rectangle(captureAreaLeft, captureAreaTop, captureAreaWidth, captureAreaHeight);
             }
         }
@@ -77,7 +81,9 @@ namespace screenzap
 
         public SelectionRect()
         {
-            form = new SelectionRectForm();
+            screen = ResolveScreen();
+            form = new SelectionRectForm(screen);
+            captionFont = SystemFonts.CaptionFont ?? SystemFonts.DefaultFont;
             form.MouseDown += Form_MouseDown;
             form.MouseMove += Form_MouseMove;
             form.MouseUp += Form_MouseUp;
@@ -86,21 +92,39 @@ namespace screenzap
             form.Paint += Form_Paint;
         }
 
+        private static Screen ResolveScreen()
+        {
+            var primary = Screen.PrimaryScreen;
+            if (primary != null)
+            {
+                return primary;
+            }
+
+            var screens = Screen.AllScreens;
+            if (screens.Length > 0)
+            {
+                return screens[0];
+            }
+
+            throw new InvalidOperationException("No display devices detected.");
+        }
+
         private void drawRect(PaintEventArgs e, Brush brush, Rectangle drawArea)
         {
             e.Graphics.FillRectangle(brush, drawArea.Left, drawArea.Top, drawArea.Width, drawArea.Height);
             e.Graphics.DrawRectangle(Pens.White, drawArea.Left - 1, drawArea.Top - 1, drawArea.Width + 2, drawArea.Height + 2);
             var coords = $"{drawArea.Width} x {drawArea.Height}";
-            var textPos = new PointF(drawArea.Right - e.Graphics.MeasureString(coords, SystemFonts.CaptionFont).Width, drawArea.Bottom + 4);
-            e.Graphics.DrawString(coords, SystemFonts.CaptionFont, Brushes.White, textPos);
+            var textSize = e.Graphics.MeasureString(coords, captionFont);
+            var textPos = new PointF(drawArea.Right - textSize.Width, drawArea.Bottom + 4);
+            e.Graphics.DrawString(coords, captionFont, Brushes.White, textPos);
         }
 
-        private void Form_Paint(object sender, PaintEventArgs e)
+        private void Form_Paint(object? sender, PaintEventArgs e)
         {
             drawRect(e, Brushes.Red, captureArea);
         }
 
-        private void Form_KeyDown(object sender, KeyEventArgs e)
+        private void Form_KeyDown(object? sender, KeyEventArgs e)
         {
             if (e.Modifiers.HasFlag(Keys.Shift))
                 doSquare = true;
@@ -126,7 +150,7 @@ namespace screenzap
             }
         }
 
-        private void Form_KeyUp(object sender, KeyEventArgs e)
+        private void Form_KeyUp(object? sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Space)
                 doPan = false;
@@ -138,12 +162,12 @@ namespace screenzap
                 doSquare = false;
         }
 
-        private Point getDiff(Point oldEnd, Point end)
+        private static Point getDiff(Point oldEnd, Point end)
         {
             return new Point(oldEnd.X - end.X, oldEnd.Y - end.Y);
         }
 
-        private void Form_MouseMove(object sender, MouseEventArgs e)
+        private void Form_MouseMove(object? sender, MouseEventArgs e)
         {
             if (e.Button.HasFlag(MouseButtons.Left))
             {
@@ -175,13 +199,13 @@ namespace screenzap
             form.Invalidate();
         }
 
-        private void Form_MouseDown(object sender, MouseEventArgs e)
+        private void Form_MouseDown(object? sender, MouseEventArgs e)
         {
             start = new Point(e.X, e.Y);
             //Cursor.Hide();
         }
 
-        private void Form_MouseUp(object sender, System.Windows.Forms.MouseEventArgs e)
+        private void Form_MouseUp(object? sender, MouseEventArgs e)
         {
             Cursor.Show();
             form.DialogResult = DialogResult.OK;

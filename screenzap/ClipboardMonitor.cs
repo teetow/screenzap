@@ -12,14 +12,14 @@ namespace screenzap
         /// </summary>
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool AddClipboardFormatListener(IntPtr hwnd);
+    static extern bool AddClipboardFormatListener(IntPtr hwnd);
 
         /// <summary>
         /// Removes the given window from the system-maintained clipboard format listener list.
         /// </summary>
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+    static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
 
         /// <summary>
         /// Sent when the contents of the clipboard have changed.
@@ -45,32 +45,35 @@ namespace screenzap
 
                 if (m.Msg == WM_CLIPBOARDUPDATE)
                 {
-                    IDataObject iData = Clipboard.GetDataObject();      // Clipboard's data.
+                    IDataObject? iData = Clipboard.GetDataObject();
+                    if (iData == null)
+                    {
+                        return;
+                    }
 
                     /* Depending on the clipboard's current data format we can process the data differently. 
                      * Feel free to add more checks if you want to process more formats. */
-                    if (iData.GetDataPresent(DataFormats.Text))
+                    if (iData.GetDataPresent(DataFormats.Text) && iData.GetData(DataFormats.Text) is string text)
                     {
-                        string text = (string)iData.GetData(DataFormats.Text);
-                        OnUpdateText(this, text);
+                        OnUpdateText?.Invoke(this, text);
                     }
-                    else if (iData.GetDataPresent(DataFormats.Bitmap))
+                    else if (iData.GetDataPresent(DataFormats.Bitmap) && iData.GetData(DataFormats.Bitmap) is Bitmap image)
                     {
-                        Bitmap image = (Bitmap)iData.GetData(DataFormats.Bitmap);
-                        OnUpdateImage(this, image);
+                        OnUpdateImage?.Invoke(this, image);
                     }
                 }
             }
-            public event EventHandler<string> OnUpdateText;
-            public event EventHandler<Bitmap> OnUpdateImage;
-                public void Dispose()
+            public event EventHandler<string>? OnUpdateText;
+            public event EventHandler<Bitmap>? OnUpdateImage;
+
+            public void Dispose()
             {
                 RemoveClipboardFormatListener(this.Handle);
                 this.DestroyHandle();
             }
         }
 
-        private Window _window;
+        private readonly Window _window;
         public ClipboardMonitor()
         {
             _window = new Window();
@@ -80,20 +83,20 @@ namespace screenzap
 
         public bool isListening = false;
 
-        private void _window_OnUpdateText(object sender, string e)
+        private void _window_OnUpdateText(object? sender, string e)
         {
             if (isListening)
-                OnUpdateText?.Invoke(sender, e);
+        OnUpdateText?.Invoke(sender, e);
         }
 
-        private void _window_OnUpdateImage(object sender, Bitmap e)
+        private void _window_OnUpdateImage(object? sender, Bitmap e)
         {
             if (isListening)
                 OnUpdateImage?.Invoke(sender, e);
         }
 
-        public event EventHandler<string> OnUpdateText;
-        public event EventHandler<Bitmap> OnUpdateImage;
+    public event EventHandler<string>? OnUpdateText;
+    public event EventHandler<Bitmap>? OnUpdateImage;
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
 

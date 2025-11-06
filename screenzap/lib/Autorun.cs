@@ -1,4 +1,5 @@
-﻿using Microsoft.Win32;
+﻿using System;
+using Microsoft.Win32;
 
 /// <summary>
 /// Utility.
@@ -14,7 +15,15 @@ public class Util
     /// <param name="assemblyLocation">Assembly location (e.g. Assembly.GetExecutingAssembly().Location)</param>
     public static void SetAutoStart(string keyName, string assemblyLocation)
     {
-        RegistryKey key = Registry.CurrentUser.CreateSubKey(RUN_LOCATION);
+        ArgumentException.ThrowIfNullOrEmpty(keyName);
+        ArgumentException.ThrowIfNullOrEmpty(assemblyLocation);
+
+        using RegistryKey? key = Registry.CurrentUser.CreateSubKey(RUN_LOCATION);
+        if (key == null)
+        {
+            throw new InvalidOperationException("Failed to open the registry Run key for writing.");
+        }
+
         key.SetValue(keyName, assemblyLocation);
     }
 
@@ -25,15 +34,17 @@ public class Util
     /// <param name="assemblyLocation">Assembly location (e.g. Assembly.GetExecutingAssembly().Location)</param>
     public static bool IsAutoStartEnabled(string keyName, string assemblyLocation)
     {
-        RegistryKey key = Registry.CurrentUser.OpenSubKey(RUN_LOCATION);
+        ArgumentException.ThrowIfNullOrEmpty(keyName);
+        ArgumentException.ThrowIfNullOrEmpty(assemblyLocation);
+
+        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RUN_LOCATION, writable: false);
         if (key == null)
+        {
             return false;
+        }
 
-        string value = (string)key.GetValue(keyName);
-        if (value == null)
-            return false;
-
-        return (value == assemblyLocation);
+        var value = key.GetValue(keyName) as string;
+        return string.Equals(value, assemblyLocation, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -42,7 +53,14 @@ public class Util
     /// <param name="keyName">Registry Key Name</param>
     public static void UnSetAutoStart(string keyName)
     {
-        RegistryKey key = Registry.CurrentUser.CreateSubKey(RUN_LOCATION);
-        key.DeleteValue(keyName);
+        ArgumentException.ThrowIfNullOrEmpty(keyName);
+
+        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RUN_LOCATION, writable: true);
+        if (key == null)
+        {
+            return;
+        }
+
+        key.DeleteValue(keyName, throwOnMissingValue: false);
     }
 }

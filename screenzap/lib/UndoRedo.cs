@@ -6,7 +6,7 @@ namespace screenzap
 {
     internal sealed class ImageUndoStep : IDisposable
     {
-        public ImageUndoStep(Rectangle region, Bitmap before, Bitmap after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage)
+        public ImageUndoStep(Rectangle region, Bitmap? before, Bitmap? after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage)
         {
             Region = region;
             Before = before;
@@ -17,8 +17,8 @@ namespace screenzap
         }
 
         public Rectangle Region { get; }
-        public Bitmap Before { get; }
-        public Bitmap After { get; }
+        public Bitmap? Before { get; }
+        public Bitmap? After { get; }
         public Rectangle SelectionBefore { get; }
         public Rectangle SelectionAfter { get; }
         public bool ReplacesImage { get; }
@@ -49,7 +49,7 @@ namespace screenzap
             _currentIndex = -1;
         }
 
-        public void Push(ImageUndoStep step)
+        public void Push(ImageUndoStep? step)
         {
             if (step == null)
             {
@@ -70,7 +70,7 @@ namespace screenzap
             _currentIndex = _steps.Count - 1;
         }
 
-        public ImageUndoStep Undo()
+        public ImageUndoStep? Undo()
         {
             if (!CanUndo)
             {
@@ -82,7 +82,7 @@ namespace screenzap
             return step;
         }
 
-        public ImageUndoStep Redo()
+        public ImageUndoStep? Redo()
         {
             if (!CanRedo)
             {
