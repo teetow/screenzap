@@ -168,6 +168,12 @@ namespace screenzap
     private AnnotationShape? selectedAnnotation;
     private AnnotationHandle activeAnnotationHandle = AnnotationHandle.None;
     private Point annotationDragOriginPixel;
+    private Point annotationDraftAnchorPixel;
+    private bool annotationTranslateModeActive;
+    private Point annotationTranslationOriginPixel;
+    private Point annotationTranslationStartSnapshot;
+    private Point annotationTranslationEndSnapshot;
+    private Point annotationTranslationAnchorSnapshot;
     private List<AnnotationShape>? annotationSnapshotBeforeEdit;
     private bool annotationChangedDuringDrag;
 
@@ -422,6 +428,8 @@ namespace screenzap
             annotationChangedDuringDrag = false;
             isDrawingAnnotation = false;
             activeDrawingTool = DrawingTool.None;
+            annotationTranslateModeActive = false;
+            annotationDraftAnchorPixel = Point.Empty;
             UpdateDrawingToolButtons();
 
             var replacementImage = new Bitmap(imgData);
@@ -618,6 +626,8 @@ namespace screenzap
             activeAnnotationHandle = AnnotationHandle.None;
             annotationSnapshotBeforeEdit = null;
             annotationChangedDuringDrag = false;
+            annotationTranslateModeActive = false;
+            annotationDraftAnchorPixel = Point.Empty;
             pictureBox1?.Invalidate();
         }
 
@@ -832,16 +842,19 @@ namespace screenzap
             {
                 annotationSnapshotBeforeEdit = CloneAnnotations();
                 var annotationType = activeDrawingTool == DrawingTool.Arrow ? AnnotationType.Arrow : AnnotationType.Rectangle;
+                var clampedPoint = ClampPointToImage(pixelPoint);
                 workingAnnotation = new AnnotationShape
                 {
                     Type = annotationType,
-                    Start = ClampPointToImage(pixelPoint),
-                    End = ClampPointToImage(pixelPoint),
+                    Start = clampedPoint,
+                    End = clampedPoint,
                     Selected = true
                 };
                 annotationShapes.Add(workingAnnotation);
                 SelectAnnotation(workingAnnotation);
                 isDrawingAnnotation = true;
+                annotationDraftAnchorPixel = clampedPoint;
+                annotationTranslateModeActive = false;
                 annotationChangedDuringDrag = false;
                 return true;
             }
@@ -876,11 +889,25 @@ namespace screenzap
             {
                 if (isDrawingAnnotation && workingAnnotation != null)
                 {
-                    workingAnnotation.End = ClampPointToImage(pixelPoint);
-                    if (workingAnnotation.Type == AnnotationType.Rectangle)
+                    if (annotationTranslateModeActive)
                     {
-                        NormalizeRectangleAnnotation(workingAnnotation);
+                        ApplyAnnotationTranslation(pixelPoint);
                     }
+                    else
+                    {
+                        var targetPoint = pixelPoint;
+                        if (workingAnnotation.Type == AnnotationType.Rectangle && ModifierKeys.HasFlag(Keys.Shift))
+                        {
+                            targetPoint = ConstrainPointToSquare(annotationDraftAnchorPixel, pixelPoint);
+                        }
+
+                        workingAnnotation.End = ClampPointToImage(targetPoint);
+                        if (workingAnnotation.Type == AnnotationType.Rectangle)
+                        {
+                            NormalizeRectangleAnnotation(workingAnnotation);
+                        }
+                    }
+
                     annotationChangedDuringDrag = true;
                     pictureBox1.Invalidate();
                     return true;
@@ -1041,6 +1068,8 @@ namespace screenzap
             workingAnnotation = null;
             annotationSnapshotBeforeEdit = null;
             annotationChangedDuringDrag = false;
+            annotationTranslateModeActive = false;
+            annotationDraftAnchorPixel = Point.Empty;
             pictureBox1.Invalidate();
         }
 
@@ -1054,6 +1083,133 @@ namespace screenzap
             var rect = RectangleExt.fromPoints(annotation.Start, annotation.End);
             annotation.Start = new Point(rect.Left, rect.Top);
             annotation.End = new Point(rect.Right, rect.Bottom);
+        }
+
+        private bool BeginAnnotationTranslation()
+        {
+            if (!isDrawingAnnotation || workingAnnotation == null || annotationTranslateModeActive)
+            {
+                return false;
+            }
+
+            if ((Control.MouseButtons & MouseButtons.Left) == 0)
+            {
+                return false;
+            }
+
+            annotationTranslateModeActive = true;
+            annotationTranslationOriginPixel = GetCursorPixelPosition();
+            annotationTranslationStartSnapshot = workingAnnotation.Start;
+            annotationTranslationEndSnapshot = workingAnnotation.End;
+            annotationTranslationAnchorSnapshot = annotationDraftAnchorPixel;
+            return true;
+        }
+
+        private void ApplyAnnotationTranslation(Point currentPixel)
+        {
+            if (!annotationTranslateModeActive || workingAnnotation == null)
+            {
+                return;
+            }
+
+            var delta = currentPixel.Subtract(annotationTranslationOriginPixel);
+            if (delta.X == 0 && delta.Y == 0)
+            {
+                return;
+            }
+
+            var candidateStart = annotationTranslationStartSnapshot.Add(delta);
+            var candidateEnd = annotationTranslationEndSnapshot.Add(delta);
+            var candidateAnchor = annotationTranslationAnchorSnapshot.Add(delta);
+
+            var clampOffset = CalculateShapeClampOffset(candidateStart, candidateEnd);
+            if (clampOffset != Point.Empty)
+            {
+                candidateStart = candidateStart.Add(clampOffset);
+                candidateEnd = candidateEnd.Add(clampOffset);
+                candidateAnchor = candidateAnchor.Add(clampOffset);
+            }
+
+            workingAnnotation.Start = candidateStart;
+            workingAnnotation.End = candidateEnd;
+            annotationDraftAnchorPixel = candidateAnchor;
+
+            if (workingAnnotation.Type == AnnotationType.Rectangle)
+            {
+                NormalizeRectangleAnnotation(workingAnnotation);
+            }
+        }
+
+        private Point CalculateShapeClampOffset(Point start, Point end)
+        {
+            if (pictureBox1?.Image == null)
+            {
+                return Point.Empty;
+            }
+
+            var bounds = GetImageBounds();
+            int minX = Math.Min(start.X, end.X);
+            int maxX = Math.Max(start.X, end.X);
+            int minY = Math.Min(start.Y, end.Y);
+            int maxY = Math.Max(start.Y, end.Y);
+
+            int offsetX = 0;
+            if (minX < bounds.Left)
+            {
+                offsetX = bounds.Left - minX;
+            }
+            else if (maxX > bounds.Right)
+            {
+                offsetX = bounds.Right - maxX;
+            }
+
+            int offsetY = 0;
+            if (minY < bounds.Top)
+            {
+                offsetY = bounds.Top - minY;
+            }
+            else if (maxY > bounds.Bottom)
+            {
+                offsetY = bounds.Bottom - maxY;
+            }
+
+            if (offsetX == 0 && offsetY == 0)
+            {
+                return Point.Empty;
+            }
+
+            return new Point(offsetX, offsetY);
+        }
+
+        private static Point ConstrainPointToSquare(Point anchor, Point current)
+        {
+            int dx = current.X - anchor.X;
+            int dy = current.Y - anchor.Y;
+
+            if (dx == 0 && dy == 0)
+            {
+                return current;
+            }
+
+            int absDx = Math.Abs(dx);
+            int absDy = Math.Abs(dy);
+            int size = Math.Max(absDx, absDy);
+
+            int signX = dx == 0 ? (dy >= 0 ? 1 : -1) : Math.Sign(dx);
+            int signY = dy == 0 ? (dx >= 0 ? 1 : -1) : Math.Sign(dy);
+
+            return new Point(anchor.X + size * signX, anchor.Y + size * signY);
+        }
+
+        private Point GetCursorPixelPosition()
+        {
+            if (pictureBox1 == null)
+            {
+                return Point.Empty;
+            }
+
+            var cursorClient = pictureBox1.PointToClient(Cursor.Position);
+            return FormCoordToPixel(cursorClient);
         }
 
         private Point ClampPointToImage(Point point)
@@ -2936,10 +3092,23 @@ namespace screenzap
                 return;
             }
 
-            if (isDrawingRubberBand && e.KeyCode == Keys.Space)
+            if (e.KeyCode == Keys.Space)
             {
-                isMovingSelection = true;
-                MoveInPixel = MouseOutPixel;
+                if (isDrawingAnnotation && workingAnnotation != null)
+                {
+                    if (BeginAnnotationTranslation())
+                    {
+                        e.SuppressKeyPress = true;
+                        e.Handled = true;
+                    }
+                }
+                else if (isDrawingRubberBand)
+                {
+                    isMovingSelection = true;
+                    MoveInPixel = MouseOutPixel;
+                }
+
+                return;
             }
 
             else if (e.KeyCode == Keys.C && e.Control == true)
@@ -3037,6 +3206,7 @@ namespace screenzap
             if (e.KeyCode == Keys.Space)
             {
                 isMovingSelection = false;
+                annotationTranslateModeActive = false;
             }
         }
 
