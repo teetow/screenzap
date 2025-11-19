@@ -24,7 +24,6 @@ namespace screenzap
         private KeyCombo seqCaptureCombo;
         private bool isCapturing;
         private ImageEditor? imageEditor;
-        private static bool zapResourceUnavailable;
         private DateTime lastErrorNotificationUtc;
         private readonly List<int> rectCaptureHotkeyIds = new();
         private readonly List<int> seqCaptureHotkeyIds = new();
@@ -282,9 +281,7 @@ namespace screenzap
             Bitmap screenshot = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
             if (!TryBitBltCapture(bounds, screenshot))
             {
-                Logger.Log("BitBlt capture unavailable; falling back to CopyFromScreen.");
-                using Graphics gfxScreenshot = Graphics.FromImage(screenshot);
-                gfxScreenshot.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size, CopyPixelOperation.SourceCopy);
+                throw new InvalidOperationException("BitBlt capture failed.");
             }
 
             return screenshot;
@@ -434,32 +431,13 @@ namespace screenzap
 
         private static SoundPlayer CreateZapSoundPlayer()
         {
-            if (!zapResourceUnavailable)
+            var soundPath = Path.Combine(AppContext.BaseDirectory, "res", "zap.wav");
+            if (!File.Exists(soundPath))
             {
-                try
-                {
-                    var data = Properties.Resources.zap;
-                    if (data != null && data.Length > 0)
-                    {
-                        var stream = new MemoryStream(data, writable: false);
-                        return new SoundPlayer(stream);
-                    }
-                    zapResourceUnavailable = true;
-                }
-                catch (Exception ex) when (ex is MissingMethodException or TypeInitializationException)
-                {
-                    // Happens on some runtimes where byte[] deserialization from resx is unsupported.
-                    zapResourceUnavailable = true;
-                }
+                throw new FileNotFoundException("Zap sound file is missing.", soundPath);
             }
 
-            var fallbackPath = Path.Combine(AppContext.BaseDirectory, "res", "zap.wav");
-            if (!File.Exists(fallbackPath))
-            {
-                throw new InvalidOperationException("Zap sound resource is missing.");
-            }
-
-            return new SoundPlayer(fallbackPath);
+            return new SoundPlayer(soundPath);
         }
     }
 }
