@@ -902,10 +902,6 @@ namespace screenzap
                         }
 
                         workingAnnotation.End = ClampPointToImage(targetPoint);
-                        if (workingAnnotation.Type == AnnotationType.Rectangle)
-                        {
-                            NormalizeRectangleAnnotation(workingAnnotation);
-                        }
                     }
 
                     annotationChangedDuringDrag = true;
@@ -1134,10 +1130,6 @@ namespace screenzap
             workingAnnotation.End = candidateEnd;
             annotationDraftAnchorPixel = candidateAnchor;
 
-            if (workingAnnotation.Type == AnnotationType.Rectangle)
-            {
-                NormalizeRectangleAnnotation(workingAnnotation);
-            }
         }
 
         private Point CalculateShapeClampOffset(Point start, Point end)
