@@ -6,25 +6,27 @@ namespace screenzap
 {
     class OverlayForm : Form
     {
-        public OverlayForm(Screen screen)
+        public OverlayForm(Rectangle bounds)
         {
             this.Cursor = Cursors.Cross;
             this.TopMost = true;
             this.ShowInTaskbar = false;
             this.FormBorderStyle = FormBorderStyle.None;
-            this.BackColor = Color.Gray;
-            this.TransparencyKey = Color.Red;
-            this.Opacity = 0.5;
-            this.Width = screen.WorkingArea.Width;
-            this.Height = screen.WorkingArea.Height;
-            this.WindowState = FormWindowState.Maximized;
+            this.BackColor = Color.Black;
+            this.StartPosition = FormStartPosition.Manual;
+            this.Bounds = bounds;
+            this.ClientSize = new Size(bounds.Width, bounds.Height);
+            this.Opacity = 1.0;
+            this.WindowState = FormWindowState.Normal;
             this.DoubleBuffered = true;
+            this.KeyPreview = true;
         }
     }
     class Overlay
     {
         private readonly Form form;
-        private readonly Screen screen;
+        private readonly Bitmap background;
+        private readonly Size canvasSize;
         private readonly Font captionFont;
         private Point start;
         private Point end;
@@ -55,8 +57,8 @@ namespace screenzap
             {
                 var captureAreaLeft = Math.Max(left, 0);
                 var captureAreaTop = Math.Max(top, 0);
-                var captureAreaWidth = Math.Min(width, screen.Bounds.Width - captureAreaLeft);
-                var captureAreaHeight = Math.Min(height, screen.Bounds.Height - captureAreaTop);
+                var captureAreaWidth = Math.Min(width, canvasSize.Width - captureAreaLeft);
+                var captureAreaHeight = Math.Min(height, canvasSize.Height - captureAreaTop);
                 captureAreaWidth = Math.Max(0, captureAreaWidth);
                 captureAreaHeight = Math.Max(0, captureAreaHeight);
                 return new Rectangle(captureAreaLeft, captureAreaTop, captureAreaWidth, captureAreaHeight);
@@ -70,16 +72,24 @@ namespace screenzap
 
         public Rectangle CaptureRect()
         {
-            var rslt = form.ShowDialog();
-            if (rslt == DialogResult.OK)
-                return captureArea;
-            return Rectangle.Empty;
+            try
+            {
+                var rslt = form.ShowDialog();
+                if (rslt == DialogResult.OK)
+                    return captureArea;
+                return Rectangle.Empty;
+            }
+            finally
+            {
+                form.Dispose();
+            }
         }
 
-        public Overlay()
+        public Overlay(Screen screen, Bitmap frozenBackground)
         {
-            screen = ResolveScreen();
-            form = new OverlayForm(screen);
+            background = frozenBackground ?? throw new ArgumentNullException(nameof(frozenBackground));
+            form = new OverlayForm(screen.Bounds);
+            canvasSize = frozenBackground.Size;
             captionFont = SystemFonts.CaptionFont ?? SystemFonts.DefaultFont;
             form.MouseDown += Form_MouseDown;
             form.MouseMove += Form_MouseMove;
@@ -89,27 +99,10 @@ namespace screenzap
             form.Paint += Form_Paint;
         }
 
-        private static Screen ResolveScreen()
+        private void drawRect(PaintEventArgs e, Rectangle drawArea)
         {
-            var primary = Screen.PrimaryScreen;
-            if (primary != null)
-            {
-                return primary;
-            }
-
-            var screens = Screen.AllScreens;
-            if (screens.Length > 0)
-            {
-                return screens[0];
-            }
-
-            throw new InvalidOperationException("No display devices detected.");
-        }
-
-        private void drawRect(PaintEventArgs e, Brush brush, Rectangle drawArea)
-        {
-            e.Graphics.FillRectangle(brush, drawArea.Left, drawArea.Top, drawArea.Width, drawArea.Height);
-            e.Graphics.DrawRectangle(Pens.White, drawArea.Left - 1, drawArea.Top - 1, drawArea.Width + 2, drawArea.Height + 2);
+            using var borderPen = new Pen(Color.DeepSkyBlue, 2f);
+            e.Graphics.DrawRectangle(borderPen, drawArea.Left - 1, drawArea.Top - 1, drawArea.Width + 2, drawArea.Height + 2);
             var coords = $"{drawArea.Width} x {drawArea.Height}";
             var textSize = e.Graphics.MeasureString(coords, captionFont);
             var textPos = new PointF(drawArea.Right - textSize.Width, drawArea.Bottom + 4);
@@ -118,7 +111,27 @@ namespace screenzap
 
         private void Form_Paint(object? sender, PaintEventArgs e)
         {
-            drawRect(e, Brushes.Red, captureArea);
+            e.Graphics.DrawImageUnscaled(background, Point.Empty);
+
+            var fullRect = new Rectangle(Point.Empty, canvasSize);
+            using (var dimBrush = new SolidBrush(Color.FromArgb(120, Color.Black)))
+            {
+                if (captureArea.Width > 0 && captureArea.Height > 0)
+                {
+                    using Region dimRegion = new Region(fullRect);
+                    dimRegion.Exclude(captureArea);
+                    e.Graphics.FillRegion(dimBrush, dimRegion);
+                }
+                else
+                {
+                    e.Graphics.FillRectangle(dimBrush, fullRect);
+                }
+            }
+
+            if (captureArea.Width > 0 && captureArea.Height > 0)
+            {
+                drawRect(e, captureArea);
+            }
         }
 
         private void Form_KeyDown(object? sender, KeyEventArgs e)
@@ -129,15 +142,17 @@ namespace screenzap
             if (e.KeyCode == Keys.Space)
             {
                 doPan = true;
-                if (Cursor.Position != end)
-                    Cursor.Position = end;
+                var screenPoint = form.PointToScreen(end);
+                if (Cursor.Position != screenPoint)
+                    Cursor.Position = screenPoint;
             }
 
             if (e.Modifiers.HasFlag(Keys.Alt))
             {
                 doCenter = true;
-                if (Cursor.Position != end)
-                    Cursor.Position = end;
+                var screenPoint = form.PointToScreen(end);
+                if (Cursor.Position != screenPoint)
+                    Cursor.Position = screenPoint;
             }
 
             if (e.KeyCode == Keys.Escape)
@@ -221,6 +236,7 @@ namespace screenzap
         private void Form_MouseDown(object? sender, MouseEventArgs e)
         {
             start = new Point(e.X, e.Y);
+            end = start;
             //Cursor.Hide();
         }
 

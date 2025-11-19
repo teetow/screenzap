@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -58,6 +59,7 @@ public sealed class KeyboardHook : IDisposable
 
     private readonly Window _window = new Window();
     private int _currentId;
+    private readonly HashSet<int> _registeredIds = new HashSet<int>();
 
     public KeyboardHook()
     {
@@ -70,7 +72,7 @@ public sealed class KeyboardHook : IDisposable
     /// </summary>
     /// <param name="modifiers">The modifiers that are associated with the hot key.</param>
     /// <param name="key">The key itself that is associated with the hot key.</param>
-    public void RegisterHotKey(ModifierKeys modifiers, Keys key)
+    public int RegisterHotKey(ModifierKeys modifiers, Keys key)
     {
         // increment the counter.
         _currentId = _currentId + 1;
@@ -78,17 +80,25 @@ public sealed class KeyboardHook : IDisposable
         // register the hot key.
         if (!RegisterHotKey(_window.Handle, _currentId, (uint)modifiers, (uint)key))
             throw new InvalidOperationException("Couldn’t register the hot key.");
+
+        _registeredIds.Add(_currentId);
+        return _currentId;
     }
 
     public void UnregisterHotkey(int id)
     {
+        if (!_registeredIds.Contains(id))
+        {
+            return;
+        }
+
         if (!UnregisterHotKey(_window.Handle, id))
         {
             throw new InvalidOperationException("Couldn't unregister the hot key.");
         }
         else
         {
-            _currentId--;
+            _registeredIds.Remove(id);
         }
     }
 
@@ -102,9 +112,16 @@ public sealed class KeyboardHook : IDisposable
     public void Dispose()
     {
         // unregister all the registered hot keys.
-        for (int i = _currentId; i > 0; i--)
+        foreach (var id in _registeredIds.ToArray())
         {
-            UnregisterHotKey(_window.Handle, i);
+            try
+            {
+                UnregisterHotkey(id);
+            }
+            catch
+            {
+                // ignore disposal errors
+            }
         }
 
         // dispose the inner native window.

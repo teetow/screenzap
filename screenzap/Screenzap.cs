@@ -1,12 +1,16 @@
 ﻿using screenzap.lib;
 using System;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Media;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using HotkeyModifierKeys = global::ModifierKeys;
 
 namespace screenzap
 {
@@ -20,7 +24,10 @@ namespace screenzap
         private KeyCombo seqCaptureCombo;
         private bool isCapturing;
         private ImageEditor? imageEditor;
-    private static bool zapResourceUnavailable;
+        private static bool zapResourceUnavailable;
+        private DateTime lastErrorNotificationUtc;
+        private readonly List<int> rectCaptureHotkeyIds = new();
+        private readonly List<int> seqCaptureHotkeyIds = new();
 
         public Screenzap()
         {
@@ -38,24 +45,10 @@ namespace screenzap
             }
 
             rectCaptureHook.KeyPressed += new EventHandler<KeyPressedEventArgs>(DoCapture);
-            try
-            {
-                rectCaptureHook.RegisterHotKey(rectCaptureCombo.getModifierKeys(), rectCaptureCombo.Key);
-            }
-            catch
-            {
-                MessageBox.Show("Can't register the windowed capture hotkey. Please pick a better one.");
-            }
+            RegisterRectCaptureHotkeys();
 
             seqCaptureHook.KeyPressed += new EventHandler<KeyPressedEventArgs>(DoInstantCapture);
-            try
-            {
-                seqCaptureHook.RegisterHotKey(seqCaptureCombo.getModifierKeys(), seqCaptureCombo.Key);
-            }
-            catch
-            {
-                MessageBox.Show("Can't register the instant capture hotkey. Please pick a better one.");
-            }
+            RegisterSeqCaptureHotkeys();
 
             imageEditor = new ImageEditor();
         }
@@ -98,7 +91,9 @@ namespace screenzap
             isCapturing = true;
             try
             {
-                Overlay ovl = new Overlay();
+                var cursorScreen = Screen.FromPoint(Cursor.Position);
+                using Bitmap frozenScreen = CaptureScreenBitmap(cursorScreen);
+                Overlay ovl = new Overlay(cursorScreen, frozenScreen);
                 var captureRect = ovl.CaptureRect();
 
                 if (captureRect.Width <= 0 || captureRect.Height <= 0)
@@ -107,11 +102,7 @@ namespace screenzap
                     return;
                 }
 
-                Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
-                using (Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot))
-                {
-                    gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
-                }
+                Bitmap bmpScreenshot = frozenScreen.Clone(captureRect, PixelFormat.Format32bppArgb);
 
                 setClipboard(bmpScreenshot);
 
@@ -122,6 +113,8 @@ namespace screenzap
             catch (Exception ex)
             {
                 Console.Write(ex.ToString());
+                Logger.Log($"DoCapture failed: {ex}");
+                NotifyCaptureFailure("Screen capture failed", ex.Message);
             }
 
             isCapturing = false;
@@ -168,6 +161,8 @@ namespace screenzap
             catch (Exception ex)
             {
                 Console.Write(ex.ToString());
+                Logger.Log($"DoInstantCapture failed: {ex}");
+                NotifyCaptureFailure("Instant capture failed", ex.Message);
             }
 
             isCapturing = false;
@@ -231,8 +226,7 @@ namespace screenzap
                 rectCaptureCombo = shortcutEditor.currentCombo;
                 try
                 {
-                    rectCaptureHook.UnregisterHotkey(1);
-                    rectCaptureHook.RegisterHotKey(rectCaptureCombo.getModifierKeys(), rectCaptureCombo.Key);
+                    RegisterRectCaptureHotkeys();
                 }
                 catch (Exception ex)
                 {
@@ -280,6 +274,128 @@ namespace screenzap
         private void quitToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             Close();
+        }
+
+        private static Bitmap CaptureScreenBitmap(Screen screen)
+        {
+            var bounds = screen.Bounds;
+            Bitmap screenshot = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
+            if (!TryBitBltCapture(bounds, screenshot))
+            {
+                Logger.Log("BitBlt capture unavailable; falling back to CopyFromScreen.");
+                using Graphics gfxScreenshot = Graphics.FromImage(screenshot);
+                gfxScreenshot.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size, CopyPixelOperation.SourceCopy);
+            }
+
+            return screenshot;
+        }
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        private static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight,
+            IntPtr hdcSrc, int nXSrc, int nYSrc, CopyPixelOperation dwRop);
+
+        private static bool TryBitBltCapture(Rectangle bounds, Bitmap screenshot)
+        {
+            try
+            {
+                using Graphics gDest = Graphics.FromImage(screenshot);
+                using Graphics gSrc = Graphics.FromHwnd(IntPtr.Zero);
+                IntPtr hdcDest = gDest.GetHdc();
+                IntPtr hdcSrc = gSrc.GetHdc();
+                try
+                {
+                    var op = CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt;
+                    if (BitBlt(hdcDest, 0, 0, bounds.Width, bounds.Height, hdcSrc, bounds.Left, bounds.Top, op))
+                    {
+                        return true;
+                    }
+                }
+                finally
+                {
+                    gSrc.ReleaseHdc(hdcSrc);
+                    gDest.ReleaseHdc(hdcDest);
+                }
+            }
+            catch (Exception ex) when (ex is ExternalException or Win32Exception or InvalidOperationException)
+            {
+                Logger.Log($"BitBlt capture failed: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        private void NotifyCaptureFailure(string title, string message)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - lastErrorNotificationUtc).TotalSeconds < 5)
+            {
+                return;
+            }
+
+            lastErrorNotificationUtc = now;
+            Logger.Log($"Capture failure: {title} - {message}");
+            notifyIcon1.ShowBalloonTip(3000, title, message, ToolTipIcon.Error);
+        }
+
+        private void RegisterRectCaptureHotkeys()
+        {
+            RegisterHotkeys(rectCaptureHook, rectCaptureCombo, rectCaptureHotkeyIds, "Can't register the windowed capture hotkey. Please pick a better one.");
+        }
+
+        private void RegisterSeqCaptureHotkeys()
+        {
+            RegisterHotkeys(seqCaptureHook, seqCaptureCombo, seqCaptureHotkeyIds, "Can't register the instant capture hotkey. Please pick a better one.");
+        }
+
+        private static void RegisterHotkeys(KeyboardHook hook, KeyCombo combo, List<int> storage, string failureMessage)
+        {
+            ClearHotkeys(hook, storage);
+            HotkeyModifierKeys baseModifiers = combo.getModifierKeys();
+
+            foreach (var modifiers in EnumerateModifierVariants(baseModifiers))
+            {
+                try
+                {
+                    var id = hook.RegisterHotKey(modifiers, combo.Key);
+                    storage.Add(id);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to register hotkey {modifiers}+{combo.Key}: {ex.Message}");
+                    if (modifiers == baseModifiers)
+                    {
+                        MessageBox.Show(failureMessage);
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<HotkeyModifierKeys> EnumerateModifierVariants(HotkeyModifierKeys baseModifiers)
+        {
+            yield return baseModifiers;
+
+            if (!baseModifiers.HasFlag(HotkeyModifierKeys.Alt))
+            {
+                yield return baseModifiers | HotkeyModifierKeys.Alt;
+            }
+        }
+
+        private static void ClearHotkeys(KeyboardHook hook, List<int> storage)
+        {
+            foreach (var id in storage)
+            {
+                try
+                {
+                    hook.UnregisterHotkey(id);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to unregister hotkey {id}: {ex.Message}");
+                }
+            }
+
+            storage.Clear();
         }
 
         private static KeyCombo ParseKeyCombo(string? combo)
