@@ -38,6 +38,8 @@
             this.replaceToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.censorToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.copyClipboardToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.arrowToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.rectangleToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.censorToolStrip = new System.Windows.Forms.ToolStrip();
             this.selectAllToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.selectNoneToolStripButton = new System.Windows.Forms.ToolStripButton();
@@ -68,6 +70,8 @@
             this.saveAsToolStripButton,
             this.cropToolStripButton,
             this.replaceToolStripButton,
+            this.arrowToolStripButton,
+            this.rectangleToolStripButton,
             this.censorToolStripButton,
             this.copyClipboardToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
@@ -225,6 +229,26 @@
             this.replaceToolStripButton.ToolTipText = "Replace with Background (Ctrl+B or Backspace)";
             this.replaceToolStripButton.Click += new System.EventHandler(this.replaceToolStripButton_Click);
             // 
+            // arrowToolStripButton
+            // 
+            this.arrowToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.arrowToolStripButton.Enabled = false;
+            this.arrowToolStripButton.Name = "arrowToolStripButton";
+            this.arrowToolStripButton.Size = new System.Drawing.Size(49, 23);
+            this.arrowToolStripButton.Text = "Arrow";
+            this.arrowToolStripButton.ToolTipText = "Draw an arrow annotation";
+            this.arrowToolStripButton.Click += new System.EventHandler(this.arrowToolStripButton_Click);
+            // 
+            // rectangleToolStripButton
+            // 
+            this.rectangleToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.rectangleToolStripButton.Enabled = false;
+            this.rectangleToolStripButton.Name = "rectangleToolStripButton";
+            this.rectangleToolStripButton.Size = new System.Drawing.Size(73, 23);
+            this.rectangleToolStripButton.Text = "Rectangle";
+            this.rectangleToolStripButton.ToolTipText = "Draw a rectangle annotation";
+            this.rectangleToolStripButton.Click += new System.EventHandler(this.rectangleToolStripButton_Click);
+            // 
             // censorToolStripButton
             // 
             this.censorToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -311,6 +335,8 @@
     private System.Windows.Forms.ToolStripButton replaceToolStripButton;
     private System.Windows.Forms.ToolStripButton censorToolStripButton;
     private System.Windows.Forms.ToolStripButton copyClipboardToolStripButton;
+    private System.Windows.Forms.ToolStripButton arrowToolStripButton;
+    private System.Windows.Forms.ToolStripButton rectangleToolStripButton;
         private System.Windows.Forms.ToolStrip censorToolStrip;
         private System.Windows.Forms.ToolStripButton selectAllToolStripButton;
         private System.Windows.Forms.ToolStripButton selectNoneToolStripButton;

@@ -27,9 +27,12 @@ namespace screenzap
         private DateTime lastErrorNotificationUtc;
         private readonly List<int> rectCaptureHotkeyIds = new();
         private readonly List<int> seqCaptureHotkeyIds = new();
+        private static bool zapResourceUnavailable;
 
         public Screenzap()
         {
+            Logger.StartNewSession(clearExisting: true);
+            Logger.Log($"Startup directories: base='{AppContext.BaseDirectory}', current='{Environment.CurrentDirectory}'");
             InitializeComponent();
             rectCaptureCombo = ParseKeyCombo(Properties.Settings.Default.currentCombo);
             seqCaptureCombo = ParseKeyCombo(Properties.Settings.Default.seqCaptureCombo);
@@ -50,6 +53,7 @@ namespace screenzap
             RegisterSeqCaptureHotkeys();
 
             imageEditor = new ImageEditor();
+            Logger.Log("Screenzap initialized");
         }
 
         protected override void OnLoad(EventArgs e)
@@ -90,6 +94,7 @@ namespace screenzap
             isCapturing = true;
             try
             {
+                Logger.Log("DoCapture triggered");
                 var cursorScreen = Screen.FromPoint(Cursor.Position);
                 using Bitmap frozenScreen = CaptureScreenBitmap(cursorScreen);
                 Overlay ovl = new Overlay(cursorScreen, frozenScreen);
@@ -106,7 +111,8 @@ namespace screenzap
                 setClipboard(bmpScreenshot);
 
                 var audio = CreateZapSoundPlayer();
-                audio.Play();
+                audio?.Play();
+                Logger.Log("DoCapture completed");
 
             }
             catch (Exception ex)
@@ -125,6 +131,7 @@ namespace screenzap
             isCapturing = true;
             try
             {
+                Logger.Log("DoInstantCapture triggered");
                 var captureAreaLeft = 0;
                 var captureAreaTop = 0;
                 var primaryScreen = ResolveScreen();
@@ -155,7 +162,8 @@ namespace screenzap
                 setClipboard(bmpScreenshot);
 
                 var audio = CreateZapSoundPlayer();
-                audio.Play();
+                audio?.Play();
+                Logger.Log("DoInstantCapture completed");
             }
             catch (Exception ex)
             {
@@ -429,15 +437,51 @@ namespace screenzap
             throw new InvalidOperationException("No display devices detected.");
         }
 
-        private static SoundPlayer CreateZapSoundPlayer()
+        private static SoundPlayer? CreateZapSoundPlayer()
         {
             var soundPath = Path.Combine(AppContext.BaseDirectory, "res", "zap.wav");
-            if (!File.Exists(soundPath))
+            if (File.Exists(soundPath))
             {
-                throw new FileNotFoundException("Zap sound file is missing.", soundPath);
+                try
+                {
+                    return new SoundPlayer(soundPath);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to load zap sound from '{soundPath}': {ex.Message}");
+                }
             }
 
-            return new SoundPlayer(soundPath);
+            if (!zapResourceUnavailable)
+            {
+                try
+                {
+                    var data = Properties.Resources.zap;
+                    if (data is { Length: > 0 })
+                    {
+                        var stream = new MemoryStream(data, writable: false);
+                        var player = new SoundPlayer(stream);
+                        stream.Position = 0;
+                        return player;
+                    }
+
+                    zapResourceUnavailable = true;
+                }
+                catch (Exception ex) when (ex is MissingMethodException or TypeInitializationException)
+                {
+                    Logger.Log($"Zap sound resource unavailable on this runtime: {ex.Message}");
+                    zapResourceUnavailable = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to load zap sound from resources: {ex.Message}");
+                    zapResourceUnavailable = true;
+                }
+            }
+
+            Logger.Log("Zap sound missing; using system notification instead.");
+            SystemSounds.Asterisk.Play();
+            return null;
         }
     }
 }

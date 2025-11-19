@@ -50,6 +50,7 @@
   <ItemGroup>
     <EmbeddedResource Update="Components\ImageEditor.resx">
       <DependentUpon>ImageEditor.cs</DependentUpon>
+      <LogicalName>screenzap.ImageEditor.resources</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Update="Components\ShortcutEditor.resx">
       <DependentUpon>ShortcutEditor.cs</DependentUpon>
