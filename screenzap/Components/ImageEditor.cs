@@ -531,16 +531,69 @@ namespace screenzap
 
             ShowCensorProgressIndicator();
             var previousCursor = Cursor.Current;
+            var hasSelection = !Selection.IsEmpty;
+            var detectionZone = hasSelection ? ClampToImage(Selection) : GetImageBounds();
+            if (hasSelection && (detectionZone.Width <= 0 || detectionZone.Height <= 0))
+            {
+                HideCensorProgressIndicator();
+                return false;
+            }
+
             try
             {
                 Cursor.Current = Cursors.WaitCursor;
 
-                using (var detectionSource = new Bitmap(pictureBox1.Image))
+                if (hasSelection)
                 {
-                    var detected = TextRegionDetector.FindTextRegionsDetailed(detectionSource);
-                    if (detected.Count == 0)
+                    using var selectionBitmap = CaptureRegion(detectionZone);
+                    if (selectionBitmap == null)
                     {
-                        MessageBox.Show(this, "No text regions were detected.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show(this, "Failed to capture the selected region.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        censorRegions.Clear();
+                        ReleaseCensorPreviewBuffer();
+                        UpdateCensorToolbarState();
+                        return false;
+                    }
+
+                    var detected = TextRegionDetector.FindTextRegionsDetailed(selectionBitmap);
+                    Rectangle refinedBounds;
+                    float combinedConfidence = 0f;
+
+                    if (detected.Count > 0)
+                    {
+                        refinedBounds = detected[0].Bounds;
+                        combinedConfidence = detected[0].Confidence;
+
+                        for (int i = 1; i < detected.Count; i++)
+                        {
+                            refinedBounds = Rectangle.Union(refinedBounds, detected[i].Bounds);
+                            combinedConfidence = Math.Max(combinedConfidence, detected[i].Confidence);
+                        }
+                    }
+                    else
+                    {
+                        refinedBounds = new Rectangle(Point.Empty, selectionBitmap.Size);
+                    }
+
+                    if (refinedBounds.Width <= 0 || refinedBounds.Height <= 0)
+                    {
+                        MessageBox.Show(this, "No text regions were detected inside the selection.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        censorRegions.Clear();
+                        ReleaseCensorPreviewBuffer();
+                        UpdateCensorToolbarState();
+                        return false;
+                    }
+
+                    var translated = new Rectangle(
+                        detectionZone.Left + refinedBounds.Left,
+                        detectionZone.Top + refinedBounds.Top,
+                        refinedBounds.Width,
+                        refinedBounds.Height);
+
+                    translated = ClampToImage(translated);
+                    if (translated.Width <= 0 || translated.Height <= 0)
+                    {
+                        MessageBox.Show(this, "No text regions were detected inside the selection.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         censorRegions.Clear();
                         ReleaseCensorPreviewBuffer();
                         UpdateCensorToolbarState();
@@ -548,10 +601,28 @@ namespace screenzap
                     }
 
                     censorRegions.Clear();
-                    foreach (var region in detected)
+                    censorRegions.Add(new CensorRegion(translated, combinedConfidence));
+                }
+                else
+                {
+                    using (var detectionSource = new Bitmap(pictureBox1.Image))
                     {
-                        float confidence = float.IsNaN(region.Confidence) ? 0f : Math.Max(0f, region.Confidence);
-                        censorRegions.Add(new CensorRegion(region.Bounds, confidence));
+                        var detected = TextRegionDetector.FindTextRegionsDetailed(detectionSource);
+                        if (detected.Count == 0)
+                        {
+                            MessageBox.Show(this, "No text regions were detected.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            censorRegions.Clear();
+                            ReleaseCensorPreviewBuffer();
+                            UpdateCensorToolbarState();
+                            return false;
+                        }
+
+                        censorRegions.Clear();
+                        foreach (var region in detected)
+                        {
+                            float confidence = float.IsNaN(region.Confidence) ? 0f : Math.Max(0f, region.Confidence);
+                            censorRegions.Add(new CensorRegion(region.Bounds, confidence));
+                        }
                     }
                 }
 
@@ -1878,6 +1949,10 @@ namespace screenzap
             {
                 censorToolStripButton.Enabled = enable;
             }
+            if (copyClipboardToolStripButton != null)
+            {
+                copyClipboardToolStripButton.Enabled = enable;
+            }
         }
 
         private void UpdateWindowTitle()
@@ -2194,6 +2269,35 @@ namespace screenzap
             }
 
             if (ActivateCensorTool())
+            {
+                pictureBox1?.Focus();
+            }
+        }
+
+        private bool CopyImageToClipboard()
+        {
+            if (!HasEditableImage || pictureBox1.Image == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                using var snapshot = new Bitmap(pictureBox1.Image);
+                Clipboard.SetImage(snapshot);
+                ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to copy the image to the clipboard.\n{ex.Message}", "Clipboard Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        private void copyClipboardToolStripButton_Click(object sender, EventArgs e)
+        {
+            if (CopyImageToClipboard())
             {
                 pictureBox1?.Focus();
             }

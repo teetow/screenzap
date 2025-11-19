@@ -37,6 +37,7 @@
             this.cropToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.replaceToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.censorToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.copyClipboardToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.censorToolStrip = new System.Windows.Forms.ToolStrip();
             this.selectAllToolStripButton = new System.Windows.Forms.ToolStripButton();
             this.selectNoneToolStripButton = new System.Windows.Forms.ToolStripButton();
@@ -67,7 +68,8 @@
             this.saveAsToolStripButton,
             this.cropToolStripButton,
             this.replaceToolStripButton,
-            this.censorToolStripButton});
+            this.censorToolStripButton,
+            this.copyClipboardToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
             this.mainToolStrip.Name = "mainToolStrip";
             this.mainToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
@@ -233,6 +235,16 @@
             this.censorToolStripButton.ToolTipText = "Detect text and censor selections (Ctrl+E)";
             this.censorToolStripButton.Click += new System.EventHandler(this.censorToolStripButton_Click);
             // 
+            // copyClipboardToolStripButton
+            // 
+            this.copyClipboardToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.copyClipboardToolStripButton.Enabled = false;
+            this.copyClipboardToolStripButton.Name = "copyClipboardToolStripButton";
+            this.copyClipboardToolStripButton.Size = new System.Drawing.Size(97, 23);
+            this.copyClipboardToolStripButton.Text = "Copy Clipboard";
+            this.copyClipboardToolStripButton.ToolTipText = "Copy the current image to the clipboard";
+            this.copyClipboardToolStripButton.Click += new System.EventHandler(this.copyClipboardToolStripButton_Click);
+            // 
             // canvasPanel
             // 
             this.canvasPanel.BackColor = System.Drawing.SystemColors.ControlDarkDark;
@@ -296,8 +308,9 @@
         private System.Windows.Forms.Panel canvasPanel;
         private ScalingPictureBox pictureBox1;
         private System.Windows.Forms.ToolStripButton cropToolStripButton;
-        private System.Windows.Forms.ToolStripButton replaceToolStripButton;
+    private System.Windows.Forms.ToolStripButton replaceToolStripButton;
     private System.Windows.Forms.ToolStripButton censorToolStripButton;
+    private System.Windows.Forms.ToolStripButton copyClipboardToolStripButton;
         private System.Windows.Forms.ToolStrip censorToolStrip;
         private System.Windows.Forms.ToolStripButton selectAllToolStripButton;
         private System.Windows.Forms.ToolStripButton selectNoneToolStripButton;

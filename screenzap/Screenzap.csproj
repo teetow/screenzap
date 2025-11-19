@@ -17,8 +17,9 @@
   </ItemGroup>
 
   <ItemGroup>
-  <PackageReference Include="Nito.AsyncEx" Version="5.1.0" />
+    <PackageReference Include="Nito.AsyncEx" Version="5.1.0" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
+    <PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -76,5 +77,8 @@
   <ItemGroup>
     <Content Include="res\screenzap-icon.ico" />
     <Content Include="res\screenzap0001_fav.ico" />
+    <Content Include="res\zap.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

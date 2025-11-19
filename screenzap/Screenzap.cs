@@ -20,6 +20,7 @@ namespace screenzap
         private KeyCombo seqCaptureCombo;
         private bool isCapturing;
         private ImageEditor? imageEditor;
+    private static bool zapResourceUnavailable;
 
         public Screenzap()
         {
@@ -317,14 +318,32 @@ namespace screenzap
 
         private static SoundPlayer CreateZapSoundPlayer()
         {
-            var data = Properties.Resources.zap;
-            if (data == null || data.Length == 0)
+            if (!zapResourceUnavailable)
+            {
+                try
+                {
+                    var data = Properties.Resources.zap;
+                    if (data != null && data.Length > 0)
+                    {
+                        var stream = new MemoryStream(data, writable: false);
+                        return new SoundPlayer(stream);
+                    }
+                    zapResourceUnavailable = true;
+                }
+                catch (Exception ex) when (ex is MissingMethodException or TypeInitializationException)
+                {
+                    // Happens on some runtimes where byte[] deserialization from resx is unsupported.
+                    zapResourceUnavailable = true;
+                }
+            }
+
+            var fallbackPath = Path.Combine(AppContext.BaseDirectory, "res", "zap.wav");
+            if (!File.Exists(fallbackPath))
             {
                 throw new InvalidOperationException("Zap sound resource is missing.");
             }
 
-            var stream = new MemoryStream(data, writable: false);
-            return new SoundPlayer(stream);
+            return new SoundPlayer(fallbackPath);
         }
     }
 }
