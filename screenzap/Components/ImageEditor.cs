@@ -12,6 +12,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using TextDetection;
+using FontAwesome.Sharp;
 
 namespace screenzap
 {
@@ -376,6 +377,7 @@ namespace screenzap
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, true);
 
             InitializeComponent();
+            ConfigureToolbarIcons();
 
             MouseWheel += ImageEditor_MouseWheel;
             pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
@@ -389,6 +391,39 @@ namespace screenzap
 
             UpdateCensorToolbarState();
             UpdateDrawingToolButtons();
+        }
+
+        private void ConfigureToolbarIcons()
+        {
+            ConfigureIconButton(saveToolStripButton, IconChar.FloppyDisk);
+            ConfigureIconButton(saveAsToolStripButton, IconChar.FilePen);
+            ConfigureIconButton(cropToolStripButton, IconChar.CropSimple);
+            ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
+            ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
+            ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
+            ConfigureIconButton(censorToolStripButton, IconChar.UserSecret);
+            ConfigureIconButton(copyClipboardToolStripButton, IconChar.Copy);
+            ConfigureIconButton(selectAllToolStripButton, IconChar.ObjectGroup);
+            ConfigureIconButton(selectNoneToolStripButton, IconChar.SquareXmark);
+            ConfigureIconButton(applyCensorToolStripButton, IconChar.Check);
+            ConfigureIconButton(cancelCensorToolStripButton, IconChar.Xmark);
+        }
+
+        private static void ConfigureIconButton(IconToolStripButton? button, IconChar icon)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+            button.IconChar = icon;
+            button.IconColor = SystemColors.ControlText;
+            button.IconFont = IconFont.Auto;
+            button.IconSize = 18;
+            button.ImageScaling = ToolStripItemImageScaling.None;
+            button.TextImageRelation = TextImageRelation.ImageBeforeText;
+            button.Padding = new Padding(2, 0, 2, 0);
         }
 
         public ImageEditor()

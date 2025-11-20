@@ -32,17 +32,17 @@
         {
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(ImageEditor));
             this.mainToolStrip = new System.Windows.Forms.ToolStrip();
-            this.saveToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.saveAsToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.cropToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.replaceToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.censorToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.copyClipboardToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.arrowToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.rectangleToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.saveToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.saveAsToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.cropToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.censorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.copyClipboardToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.rectangleToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.censorToolStrip = new System.Windows.Forms.ToolStrip();
-            this.selectAllToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.selectNoneToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.selectAllToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.selectNoneToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.censorToolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.confidenceToolStripLabel = new System.Windows.Forms.ToolStripLabel();
             this.confidenceTrackBar = new System.Windows.Forms.TrackBar();
@@ -50,8 +50,8 @@
             this.confidenceValueLabel = new System.Windows.Forms.ToolStripLabel();
             this.censorProgressBar = new System.Windows.Forms.ToolStripProgressBar();
             this.censorToolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
-            this.applyCensorToolStripButton = new System.Windows.Forms.ToolStripButton();
-            this.cancelCensorToolStripButton = new System.Windows.Forms.ToolStripButton();
+            this.applyCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.cancelCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.canvasPanel = new System.Windows.Forms.Panel();
             this.pictureBox1 = new screenzap.ScalingPictureBox();
             this.mainToolStrip.SuspendLayout();
@@ -68,12 +68,12 @@
             this.mainToolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.saveToolStripButton,
             this.saveAsToolStripButton,
+            this.copyClipboardToolStripButton,
             this.cropToolStripButton,
             this.replaceToolStripButton,
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
-            this.censorToolStripButton,
-            this.copyClipboardToolStripButton});
+            this.censorToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
             this.mainToolStrip.Name = "mainToolStrip";
             this.mainToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
@@ -265,8 +265,8 @@
             this.copyClipboardToolStripButton.Enabled = false;
             this.copyClipboardToolStripButton.Name = "copyClipboardToolStripButton";
             this.copyClipboardToolStripButton.Size = new System.Drawing.Size(97, 23);
-            this.copyClipboardToolStripButton.Text = "Copy Clipboard";
-            this.copyClipboardToolStripButton.ToolTipText = "Copy the current image to the clipboard";
+            this.copyClipboardToolStripButton.Text = "Save to Clipboard";
+            this.copyClipboardToolStripButton.ToolTipText = "Save the current image to the clipboard";
             this.copyClipboardToolStripButton.Click += new System.EventHandler(this.copyClipboardToolStripButton_Click);
             // 
             // canvasPanel
@@ -327,19 +327,19 @@
         #endregion
 
         private System.Windows.Forms.ToolStrip mainToolStrip;
-        private System.Windows.Forms.ToolStripButton saveToolStripButton;
-        private System.Windows.Forms.ToolStripButton saveAsToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton saveToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton saveAsToolStripButton;
         private System.Windows.Forms.Panel canvasPanel;
         private ScalingPictureBox pictureBox1;
-        private System.Windows.Forms.ToolStripButton cropToolStripButton;
-    private System.Windows.Forms.ToolStripButton replaceToolStripButton;
-    private System.Windows.Forms.ToolStripButton censorToolStripButton;
-    private System.Windows.Forms.ToolStripButton copyClipboardToolStripButton;
-    private System.Windows.Forms.ToolStripButton arrowToolStripButton;
-    private System.Windows.Forms.ToolStripButton rectangleToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton cropToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton censorToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton copyClipboardToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton arrowToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton rectangleToolStripButton;
         private System.Windows.Forms.ToolStrip censorToolStrip;
-        private System.Windows.Forms.ToolStripButton selectAllToolStripButton;
-        private System.Windows.Forms.ToolStripButton selectNoneToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton selectAllToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton selectNoneToolStripButton;
         private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator1;
         private System.Windows.Forms.ToolStripLabel confidenceToolStripLabel;
         private System.Windows.Forms.TrackBar confidenceTrackBar;
@@ -347,7 +347,7 @@
         private System.Windows.Forms.ToolStripLabel confidenceValueLabel;
         private System.Windows.Forms.ToolStripProgressBar censorProgressBar;
         private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator2;
-        private System.Windows.Forms.ToolStripButton applyCensorToolStripButton;
-        private System.Windows.Forms.ToolStripButton cancelCensorToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton applyCensorToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton cancelCensorToolStripButton;
     }
 }

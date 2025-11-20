@@ -20,6 +20,7 @@
     <PackageReference Include="Nito.AsyncEx" Version="5.1.0" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
     <PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
+    <PackageReference Include="FontAwesome.Sharp" Version="6.6.0" />
   </ItemGroup>
 
   <ItemGroup>
