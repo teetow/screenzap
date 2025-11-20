@@ -12,13 +12,29 @@ namespace screenzap.lib
 
     static class FileUtils
     {
+        public static string GetCaptureFolderPath()
+        {
+            var configured = Properties.Settings.Default.captureFolder;
+            var userPath = Environment.ExpandEnvironmentVariables(string.IsNullOrWhiteSpace(configured)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.MyPictures)
+                : configured);
+            Directory.CreateDirectory(userPath);
+            return userPath;
+        }
+
+        public static string BuildCapturePath(string extension, string? fileNamePrefix = null)
+        {
+            var safeExtension = string.IsNullOrWhiteSpace(extension) ? ".txt" : (extension.StartsWith('.') ? extension : $".{extension}");
+            var baseName = string.IsNullOrWhiteSpace(fileNamePrefix)
+                ? DateTime.Now.ToString("yyyy-MM-ddTHH-mm-ss")
+                : fileNamePrefix;
+            return Path.Combine(GetCaptureFolderPath(), baseName + safeExtension);
+        }
+
         public static string SaveImage(Image image)
         {
             Bitmap bmpScreenshot = new Bitmap(image);
-
-            var dateStr = DateTime.Now.ToString("yyyy-MM-ddTHH-mm-ss") + (".png");
-            var userPath = Environment.ExpandEnvironmentVariables(Properties.Settings.Default.captureFolder);
-            var filePath = Path.Combine(userPath, dateStr);
+            var filePath = BuildCapturePath(".png");
 
             using (FileStream pngFileStream = new FileStream(filePath, FileMode.Create))
             {
@@ -26,10 +42,18 @@ namespace screenzap.lib
             }
             return filePath;
         }
+
+        public static string SaveText(string contents, string? extension = ".txt")
+        {
+            var filePath = BuildCapturePath(extension ?? ".txt");
+            File.WriteAllText(filePath, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            return filePath;
+        }
     }
     static class ClipboardMetadata
     {
         public static DateTime? LastCaptureTimestamp { get; set; }
+        public static DateTime? LastTextCaptureTimestamp { get; set; }
     }
     static class RectangleExt
     {

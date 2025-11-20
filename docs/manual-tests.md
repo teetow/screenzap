@@ -24,3 +24,12 @@
 
 1. After editing, press `Ctrl+S` to trigger an automatic timestamped save and confirm the file appears in the configured capture folder.
 2. Press `Ctrl+Shift+S`, choose a different destination, and confirm the saved file reflects the current editor state.
+
+## Clipboard Text Editor
+
+1. Copy any block of Unicode text (no images) and double-click the tray icon. Verify the VSCode-style text editor opens, loads the clipboard contents, and paints in a monospace font.
+2. Paste multiple lines, hold `Alt` and drag to create additional cursors, and confirm typing edits all carets simultaneously.
+3. Press `Ctrl+F` and `Ctrl+H` to open the find/replace panel. Toggle Regex/Match Case/Whole Word and confirm `Next`, `Previous`, `Replace`, and `Replace All` respect the toggles. Invalid regex patterns should surface inline errors.
+4. Use `Ctrl+S`, `Ctrl+Shift+S`, and the toolbar buttons to save text files alongside image captures. Confirm the tray balloon launches Explorer to the saved `.txt` file.
+5. Copy long text back to the clipboard via the toolbar or `Ctrl+Shift+C` and ensure downstream apps receive the updated text.
+6. Stage both text *and* image data on the clipboard (for example, copy an image from Paint and then copy text from Notepad without clearing). Double-click the tray icon and confirm the image editor still takes precedence.

@@ -21,11 +21,15 @@
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
     <PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
     <PackageReference Include="FontAwesome.Sharp" Version="6.6.0" />
+    <PackageReference Include="Scintilla.NET.WinForms" Version="1.0.11.5320" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Update="Components\ImageEditor.Designer.cs">
       <DependentUpon>ImageEditor.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Components\TextEditor.Designer.cs">
+      <DependentUpon>TextEditor.cs</DependentUpon>
     </Compile>
     <Compile Update="Components\ScalingPictureBox.Designer.cs">
       <DependentUpon>ScalingPictureBox.cs</DependentUpon>
@@ -68,6 +72,9 @@
   <ItemGroup>
     <None Include="SecurityRules.ruleset" />
     <None Update="App.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="text-editor-theme.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Properties\Settings.settings">

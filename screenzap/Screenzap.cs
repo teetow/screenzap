@@ -24,6 +24,7 @@ namespace screenzap
         private KeyCombo seqCaptureCombo;
         private bool isCapturing;
         private ImageEditor? imageEditor;
+        private TextEditor? textEditor;
         private DateTime lastErrorNotificationUtc;
         private readonly List<int> rectCaptureHotkeyIds = new();
         private readonly List<int> seqCaptureHotkeyIds = new();
@@ -177,13 +178,7 @@ namespace screenzap
 
         private void sanitizeClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
         {
-            Image? imgData = Clipboard.GetImage();
-
-            if (imgData == null)
-                return;
-            imageEditor = new ImageEditor();
-            imageEditor.LoadImage(imgData);
-            imageEditor.ShowDialog();
+            ShowClipboardEditorForCurrentData();
         }
 
         private void startWhenLoggedInToolStripMenuItem_CheckStateChanged(object? sender, EventArgs e)
@@ -200,17 +195,33 @@ namespace screenzap
         private void saveClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
         {
             var img = Clipboard.GetImage();
-            if (img == null) return;
+            if (img != null)
+            {
+                var fname = FileUtils.SaveImage(img);
+                notifyIcon1.ShowBalloonTip(2000, "Image saved", $"Saved to {fname}", ToolTipIcon.Info);
+                AttachExplorerLauncher(fname);
+                return;
+            }
 
-            var fname = FileUtils.SaveImage(img);
-            notifyIcon1.ShowBalloonTip(2000, $"Image saved", $"Saved to {fname}", ToolTipIcon.Info);
+            var text = TryGetClipboardText();
+            if (!string.IsNullOrEmpty(text))
+            {
+                var fname = FileUtils.SaveText(text);
+                notifyIcon1.ShowBalloonTip(2000, "Text saved", $"Saved to {fname}", ToolTipIcon.Info);
+                AttachExplorerLauncher(fname);
+                return;
+            }
 
+            notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "No image or text data available to save.", ToolTipIcon.Warning);
+        }
 
+        private void AttachExplorerLauncher(string path)
+        {
             var pStartInfo = new ProcessStartInfo
 
             {
                 FileName = "explorer",
-                Arguments = $"/e, /select,\"{fname}\""
+                Arguments = $"/e, /select,\"{path}\""
             };
 
             EventHandler? handler = null;
@@ -266,16 +277,76 @@ namespace screenzap
 
         private void notifyIcon1_DoubleClick(object? sender, EventArgs e)
         {
+            ShowClipboardEditorForCurrentData();
+        }
+
+        private void ShowClipboardEditorForCurrentData()
+        {
+            try
+            {
+                var imgData = Clipboard.GetImage();
+                if (imgData != null)
+                {
+                    var editor = EnsureImageEditor();
+                    editor.LoadImage(imgData);
+                    editor.ShowAndFocus();
+                    return;
+                }
+            }
+            catch (ExternalException ex)
+            {
+                Logger.Log($"Failed to read image from clipboard: {ex.Message}");
+            }
+
+            var textData = TryGetClipboardText();
+            if (!string.IsNullOrEmpty(textData))
+            {
+                var textWindow = EnsureTextEditor();
+                textWindow.LoadText(textData);
+                textWindow.ShowAndFocus();
+                return;
+            }
+
+            notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain text or image data.", ToolTipIcon.Info);
+        }
+
+        private ImageEditor EnsureImageEditor()
+        {
             if (imageEditor == null || imageEditor.IsDisposed)
             {
                 imageEditor = new ImageEditor();
             }
-            Image? imgData = Clipboard.GetImage();
-            if (imgData != null)
+
+            return imageEditor;
+        }
+
+        private TextEditor EnsureTextEditor()
+        {
+            if (textEditor == null || textEditor.IsDisposed)
             {
-                imageEditor.LoadImage(imgData);
+                textEditor = new TextEditor();
             }
-            imageEditor.ShowAndFocus();
+
+            return textEditor;
+        }
+
+        private static string? TryGetClipboardText()
+        {
+            try
+            {
+                if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
+                {
+                    var text = Clipboard.GetText(TextDataFormat.UnicodeText);
+                    ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
+                    return text;
+                }
+            }
+            catch (ExternalException ex)
+            {
+                Logger.Log($"Failed to read text from clipboard: {ex.Message}");
+            }
+
+            return null;
         }
 
         private void quitToolStripMenuItem_Click(object? sender, EventArgs e)

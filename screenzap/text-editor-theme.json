@@ -1,0 +1,18 @@
+{
+  "fontFamily": "Consolas",
+  "fontSize": 11,
+  "background": "#202020",
+  "foreground": "#dcdcdc",
+  "caretLine": "#2c2c2c",
+  "caret": "#f4f4f4",
+  "selection": "#264f78",
+  "lineNumberForeground": "#858585",
+  "lineNumberBackground": "#2d2d30",
+  "keyword": "#569cd6",
+  "type": "#4ec9b0",
+  "string": "#d69d85",
+  "comment": "#6a9955",
+  "number": "#b5cea8",
+  "operator": "#d4d4d4",
+  "preprocessor": "#c586c0"
+}

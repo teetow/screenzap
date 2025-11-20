@@ -12,6 +12,10 @@ Just put Screenzap.exe where you want it. Run it. nbd.
 
 Press the configured shortcut (default is `ctrl-alt-shift-4`), drag to select a screen region, and take your screenshot. It will go on the clipboard.
 
+Double-click the tray icon (or choose **Sanitize Clipboard** from the menu) to open the clipboard editor. Screenzap now automatically picks the right surface: image captures launch the annotated image editor, while text-only clips launch a minimalist VSCode-style text editor with monospace rendering, multi-cursor editing, and regex find/replace. Both editors expose Save, Save As…, and Save to Clipboard actions.
+
+The text editor theme (fonts, caret, and the new C-like syntax colors) is driven by `%LOCALAPPDATA%\Screenzap\text-editor-theme.json`. Edit and save that file while the editor is open to live-reload the palette. Available color keys include `background`, `foreground`, `caret`, `selection`, `keyword`, `type`, `string`, `comment`, `number`, `operator`, and `preprocessor`.
+
 ### Modifier keys
 
 * Shift -- make selection square
