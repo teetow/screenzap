@@ -101,20 +101,13 @@ namespace screenzap
 
     public partial class ImageEditor : Form
     {
+        internal Func<TextEditor>? RequestTextEditor { get; set; }
+
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == NativeMethods.WM_CLIPBOARDUPDATE)
             {
-                Image? imgData = Clipboard.GetImage();
-                if (imgData != null)
-                {
-                    LoadImage(imgData);
-                }
-                else
-                {
-                    ShowPlaceholder();
-                }
-
+                HandleClipboardUpdated();
             }
             //Called for any unhandled messages
             base.WndProc(ref m);
@@ -183,8 +176,18 @@ namespace screenzap
         private DateTime? bufferTimestamp;
     private string? currentSavePath;
         private bool isPlaceholderImage;
+    private bool hasUnsavedChanges;
+    private bool clipboardHasPendingReload;
+    private bool ignoreNextClipboardUpdate;
+        private ClipboardReloadTarget pendingReloadTarget = ClipboardReloadTarget.None;
 
         private bool HasEditableImage => pictureBox1.Image != null && !isPlaceholderImage;
+        private enum ClipboardReloadTarget
+        {
+            None,
+            Image,
+            Text
+        }
 
         private int ToolbarHeight
         {
@@ -403,10 +406,12 @@ namespace screenzap
             ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
             ConfigureIconButton(censorToolStripButton, IconChar.UserSecret);
             ConfigureIconButton(copyClipboardToolStripButton, IconChar.Copy);
+            ConfigureIconButton(reloadToolStripButton, IconChar.Rotate);
             ConfigureIconButton(selectAllToolStripButton, IconChar.ObjectGroup);
             ConfigureIconButton(selectNoneToolStripButton, IconChar.SquareXmark);
             ConfigureIconButton(applyCensorToolStripButton, IconChar.Check);
             ConfigureIconButton(cancelCensorToolStripButton, IconChar.Xmark);
+            UpdateReloadIndicator();
         }
 
         private static void ConfigureIconButton(IconToolStripButton? button, IconChar icon)
@@ -424,6 +429,60 @@ namespace screenzap
             button.ImageScaling = ToolStripItemImageScaling.None;
             button.TextImageRelation = TextImageRelation.ImageBeforeText;
             button.Padding = new Padding(2, 0, 2, 0);
+        }
+
+        private void UpdateReloadIndicator()
+        {
+            if (reloadToolStripButton == null || reloadNotificationLabel == null)
+            {
+                return;
+            }
+
+            reloadNotificationLabel.Visible = clipboardHasPendingReload;
+            reloadNotificationLabel.Text = clipboardHasPendingReload ? "●" : string.Empty;
+            reloadToolStripButton.IconColor = clipboardHasPendingReload ? Color.OrangeRed : SystemColors.ControlText;
+        }
+
+        private void ClearClipboardNotification()
+        {
+            clipboardHasPendingReload = false;
+            pendingReloadTarget = ClipboardReloadTarget.None;
+            UpdateReloadIndicator();
+        }
+
+        private void HandleClipboardUpdated()
+        {
+            if (ignoreNextClipboardUpdate)
+            {
+                ignoreNextClipboardUpdate = false;
+                return;
+            }
+
+            ClipboardReloadTarget detectedTarget = ClipboardReloadTarget.None;
+            try
+            {
+                if (Clipboard.ContainsImage())
+                {
+                    detectedTarget = ClipboardReloadTarget.Image;
+                }
+                else if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
+                {
+                    detectedTarget = ClipboardReloadTarget.Text;
+                }
+            }
+            catch (ExternalException)
+            {
+                return;
+            }
+
+            if (detectedTarget == ClipboardReloadTarget.None)
+            {
+                return;
+            }
+
+            pendingReloadTarget = detectedTarget;
+            clipboardHasPendingReload = true;
+            UpdateReloadIndicator();
         }
 
         public ImageEditor()
@@ -451,6 +510,7 @@ namespace screenzap
             isPlaceholderImage = treatAsPlaceholder;
             bufferTimestamp = treatAsPlaceholder ? (DateTime?)null : (ClipboardMetadata.LastCaptureTimestamp ?? DateTime.Now);
             currentSavePath = null;
+            pendingReloadTarget = ClipboardReloadTarget.None;
 
             DeactivateCensorTool(false);
             ClearSelection();
@@ -486,6 +546,8 @@ namespace screenzap
             HandleResize();
 
             undoStack.Clear();
+            hasUnsavedChanges = false;
+            ClearClipboardNotification();
 
             UpdateCommandUI();
             UpdateWindowTitle();
@@ -515,6 +577,30 @@ namespace screenzap
             Activate();
             Focus();
             pictureBox1?.Focus();
+        }
+
+        internal void AdoptWindowGeometry(Form? source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            StartPosition = FormStartPosition.Manual;
+            var referenceBounds = source.WindowState == FormWindowState.Normal
+                ? source.Bounds
+                : source.RestoreBounds;
+
+            if (referenceBounds.Width > 0 && referenceBounds.Height > 0)
+            {
+                WindowState = FormWindowState.Normal;
+                Bounds = referenceBounds;
+            }
+
+            if (source.WindowState == FormWindowState.Maximized)
+            {
+                WindowState = FormWindowState.Maximized;
+            }
         }
 
         internal void ResetZoom()
@@ -1859,6 +1945,7 @@ namespace screenzap
             }
 
             undoStack.Push(new ImageUndoStep(region, before, after, selectionBefore, selectionAfter, replacesImage, shapesBefore, shapesAfter));
+            hasUnsavedChanges = true;
         }
 
         private void ApplyUndoStep(ImageUndoStep step, bool applyAfterState)
@@ -2876,6 +2963,10 @@ namespace screenzap
             {
                 copyClipboardToolStripButton.Enabled = enable;
             }
+            if (reloadToolStripButton != null)
+            {
+                reloadToolStripButton.Enabled = enable || clipboardHasPendingReload;
+            }
 
             UpdateDrawingToolButtons();
         }
@@ -3015,6 +3106,7 @@ namespace screenzap
                 currentSavePath = targetPath;
                 UpdateCommandUI();
                 UpdateWindowTitle();
+                hasUnsavedChanges = false;
                 return true;
             }
 
@@ -3050,6 +3142,7 @@ namespace screenzap
                         currentSavePath = dialog.FileName;
                         UpdateCommandUI();
                         UpdateWindowTitle();
+                            hasUnsavedChanges = false;
                         return true;
                     }
                 }
@@ -3189,6 +3282,12 @@ namespace screenzap
                     e.Handled = true;
                 }
             }
+            else if (e.KeyCode == Keys.R && e.Control)
+            {
+                ReloadFromClipboard();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+            }
             else if (e.KeyCode == Keys.T && e.Control)
             {
                 if (ExecuteCrop())
@@ -3281,8 +3380,10 @@ namespace screenzap
             try
             {
                 using var snapshot = BuildCompositeImage();
+                ignoreNextClipboardUpdate = true;
                 Clipboard.SetImage(snapshot);
                 ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
+                ClearClipboardNotification();
                 return true;
             }
             catch (Exception ex)
@@ -3292,12 +3393,121 @@ namespace screenzap
             }
         }
 
+        private void ReloadFromClipboard()
+        {
+            if (!ConfirmReloadWhenDirty())
+            {
+                return;
+            }
+
+            if (TryReloadImageFromClipboard())
+            {
+                return;
+            }
+
+            if (TrySwitchToTextEditorFromClipboard())
+            {
+                return;
+            }
+
+            MessageBox.Show(this, "Clipboard does not contain image or text data to reload.", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private bool ConfirmReloadWhenDirty()
+        {
+            if (!hasUnsavedChanges)
+            {
+                return true;
+            }
+
+            var result = MessageBox.Show(this, "Reloading from the clipboard will discard unsaved changes. Continue?", WindowTitleBase, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            return result == DialogResult.Yes;
+        }
+
+        private bool TryReloadImageFromClipboard()
+        {
+            Image? clipboardImage = null;
+            try
+            {
+                if (Clipboard.ContainsImage())
+                {
+                    clipboardImage = Clipboard.GetImage();
+                }
+            }
+            catch (ExternalException ex)
+            {
+                MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return true;
+            }
+
+            if (clipboardImage == null)
+            {
+                return false;
+            }
+
+            using (clipboardImage)
+            {
+                LoadImage(clipboardImage);
+            }
+
+            ClearClipboardNotification();
+            return true;
+        }
+
+        private bool TrySwitchToTextEditorFromClipboard()
+        {
+            if (RequestTextEditor == null)
+            {
+                return false;
+            }
+
+            string? clipboardText = null;
+            try
+            {
+                if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
+                {
+                    clipboardText = Clipboard.GetText(TextDataFormat.UnicodeText);
+                }
+            }
+            catch (ExternalException ex)
+            {
+                MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return true;
+            }
+
+            if (clipboardText == null)
+            {
+                return false;
+            }
+
+            var textEditor = RequestTextEditor?.Invoke();
+            if (textEditor == null)
+            {
+                return false;
+            }
+
+            textEditor.AdoptWindowGeometry(this);
+            textEditor.LoadText(clipboardText);
+            textEditor.ShowAndFocus();
+            ClearClipboardNotification();
+            if (Visible)
+            {
+                Hide();
+            }
+            return true;
+        }
+
         private void copyClipboardToolStripButton_Click(object sender, EventArgs e)
         {
             if (CopyImageToClipboard())
             {
                 pictureBox1?.Focus();
             }
+        }
+
+        private void reloadToolStripButton_Click(object? sender, EventArgs e)
+        {
+            ReloadFromClipboard();
         }
 
         private void arrowToolStripButton_Click(object sender, EventArgs e)

@@ -317,6 +317,7 @@ namespace screenzap
                 imageEditor = new ImageEditor();
             }
 
+            imageEditor.RequestTextEditor = EnsureTextEditor;
             return imageEditor;
         }
 
@@ -327,6 +328,7 @@ namespace screenzap
                 textEditor = new TextEditor();
             }
 
+            textEditor.RequestImageEditor = EnsureImageEditor;
             return textEditor;
         }
 

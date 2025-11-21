@@ -34,6 +34,8 @@
             this.mainToolStrip = new System.Windows.Forms.ToolStrip();
             this.saveToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.saveAsToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.reloadToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.reloadNotificationLabel = new System.Windows.Forms.ToolStripLabel();
             this.cropToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.censorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -69,6 +71,8 @@
             this.saveToolStripButton,
             this.saveAsToolStripButton,
             this.copyClipboardToolStripButton,
+            this.reloadToolStripButton,
+            this.reloadNotificationLabel,
             this.cropToolStripButton,
             this.replaceToolStripButton,
             this.arrowToolStripButton,
@@ -269,6 +273,27 @@
             this.copyClipboardToolStripButton.ToolTipText = "Save the current image to the clipboard";
             this.copyClipboardToolStripButton.Click += new System.EventHandler(this.copyClipboardToolStripButton_Click);
             // 
+            // reloadToolStripButton
+            // 
+            this.reloadToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.reloadToolStripButton.Name = "reloadToolStripButton";
+            this.reloadToolStripButton.Size = new System.Drawing.Size(49, 23);
+            this.reloadToolStripButton.Text = "Reload";
+            this.reloadToolStripButton.ToolTipText = "Reload from clipboard (Ctrl+R)";
+            this.reloadToolStripButton.Click += new System.EventHandler(this.reloadToolStripButton_Click);
+            // 
+            // reloadNotificationLabel
+            // 
+            this.reloadNotificationLabel.AutoSize = false;
+            this.reloadNotificationLabel.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.reloadNotificationLabel.ForeColor = System.Drawing.Color.OrangeRed;
+            this.reloadNotificationLabel.Margin = new System.Windows.Forms.Padding(-12, 0, 4, 0);
+            this.reloadNotificationLabel.Name = "reloadNotificationLabel";
+            this.reloadNotificationLabel.Size = new System.Drawing.Size(14, 23);
+            this.reloadNotificationLabel.Text = "●";
+            this.reloadNotificationLabel.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
+            this.reloadNotificationLabel.Visible = false;
+            // 
             // canvasPanel
             // 
             this.canvasPanel.BackColor = System.Drawing.SystemColors.ControlDarkDark;
@@ -335,6 +360,8 @@
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton censorToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton copyClipboardToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton reloadToolStripButton;
+    private System.Windows.Forms.ToolStripLabel reloadNotificationLabel;
     private FontAwesome.Sharp.IconToolStripButton arrowToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton rectangleToolStripButton;
         private System.Windows.Forms.ToolStrip censorToolStrip;

@@ -17,10 +17,11 @@ namespace screenzap
         /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null))
+            if (disposing)
             {
                 DisposeThemeWatcher();
-                components.Dispose();
+                DisposeClipboardMonitor();
+                components?.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -38,6 +39,8 @@ namespace screenzap
             saveToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             saveAsToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             copyToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            reloadToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            reloadNotificationLabel = new ToolStripLabel();
             findToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             searchPanel = new Panel();
             closeSearchPanelButton = new Button();
@@ -65,7 +68,7 @@ namespace screenzap
             // mainToolStrip
             // 
             mainToolStrip.ImageScalingSize = new Size(20, 20);
-            mainToolStrip.Items.AddRange(new ToolStripItem[] { saveToolStripButton, saveAsToolStripButton, copyToolStripButton, findToolStripButton });
+            mainToolStrip.Items.AddRange(new ToolStripItem[] { saveToolStripButton, saveAsToolStripButton, copyToolStripButton, reloadToolStripButton, reloadNotificationLabel, findToolStripButton });
             mainToolStrip.Location = new Point(0, 0);
             mainToolStrip.Name = "mainToolStrip";
             mainToolStrip.Padding = new Padding(1, 0, 1, 0);
@@ -92,6 +95,25 @@ namespace screenzap
             copyToolStripButton.Size = new Size(23, 24);
             copyToolStripButton.Text = "Copy to Clipboard";
             copyToolStripButton.Click += copyToolStripButton_Click;
+            // 
+            // reloadToolStripButton
+            // 
+            reloadToolStripButton.Name = "reloadToolStripButton";
+            reloadToolStripButton.Size = new Size(23, 24);
+            reloadToolStripButton.Text = "Reload from Clipboard";
+            reloadToolStripButton.Click += reloadToolStripButton_Click;
+            // 
+            // reloadNotificationLabel
+            // 
+            reloadNotificationLabel.AutoSize = false;
+            reloadNotificationLabel.Font = new Font("Segoe UI", 11F, FontStyle.Bold, GraphicsUnit.Point);
+            reloadNotificationLabel.ForeColor = Color.OrangeRed;
+            reloadNotificationLabel.Margin = new Padding(-12, 0, 4, 0);
+            reloadNotificationLabel.Name = "reloadNotificationLabel";
+            reloadNotificationLabel.Size = new Size(14, 24);
+            reloadNotificationLabel.Text = "●";
+            reloadNotificationLabel.TextAlign = ContentAlignment.MiddleCenter;
+            reloadNotificationLabel.Visible = false;
             // 
             // findToolStripButton
             // 
@@ -316,6 +338,8 @@ namespace screenzap
         private FontAwesome.Sharp.IconToolStripButton saveToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton saveAsToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton copyToolStripButton;
+        private FontAwesome.Sharp.IconToolStripButton reloadToolStripButton;
+        private ToolStripLabel reloadNotificationLabel;
         private FontAwesome.Sharp.IconToolStripButton findToolStripButton;
         private Panel searchPanel;
         private Button closeSearchPanelButton;

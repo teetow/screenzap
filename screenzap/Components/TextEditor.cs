@@ -7,6 +7,7 @@ using screenzap.lib;
 using System;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -17,6 +18,7 @@ namespace screenzap
 {
     public partial class TextEditor : Form
     {
+        internal Func<ImageEditor>? RequestImageEditor { get; set; }
         private const string WindowTitleBase = "Screenzap Text Editor";
         private const string ThemeFileName = "text-editor-theme.json";
         private static readonly string PrimaryKeywords = string.Join(' ', new[]
@@ -50,6 +52,10 @@ namespace screenzap
         private string? themeFilePath;
         private FileSystemWatcher? themeWatcher;
         private int themeReloadScheduled;
+        private ClipboardMonitor? clipboardMonitor;
+        private bool clipboardHasPendingReload;
+        private bool ignoreNextClipboardUpdate;
+        private string? pendingClipboardText;
 
         private static class CppStyles
         {
@@ -88,6 +94,7 @@ namespace screenzap
             InitializeThemeConfiguration();
             ConfigureEditor();
             ConfigureThemeWatcher();
+            InitializeClipboardMonitor();
             UpdateWindowTitle();
             UpdateStatusLabels();
             UpdateCommandStates();
@@ -106,6 +113,7 @@ namespace screenzap
             UpdateWindowTitle();
             UpdateStatusLabels();
             UpdateCommandStates();
+            ClearClipboardNotification(clearSnapshot: true);
             FocusEditor();
         }
 
@@ -124,6 +132,30 @@ namespace screenzap
             FocusEditor();
         }
 
+        internal void AdoptWindowGeometry(Form? source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            StartPosition = FormStartPosition.Manual;
+            var referenceBounds = source.WindowState == FormWindowState.Normal
+                ? source.Bounds
+                : source.RestoreBounds;
+
+            if (referenceBounds.Width > 0 && referenceBounds.Height > 0)
+            {
+                WindowState = FormWindowState.Normal;
+                Bounds = referenceBounds;
+            }
+
+            if (source.WindowState == FormWindowState.Maximized)
+            {
+                WindowState = FormWindowState.Maximized;
+            }
+        }
+
         private void FocusEditor()
         {
             editor?.Focus();
@@ -134,7 +166,9 @@ namespace screenzap
             ConfigureIconButton(saveToolStripButton, IconChar.FloppyDisk, "Save (Ctrl+S)");
             ConfigureIconButton(saveAsToolStripButton, IconChar.FilePen, "Save As (Ctrl+Shift+S)");
             ConfigureIconButton(copyToolStripButton, IconChar.Clipboard, "Save to Clipboard (Ctrl+Shift+C)");
+            ConfigureIconButton(reloadToolStripButton, IconChar.Rotate, "Reload from Clipboard (Ctrl+R)");
             ConfigureIconButton(findToolStripButton, IconChar.MagnifyingGlass, "Find (Ctrl+F)");
+            UpdateReloadIndicator();
         }
 
         private static void ConfigureIconButton(IconToolStripButton button, IconChar icon, string toolTip)
@@ -171,6 +205,226 @@ namespace screenzap
             editor.UpdateUi += Editor_UpdateUI;
             editor.TextChanged += Editor_TextChanged;
             editor.CharAdded += (_, __) => UpdateStatusLabels();
+        }
+
+        private void InitializeClipboardMonitor()
+        {
+            try
+            {
+                clipboardMonitor = new ClipboardMonitor();
+                clipboardMonitor.OnUpdateText += ClipboardMonitor_OnUpdateText;
+                clipboardMonitor.OnUpdateImage += ClipboardMonitor_OnUpdateImage;
+                clipboardMonitor.isListening = true;
+                CaptureClipboardSnapshotIfAvailable();
+                UpdateReloadIndicator();
+            }
+            catch
+            {
+                clipboardMonitor = null;
+            }
+        }
+
+        private void DisposeClipboardMonitor()
+        {
+            if (clipboardMonitor == null)
+            {
+                return;
+            }
+
+            clipboardMonitor.OnUpdateText -= ClipboardMonitor_OnUpdateText;
+            clipboardMonitor.OnUpdateImage -= ClipboardMonitor_OnUpdateImage;
+            clipboardMonitor.Dispose();
+            clipboardMonitor = null;
+        }
+
+        private void CaptureClipboardSnapshotIfAvailable()
+        {
+            try
+            {
+                if (Clipboard.ContainsText())
+                {
+                    pendingClipboardText = Clipboard.GetText(TextDataFormat.UnicodeText);
+                }
+            }
+            catch (ExternalException)
+            {
+                pendingClipboardText = null;
+            }
+        }
+
+        private void ClipboardMonitor_OnUpdateText(object? sender, string text)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<object?, string>(ClipboardMonitor_OnUpdateText), sender, text);
+                return;
+            }
+
+            if (ignoreNextClipboardUpdate)
+            {
+                ignoreNextClipboardUpdate = false;
+                return;
+            }
+
+            pendingClipboardText = text;
+            clipboardHasPendingReload = true;
+            UpdateReloadIndicator();
+        }
+
+        private void ClipboardMonitor_OnUpdateImage(object? sender, Bitmap image)
+        {
+            void HandleUpdate()
+            {
+                if (ignoreNextClipboardUpdate)
+                {
+                    ignoreNextClipboardUpdate = false;
+                    image.Dispose();
+                    return;
+                }
+
+                pendingClipboardText = null;
+                clipboardHasPendingReload = true;
+                UpdateReloadIndicator();
+                image.Dispose();
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(HandleUpdate));
+            }
+            else
+            {
+                HandleUpdate();
+            }
+        }
+
+        private void UpdateReloadIndicator()
+        {
+            if (reloadToolStripButton == null || reloadNotificationLabel == null)
+            {
+                return;
+            }
+
+            var hasUpdate = clipboardHasPendingReload;
+            reloadNotificationLabel.Visible = hasUpdate;
+            reloadNotificationLabel.Text = hasUpdate ? "●" : string.Empty;
+            reloadToolStripButton.IconColor = hasUpdate ? Color.OrangeRed : SystemColors.ControlText;
+        }
+
+        private void ClearClipboardNotification(bool clearSnapshot)
+        {
+            clipboardHasPendingReload = false;
+            if (clearSnapshot)
+            {
+                pendingClipboardText = null;
+            }
+
+            UpdateReloadIndicator();
+        }
+
+        private bool TryGetClipboardText(out string text)
+        {
+            if (pendingClipboardText != null)
+            {
+                text = pendingClipboardText;
+                return true;
+            }
+
+            try
+            {
+                if (Clipboard.ContainsText())
+                {
+                    text = Clipboard.GetText(TextDataFormat.UnicodeText);
+                    return true;
+                }
+            }
+            catch (ExternalException)
+            {
+            }
+
+            text = string.Empty;
+            return false;
+        }
+
+        private void ReloadFromClipboard()
+        {
+            if (!ConfirmReloadWhenDirty())
+            {
+                return;
+            }
+
+            if (TrySwitchToImageEditorFromClipboard())
+            {
+                return;
+            }
+
+            if (!TryGetClipboardText(out var text))
+            {
+                MessageBox.Show(this, "Clipboard does not contain text to reload.", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            LoadText(text);
+        }
+
+        private bool TrySwitchToImageEditorFromClipboard()
+        {
+            if (RequestImageEditor == null)
+            {
+                return false;
+            }
+
+            Image? clipboardImage = null;
+            try
+            {
+                if (Clipboard.ContainsImage())
+                {
+                    clipboardImage = Clipboard.GetImage();
+                }
+            }
+            catch (ExternalException ex)
+            {
+                MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return true;
+            }
+
+            if (clipboardImage == null)
+            {
+                return false;
+            }
+
+            var imageEditor = RequestImageEditor?.Invoke();
+            if (imageEditor == null)
+            {
+                clipboardImage.Dispose();
+                return false;
+            }
+
+            imageEditor.AdoptWindowGeometry(this);
+            using (clipboardImage)
+            {
+                imageEditor.LoadImage(clipboardImage);
+            }
+
+            imageEditor.ShowAndFocus();
+
+            ClearClipboardNotification(clearSnapshot: true);
+            if (Visible)
+            {
+                Hide();
+            }
+            return true;
+        }
+
+        private bool ConfirmReloadWhenDirty()
+        {
+            if (!isDirty)
+            {
+                return true;
+            }
+
+            var result = MessageBox.Show(this, "Reloading from the clipboard will discard unsaved changes. Continue?", WindowTitleBase, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            return result == DialogResult.Yes;
         }
 
         private void ConfigureKeywords()
@@ -575,6 +829,11 @@ namespace screenzap
             CopyToClipboard();
         }
 
+        private void reloadToolStripButton_Click(object? sender, EventArgs e)
+        {
+            ReloadFromClipboard();
+        }
+
         private void findToolStripButton_Click(object? sender, EventArgs e)
         {
             ToggleSearchPanel(show: true, focusReplace: false);
@@ -624,6 +883,12 @@ namespace screenzap
                 return true;
             }
 
+            if (keyData == (Keys.Control | Keys.R))
+            {
+                ReloadFromClipboard();
+                return true;
+            }
+
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -634,8 +899,20 @@ namespace screenzap
                 return;
             }
 
-            Clipboard.SetText(editor.Text ?? string.Empty);
-            ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
+            var text = editor.Text ?? string.Empty;
+            try
+            {
+                ignoreNextClipboardUpdate = true;
+                Clipboard.SetText(text);
+                ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
+                pendingClipboardText = text;
+                ClearClipboardNotification(clearSnapshot: false);
+            }
+            catch (ExternalException ex)
+            {
+                ignoreNextClipboardUpdate = false;
+                MessageBox.Show(this, $"Failed to copy text to the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void ToggleSearchPanel(bool show, bool focusReplace = false)
