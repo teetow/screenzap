@@ -1,5 +1,4 @@
-﻿using screenzap.lib;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -11,8 +10,10 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using TextDetection;
 using FontAwesome.Sharp;
+using TextDetection;
+using screenzap.Components.Shared;
+using screenzap.lib;
 
 namespace screenzap
 {
@@ -99,9 +100,10 @@ namespace screenzap
     }
 
 
-    public partial class ImageEditor : Form
+    public partial class ImageEditor : Form, IClipboardDocumentPresenter
     {
         internal Func<TextEditor>? RequestTextEditor { get; set; }
+        private EditorHostServices? hostServices;
 
         protected override void WndProc(ref Message m)
         {
@@ -441,6 +443,7 @@ namespace screenzap
             reloadNotificationLabel.Visible = clipboardHasPendingReload;
             reloadNotificationLabel.Text = clipboardHasPendingReload ? "●" : string.Empty;
             reloadToolStripButton.IconColor = clipboardHasPendingReload ? Color.OrangeRed : SystemColors.ControlText;
+            hostServices?.SetReloadIndicator?.Invoke(clipboardHasPendingReload);
         }
 
         private void ClearClipboardNotification()
@@ -488,6 +491,9 @@ namespace screenzap
         public ImageEditor()
         {
             Init();
+            TopLevel = false;
+            FormBorderStyle = FormBorderStyle.None;
+            Dock = DockStyle.Fill;
             ShowPlaceholder();
         }
 
@@ -495,6 +501,9 @@ namespace screenzap
         {
             ArgumentNullException.ThrowIfNull(image);
             Init();
+            TopLevel = false;
+            FormBorderStyle = FormBorderStyle.None;
+            Dock = DockStyle.Fill;
             LoadImage(image);
         }
         internal void LoadImage(Image? imgData)
@@ -564,17 +573,20 @@ namespace screenzap
 
         internal void ShowAndFocus()
         {
-            if (!Visible)
+            if (hostServices?.ActivatePresenter != null)
             {
-                Show();
+                hostServices.ActivatePresenter(this);
             }
-            else if (WindowState == FormWindowState.Minimized)
+            else
             {
-                WindowState = FormWindowState.Normal;
+                if (!Visible)
+                {
+                    Show();
+                }
+
+                Activate();
             }
 
-            BringToFront();
-            Activate();
             Focus();
             pictureBox1?.Focus();
         }
@@ -3420,8 +3432,20 @@ namespace screenzap
                 return true;
             }
 
-            var result = MessageBox.Show(this, "Reloading from the clipboard will discard unsaved changes. Continue?", WindowTitleBase, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            return result == DialogResult.Yes;
+            var keepEditingButton = new TaskDialogButton("Keep editing");
+            var reloadButton = new TaskDialogButton("Reload");
+
+            var page = new TaskDialogPage
+            {
+                Caption = WindowTitleBase,
+                Heading = "Discard unsaved changes?",
+                Text = "Reloading from the clipboard will discard unsaved changes.",
+                Icon = TaskDialogIcon.Warning,
+                Buttons = { keepEditingButton, reloadButton },
+                DefaultButton = reloadButton
+            };
+
+            return TaskDialog.ShowDialog(this, page) == reloadButton;
         }
 
         private bool TryReloadImageFromClipboard()
@@ -3486,14 +3510,23 @@ namespace screenzap
                 return false;
             }
 
-            textEditor.AdoptWindowGeometry(this);
             textEditor.LoadText(clipboardText);
-            textEditor.ShowAndFocus();
-            ClearClipboardNotification();
-            if (Visible)
+            if (hostServices?.ActivatePresenter != null)
             {
-                Hide();
+                hostServices.ActivatePresenter(textEditor);
+                textEditor.FocusEditor();
             }
+            else
+            {
+                textEditor.AdoptWindowGeometry(this);
+                textEditor.ShowAndFocus();
+                if (Visible)
+                {
+                    Hide();
+                }
+            }
+
+            ClearClipboardNotification();
             return true;
         }
 
@@ -3518,6 +3551,115 @@ namespace screenzap
         private void rectangleToolStripButton_Click(object sender, EventArgs e)
         {
             ToggleDrawingTool(DrawingTool.Rectangle);
+        }
+
+        Control IClipboardDocumentPresenter.View => this;
+
+        string IClipboardDocumentPresenter.DisplayName => "Image";
+
+        void IClipboardDocumentPresenter.AttachHostServices(EditorHostServices services)
+        {
+            hostServices = services;
+            hostServices.SetReloadIndicator?.Invoke(clipboardHasPendingReload);
+            ApplyHostChromeVisibility(isHosted: true);
+        }
+
+        bool IClipboardDocumentPresenter.CanHandleClipboard(IDataObject dataObject)
+        {
+            return dataObject?.GetDataPresent(DataFormats.Bitmap, true) == true;
+        }
+
+        void IClipboardDocumentPresenter.LoadFromClipboard(IDataObject dataObject)
+        {
+            if (dataObject == null)
+            {
+                return;
+            }
+
+            var clipboardImage = dataObject.GetData(DataFormats.Bitmap, true) as Image;
+            if (clipboardImage is Image img)
+            {
+                using (img)
+                {
+                    LoadImage(img);
+                }
+            }
+        }
+
+        bool IClipboardDocumentPresenter.CanExecute(EditorCommandId commandId)
+        {
+            return commandId switch
+            {
+                EditorCommandId.Save => saveToolStripButton?.Enabled == true,
+                EditorCommandId.SaveAs => saveAsToolStripButton?.Enabled == true,
+                EditorCommandId.Copy => copyClipboardToolStripButton?.Enabled == true,
+                EditorCommandId.Reload => true,
+                EditorCommandId.Undo => undoStack.CanUndo,
+                EditorCommandId.Redo => undoStack.CanRedo,
+                EditorCommandId.Find => false,
+                _ => false
+            };
+        }
+
+        bool IClipboardDocumentPresenter.TryExecute(EditorCommandId commandId)
+        {
+            switch (commandId)
+            {
+                case EditorCommandId.Save:
+                    return ExecuteSave();
+                case EditorCommandId.SaveAs:
+                    return ExecuteSaveAs();
+                case EditorCommandId.Copy:
+                    return CopyImageToClipboard();
+                case EditorCommandId.Reload:
+                    ReloadFromClipboard();
+                    return true;
+                case EditorCommandId.Undo:
+                    {
+                        var step = undoStack.Undo();
+                        if (step == null)
+                        {
+                            return false;
+                        }
+
+                        ApplyUndoStep(step, false);
+                        UpdateCommandUI();
+                        return true;
+                    }
+                case EditorCommandId.Redo:
+                    {
+                        var step = undoStack.Redo();
+                        if (step == null)
+                        {
+                            return false;
+                        }
+
+                        ApplyUndoStep(step, true);
+                        UpdateCommandUI();
+                        return true;
+                    }
+                default:
+                    return false;
+            }
+        }
+
+        void IClipboardDocumentPresenter.OnActivated()
+        {
+            HandleResize();
+            pictureBox1?.Focus();
+        }
+
+        void IClipboardDocumentPresenter.OnDeactivated()
+        {
+            // No-op for now.
+        }
+
+        private void ApplyHostChromeVisibility(bool isHosted)
+        {
+            if (mainToolStrip != null)
+            {
+                mainToolStrip.Visible = !isHosted;
+            }
         }
 
 

@@ -3,6 +3,7 @@ using ScintillaNet.Abstractions.Classes;
 using ScintillaNet.Abstractions.Enumerations;
 using ScintillaNet.WinForms;
 using ScintillaNet.WinForms.EventArguments;
+using screenzap.Components.Shared;
 using screenzap.lib;
 using System;
 using System.Drawing;
@@ -16,9 +17,10 @@ using System.Windows.Forms;
 
 namespace screenzap
 {
-    public partial class TextEditor : Form
+    public partial class TextEditor : Form, IClipboardDocumentPresenter
     {
         internal Func<ImageEditor>? RequestImageEditor { get; set; }
+        private EditorHostServices? hostServices;
         private const string WindowTitleBase = "Screenzap Text Editor";
         private const string ThemeFileName = "text-editor-theme.json";
         private static readonly string PrimaryKeywords = string.Join(' ', new[]
@@ -90,6 +92,9 @@ namespace screenzap
         public TextEditor()
         {
             InitializeComponent();
+            TopLevel = false;
+            FormBorderStyle = FormBorderStyle.None;
+            Dock = DockStyle.Fill;
             ConfigureToolbarIcons();
             InitializeThemeConfiguration();
             ConfigureEditor();
@@ -119,16 +124,20 @@ namespace screenzap
 
         internal void ShowAndFocus()
         {
-            if (!Visible)
+            if (hostServices?.ActivatePresenter != null)
             {
-                Show();
+                hostServices.ActivatePresenter(this);
             }
-            else if (WindowState == FormWindowState.Minimized)
+            else
             {
-                WindowState = FormWindowState.Normal;
+                if (!Visible)
+                {
+                    Show();
+                }
+
+                Activate();
             }
 
-            Activate();
             FocusEditor();
         }
 
@@ -156,7 +165,7 @@ namespace screenzap
             }
         }
 
-        private void FocusEditor()
+        internal void FocusEditor()
         {
             editor?.Focus();
         }
@@ -309,6 +318,7 @@ namespace screenzap
             reloadNotificationLabel.Visible = hasUpdate;
             reloadNotificationLabel.Text = hasUpdate ? "●" : string.Empty;
             reloadToolStripButton.IconColor = hasUpdate ? Color.OrangeRed : SystemColors.ControlText;
+            hostServices?.SetReloadIndicator?.Invoke(hasUpdate);
         }
 
         private void ClearClipboardNotification(bool clearSnapshot)
@@ -837,6 +847,104 @@ namespace screenzap
         private void findToolStripButton_Click(object? sender, EventArgs e)
         {
             ToggleSearchPanel(show: true, focusReplace: false);
+        }
+
+        Control IClipboardDocumentPresenter.View => this;
+
+        string IClipboardDocumentPresenter.DisplayName => "Text";
+
+        void IClipboardDocumentPresenter.AttachHostServices(EditorHostServices services)
+        {
+            hostServices = services;
+            hostServices.SetReloadIndicator?.Invoke(clipboardHasPendingReload);
+            ApplyHostChromeVisibility(isHosted: true);
+        }
+
+        bool IClipboardDocumentPresenter.CanHandleClipboard(IDataObject dataObject)
+        {
+            return dataObject?.GetDataPresent(DataFormats.UnicodeText, true) == true;
+        }
+
+        void IClipboardDocumentPresenter.LoadFromClipboard(IDataObject dataObject)
+        {
+            if (dataObject == null)
+            {
+                return;
+            }
+
+            var text = dataObject.GetData(DataFormats.UnicodeText, true) as string;
+            if (text != null)
+            {
+                LoadText(text);
+            }
+        }
+
+        bool IClipboardDocumentPresenter.CanExecute(EditorCommandId commandId)
+        {
+            return commandId switch
+            {
+                EditorCommandId.Save => isDirty,
+                EditorCommandId.SaveAs => editor?.TextLength > 0,
+                EditorCommandId.Copy => editor?.TextLength > 0,
+                EditorCommandId.Reload => true,
+                EditorCommandId.Undo => editor?.CanUndo ?? false,
+                EditorCommandId.Redo => editor?.CanRedo ?? false,
+                EditorCommandId.Find => true,
+                _ => false
+            };
+        }
+
+        bool IClipboardDocumentPresenter.TryExecute(EditorCommandId commandId)
+        {
+            switch (commandId)
+            {
+                case EditorCommandId.Save:
+                    SaveDocument();
+                    return true;
+                case EditorCommandId.SaveAs:
+                    SaveDocument(promptForPath: true);
+                    return true;
+                case EditorCommandId.Copy:
+                    CopyToClipboard();
+                    return true;
+                case EditorCommandId.Reload:
+                    ReloadFromClipboard();
+                    return true;
+                case EditorCommandId.Undo:
+                    editor?.Undo();
+                    return true;
+                case EditorCommandId.Redo:
+                    editor?.Redo();
+                    return true;
+                case EditorCommandId.Find:
+                    ToggleSearchPanel(show: true, focusReplace: false);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        void IClipboardDocumentPresenter.OnActivated()
+        {
+            FocusEditor();
+        }
+
+        void IClipboardDocumentPresenter.OnDeactivated()
+        {
+            // no-op
+        }
+
+        private void ApplyHostChromeVisibility(bool isHosted)
+        {
+            if (mainToolStrip != null)
+            {
+                mainToolStrip.Visible = !isHosted;
+            }
+
+            if (statusStrip != null)
+            {
+                statusStrip.Visible = !isHosted;
+            }
         }
 
         private void TextEditor_KeyDown(object? sender, KeyEventArgs e)

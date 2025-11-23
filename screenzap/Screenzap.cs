@@ -1,4 +1,5 @@
-﻿using screenzap.lib;
+﻿using screenzap.Components;
+using screenzap.lib;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -25,6 +26,7 @@ namespace screenzap
         private bool isCapturing;
         private ImageEditor? imageEditor;
         private TextEditor? textEditor;
+        private ClipboardEditorHostForm? clipboardEditorHost;
         private DateTime lastErrorNotificationUtc;
         private readonly List<int> rectCaptureHotkeyIds = new();
         private readonly List<int> seqCaptureHotkeyIds = new();
@@ -53,7 +55,6 @@ namespace screenzap
             seqCaptureHook.KeyPressed += new EventHandler<KeyPressedEventArgs>(DoInstantCapture);
             RegisterSeqCaptureHotkeys();
 
-            imageEditor = new ImageEditor();
             Logger.Log("Screenzap initialized");
         }
 
@@ -282,32 +283,56 @@ namespace screenzap
 
         private void ShowClipboardEditorForCurrentData()
         {
+            IDataObject? dataObject = null;
             try
             {
-                var imgData = Clipboard.GetImage();
-                if (imgData != null)
-                {
-                    var editor = EnsureImageEditor();
-                    editor.LoadImage(imgData);
-                    editor.ShowAndFocus();
-                    return;
-                }
+                dataObject = Clipboard.GetDataObject();
             }
             catch (ExternalException ex)
             {
-                Logger.Log($"Failed to read image from clipboard: {ex.Message}");
+                Logger.Log($"Failed to access clipboard: {ex.Message}");
+                notifyIcon1.ShowBalloonTip(2000, "Clipboard error", "Unable to read clipboard contents.", ToolTipIcon.Error);
+                return;
             }
 
-            var textData = TryGetClipboardText();
-            if (!string.IsNullOrEmpty(textData))
+            if (dataObject == null)
             {
-                var textWindow = EnsureTextEditor();
-                textWindow.LoadText(textData);
-                textWindow.ShowAndFocus();
+                notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain text or image data.", ToolTipIcon.Info);
+                return;
+            }
+
+            var host = EnsureClipboardHost();
+            if (host.TryShowClipboardData(dataObject))
+            {
                 return;
             }
 
             notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain text or image data.", ToolTipIcon.Info);
+        }
+
+        private ClipboardEditorHostForm EnsureClipboardHost()
+        {
+            if (clipboardEditorHost == null || clipboardEditorHost.IsDisposed)
+            {
+                var imagePresenter = EnsureImageEditor();
+                var textPresenter = EnsureTextEditor();
+                clipboardEditorHost = new ClipboardEditorHostForm(imagePresenter, textPresenter);
+                clipboardEditorHost.FormClosed += OnClipboardHostClosed;
+            }
+
+            return clipboardEditorHost;
+        }
+
+        private void OnClipboardHostClosed(object? sender, FormClosedEventArgs e)
+        {
+            if (sender is ClipboardEditorHostForm host)
+            {
+                host.FormClosed -= OnClipboardHostClosed;
+            }
+
+            clipboardEditorHost = null;
+            imageEditor = null;
+            textEditor = null;
         }
 
         private ImageEditor EnsureImageEditor()
