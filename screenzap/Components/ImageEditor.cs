@@ -330,6 +330,9 @@ namespace screenzap
             if (imgData == null)
                 return;
 
+            LogViewportDebug($"=== LoadImage START: imgData.Size={imgData.Size}, treatAsPlaceholder={treatAsPlaceholder} ===");
+            LogViewportDebug($"LoadImage: current pictureBox1.ClientSize={pictureBox1.ClientSize}, panOffset={pictureBox1.Metrics.PanOffset}");
+
             isPlaceholderImage = treatAsPlaceholder;
             bufferTimestamp = treatAsPlaceholder ? (DateTime?)null : (ClipboardMetadata.LastCaptureTimestamp ?? DateTime.Now);
             currentSavePath = null;
@@ -337,7 +340,9 @@ namespace screenzap
 
             DeactivateCensorTool(false);
             ClearSelection();
+            LogViewportDebug($"LoadImage: About to call ResetZoom");
             ResetZoom();
+            LogViewportDebug($"LoadImage: After ResetZoom, panOffset={pictureBox1.Metrics.PanOffset}");
             annotationShapes.Clear();
             workingAnnotation = null;
             selectedAnnotation = null;
@@ -363,19 +368,36 @@ namespace screenzap
             UpdateTextToolbarVisibility();
 
             var replacementImage = new Bitmap(imgData);
+            var oldImageSize = pictureBox1.GetImagePixelSize();
+            LogViewportDebug($"LoadImage: new image size={replacementImage.Size}, pictureBox1.ClientSize={pictureBox1.ClientSize}");
+            LogViewportDebug($"LoadImage: old image size={oldImageSize}");
 
             if (pictureBox1.Image != null)
             {
                 pictureBox1.Image.Dispose();
             }
 
+            LogViewportDebug($"LoadImage: About to set pictureBox1.Image");
             pictureBox1.Image = replacementImage;
+            LogViewportDebug($"LoadImage: After Image setter, panOffset={pictureBox1.Metrics.PanOffset}");
+            
+            LogViewportDebug($"LoadImage: Calling explicit CenterImage");
             pictureBox1.CenterImage();
+            LogViewportDebug($"LoadImage: After CenterImage, panOffset={pictureBox1.Metrics.PanOffset}");
             _zoomlevel = pictureBox1.ZoomLevel;
 
-            ResizeWindowToImage(imgData.Size);
+            // Only resize window when not hosted (standalone mode)
+            if (!isHostedView)
+            {
+                LogViewportDebug($"LoadImage: Calling ResizeWindowToImage({imgData.Size})");
+                ResizeWindowToImage(imgData.Size);
+                LogViewportDebug($"LoadImage: After ResizeWindowToImage, pictureBox1.ClientSize={pictureBox1.ClientSize}, panOffset={pictureBox1.Metrics.PanOffset}");
+            }
 
+            LogViewportDebug($"LoadImage: Calling HandleResize");
             HandleResize();
+            LogViewportDebug($"LoadImage: After HandleResize, panOffset={pictureBox1.Metrics.PanOffset}");
+            LogViewportDebug($"LoadImage: === END ===" );
 
             undoStack.Clear();
             hasUnsavedChanges = false;
@@ -386,8 +408,10 @@ namespace screenzap
 
             if (Visible)
             {
+                // Re-center after layout settles to handle any deferred resize events
                 BeginInvoke(new Action(() =>
                 {
+                    pictureBox1?.CenterImage();
                     Focus();
                     pictureBox1?.Focus();
                 }));
@@ -438,6 +462,21 @@ namespace screenzap
             }
         }
 
+        private static void LogViewportDebug(string message)
+        {
+            var line = $"[{DateTime.Now:HH:mm:ss.fff}] [ImageEditor] {message}";
+            System.Diagnostics.Debug.WriteLine(line);
+            try
+            {
+                var logPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Screenzap", "viewport-debug.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+                File.AppendAllText(logPath, line + Environment.NewLine);
+            }
+            catch { }
+        }
+
         internal void ResetZoom()
         {
             ZoomLevel = 1;
@@ -457,14 +496,16 @@ namespace screenzap
 
         private Rectangle GetImageBounds()
         {
-            return pictureBox1.Image == null
+            var imageSize = pictureBox1.GetImagePixelSize();
+            return imageSize.IsEmpty
                 ? Rectangle.Empty
-                : new Rectangle(Point.Empty, pictureBox1.Image.Size);
+                : new Rectangle(Point.Empty, imageSize);
         }
 
         private Rectangle ClampToImage(Rectangle region)
         {
-            if (pictureBox1.Image == null)
+            var imageSize = pictureBox1.GetImagePixelSize();
+            if (imageSize.IsEmpty)
             {
                 return Rectangle.Empty;
             }
@@ -693,7 +734,7 @@ namespace screenzap
             ZoomLevel = currentZoom;
             pictureBox1.ClampPan();
 
-            ResizeWindowToImage(pictureBox1.Image.Size);
+            ResizeWindowToImage(pictureBox1.GetImagePixelSize());
 
             HandleResize();
 

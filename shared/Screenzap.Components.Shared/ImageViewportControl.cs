@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 
 namespace screenzap.Components.Shared
@@ -26,13 +28,28 @@ namespace screenzap.Components.Shared
             get => image;
             set
             {
+                var oldSize = GetImagePixelSize();
+                Size newSize;
+                try
+                {
+                    newSize = value?.Size ?? Size.Empty;
+                }
+                catch (ArgumentException)
+                {
+                    newSize = Size.Empty;
+                }
+                LogDebug($"Image setter: old={oldSize}, new={newSize}, ClientSize={ClientSize}");
+                
                 if (image == value)
                 {
+                    LogDebug("Image setter: same reference, skipping");
                     return;
                 }
 
                 image = value;
+                LogDebug($"Image setter: calling ResetView, panOffset before={panOffset}");
                 ResetView();
+                LogDebug($"Image setter: after ResetView, panOffset={panOffset}");
                 Invalidate();
             }
         }
@@ -80,7 +97,23 @@ namespace screenzap.Components.Shared
             GetImageClientRectangle(),
             ClientSize);
 
-        public Size GetImagePixelSize() => image?.Size ?? Size.Empty;
+        public Size GetImagePixelSize()
+        {
+            if (image == null)
+            {
+                return Size.Empty;
+            }
+
+            try
+            {
+                return image.Size;
+            }
+            catch (ArgumentException)
+            {
+                // Image was disposed
+                return Size.Empty;
+            }
+        }
 
         public RectangleF GetImageClientRectangle()
         {
@@ -94,10 +127,14 @@ namespace screenzap.Components.Shared
             CenterImage();
         }
 
-        public void CenterImage()
+        public void CenterImage([CallerMemberName] string? caller = null)
         {
-            if (image == null || ClientSize.Width <= 0 || ClientSize.Height <= 0)
+            var imageSize = GetImagePixelSize();
+            LogDebug($"CenterImage called by {caller}: image={imageSize}, ClientSize={ClientSize}");
+            
+            if (imageSize.IsEmpty || ClientSize.Width <= 0 || ClientSize.Height <= 0)
             {
+                LogDebug($"CenterImage: early exit (null/zero), setting panOffset=Empty");
                 panOffset = PointF.Empty;
                 Invalidate();
                 return;
@@ -106,19 +143,23 @@ namespace screenzap.Components.Shared
             var scaled = GetScaledImageSize();
             var centeredX = (ClientSize.Width - scaled.Width) / 2f;
             var centeredY = (ClientSize.Height - scaled.Height) / 2f;
-            panOffset = new PointF(centeredX, centeredY);
+            var newPan = new PointF(centeredX, centeredY);
+            LogDebug($"CenterImage: scaled={scaled}, centered=({centeredX:F1}, {centeredY:F1})");
+            panOffset = newPan;
             Invalidate();
         }
 
-        public void ClampPan()
+        public void ClampPan([CallerMemberName] string? caller = null)
         {
-            if (image == null)
+            LogDebug($"ClampPan called by {caller}: panOffset before={panOffset}, ClientSize={ClientSize}");
+            
+            var scaled = GetScaledImageSize();
+            if (scaled.IsEmpty)
             {
+                LogDebug("ClampPan: no image or disposed, setting panOffset=Empty");
                 panOffset = PointF.Empty;
                 return;
             }
-
-            var scaled = GetScaledImageSize();
 
             float constrainedX;
             if (scaled.Width <= ClientSize.Width)
@@ -142,7 +183,9 @@ namespace screenzap.Components.Shared
                 constrainedY = Math.Min(0, Math.Max(minTop, panOffset.Y));
             }
 
+            var oldPan = panOffset;
             panOffset = new PointF(constrainedX, constrainedY);
+            LogDebug($"ClampPan: scaled={scaled}, old={oldPan}, new={panOffset}");
         }
 
         public void PanBy(Size delta)
@@ -239,9 +282,25 @@ namespace screenzap.Components.Shared
 
         protected override void OnSizeChanged(EventArgs e)
         {
+            LogDebug($"OnSizeChanged: new ClientSize={ClientSize}");
             base.OnSizeChanged(e);
             ClampPan();
             Invalidate();
+        }
+
+        private static void LogDebug(string message)
+        {
+            var line = $"[{DateTime.Now:HH:mm:ss.fff}] [ImageViewport] {message}";
+            Debug.WriteLine(line);
+            try
+            {
+                var logPath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Screenzap", "viewport-debug.log");
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(logPath)!);
+                System.IO.File.AppendAllText(logPath, line + Environment.NewLine);
+            }
+            catch { }
         }
 
         private SizeF GetScaledImageSize()
@@ -251,8 +310,16 @@ namespace screenzap.Components.Shared
                 return SizeF.Empty;
             }
 
-            float scale = (float)zoomLevel;
-            return new SizeF(image.Width * scale, image.Height * scale);
+            try
+            {
+                float scale = (float)zoomLevel;
+                return new SizeF(image.Width * scale, image.Height * scale);
+            }
+            catch (ArgumentException)
+            {
+                // Image was disposed
+                return SizeF.Empty;
+            }
         }
     }
 

@@ -74,16 +74,18 @@ namespace screenzap
         {
             ReleaseCensorPreviewBuffer();
 
-            if (pictureBox1.Image == null || censorRegions.Count == 0)
+            var sourceImage = pictureBox1.Image;
+            var imageSize = pictureBox1.GetImagePixelSize();
+            if (sourceImage == null || imageSize.IsEmpty || censorRegions.Count == 0)
             {
                 return false;
             }
 
-            var working = new Bitmap(pictureBox1.Image.Width, pictureBox1.Image.Height, PixelFormat.Format32bppArgb);
+            var working = new Bitmap(imageSize.Width, imageSize.Height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(working))
             {
                 g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                g.DrawImage(pictureBox1.Image, Point.Empty);
+                g.DrawImage(sourceImage, Point.Empty);
             }
 
             using (var bufferGraphics = Graphics.FromImage(working))
@@ -625,7 +627,7 @@ namespace screenzap
                     pictureBox1.Image = replacement;
                     ZoomLevel = currentZoom;
                     pictureBox1.ClampPan();
-                    ResizeWindowToImage(pictureBox1.Image.Size);
+                    ResizeWindowToImage(pictureBox1.GetImagePixelSize());
                     HandleResize();
                 }
                 else
