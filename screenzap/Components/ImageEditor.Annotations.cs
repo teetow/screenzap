@@ -76,6 +76,7 @@ namespace screenzap
         private bool isDrawingAnnotation;
         private AnnotationShape? workingAnnotation;
         private AnnotationShape? selectedAnnotation;
+        private AnnotationShape? hoveredAnnotation;
         private AnnotationHandle activeAnnotationHandle = AnnotationHandle.None;
         private Point annotationDragOriginPixel;
         private Point annotationDraftAnchorPixel;
@@ -238,6 +239,12 @@ namespace screenzap
 
         private void DrawAnnotationHandles(Graphics graphics, AnnotationShape annotation)
         {
+            // Draw hover hitbox for non-selected annotations
+            if (annotation == hoveredAnnotation && !annotation.Selected)
+            {
+                DrawAnnotationHoverHitbox(graphics, annotation);
+            }
+
             if (!annotation.Selected)
             {
                 return;
@@ -250,6 +257,34 @@ namespace screenzap
                 var rect = kvp.Value;
                 graphics.FillRectangle(Brushes.White, rect);
                 graphics.DrawRectangle(Pens.Black, rect);
+            }
+        }
+
+        private void DrawAnnotationHoverHitbox(Graphics graphics, AnnotationShape annotation)
+        {
+            using var pen = new Pen(Color.FromArgb(180, Color.Cyan), 2f);
+            pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
+
+            if (annotation.Type == AnnotationType.Arrow)
+            {
+                // Draw a stroke around the arrow line
+                var start = PixelToFormCoordF(annotation.Start);
+                var end = PixelToFormCoordF(annotation.End);
+                float hitWidth = Math.Max(8f, 4f * (float)ZoomLevel);
+                using var hitPen = new Pen(Color.FromArgb(60, Color.Cyan), hitWidth);
+                graphics.DrawLine(hitPen, start, end);
+                graphics.DrawLine(pen, start, end);
+            }
+            else
+            {
+                // Draw an inflated hitbox outside the rectangle
+                var bounds = PixelToFormCoord(annotation.GetBounds());
+                const int padding = 4;
+                bounds.Inflate(padding, padding);
+                
+                using var fillBrush = new SolidBrush(Color.FromArgb(30, Color.Cyan));
+                graphics.FillRectangle(fillBrush, bounds);
+                graphics.DrawRectangle(pen, bounds);
             }
         }
 
@@ -467,11 +502,13 @@ namespace screenzap
                 var handle = HitTestAnnotationHandle(formPoint);
                 if (handle != AnnotationHandle.None)
                 {
+                    SetHoveredAnnotation(null);
                     Cursor = Cursors.Cross;
                     return true;
                 }
 
                 var hit = HitTestAnnotation(pixelPoint, formPoint);
+                SetHoveredAnnotation(hit);
                 if (hit != null)
                 {
                     Cursor = Cursors.Hand;
@@ -480,6 +517,15 @@ namespace screenzap
             }
 
             return false;
+        }
+
+        private void SetHoveredAnnotation(AnnotationShape? annotation)
+        {
+            if (hoveredAnnotation != annotation)
+            {
+                hoveredAnnotation = annotation;
+                pictureBox1?.Invalidate();
+            }
         }
 
         private bool HandleAnnotationMouseUp(MouseButtons button, Point releasePixel)

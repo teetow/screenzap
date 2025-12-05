@@ -19,37 +19,21 @@ Since the image editor now is no longer just showing the clipboard state, on lau
 
 When pasting content, a floating Paste toolbar appears. It shows inputs for X and Y, width and height, as well as a "scaling algorithm" dropdown that has Nearest Neighbor as well as whatever other scaling algos supported by the Graphics API. I assume linear or bilinear, no need to make it more complex than that. It also contains Cancel and OK buttons for aborting or committing the paste.
 
-# Done
+## Feature: Variable fonts
 
-## Feature: Save, Save As (Ctrl-S, Ctrl-Shift-S)
+Variable fonts (OpenType 1.8+) support multiple design axes like weight, width, slant, etc. in a single font file.
 
-- Save generates a file name from the timestamp when the clipboard buffer was taken
-- Save As... opens a standard file save dialog
+### Implementation notes:
+- WinForms `System.Drawing.Font` has limited variable font support
+- Need to detect if selected font is a variable font (check for `fvar` table)
+- Options for implementation:
+  - Use `System.Windows.Media` (WPF) for font inspection
+  - Use DirectWrite interop for full variable font control
+  - Use a library like HarfBuzzSharp or SkiaSharp
+- UI: Add a popout panel with sliders for each available axis
+- Common axes: `wght` (weight), `wdth` (width), `slnt` (slant), `ital` (italic), `opsz` (optical size)
 
-## Feature: Image Editor now has a dedicated buffer
-
-In order to allow more advanced editing features, when opening the image editor the contents of the clipboard is copied to a dedicated buffer, detaching it from the clipboard buffer. This allows us to copy and paste areas of the image editor buffer (which would otherwise always show the copied area).
-
-## Feature: Undo and Redo (Ctrl-Z, Ctrl-Shift-Z)
-
-- Any changes to the Image Editor buffer are recorded on an undo stack that stores the affected region along with its before/after state.
-- Redo re-applies the latest change using the same stored data, keeping undo and redo within a single mechanism.
-
-## Feature: Crop (Ctrl-T)
-
-- The current selection becomes the new image dimensions. Selection is cleared afterwards so the next action starts fresh.
-
-## Feature: "Replace with background" tool (Ctrl-B / Backspace)
-
-- Selected area edges bleed towards the middle pixel, filling the selection with colors sampled from the border to provide a quick object removal.
-
-## Feature: Text censor tool (Ctrl+E)
-
-- Detects dense text rows inside the selection, trims to their horizontal footprint, then shuffles column-sized blocks per line to render the content unreadable while preserving the overall silhouette.
-- Exposed on Ctrl+E and fully undoable.
-
-# Deferred (ignore for now)
-
-## Secondary hotkey configurability
-
-- [ ] Add UI to expose and edit the instant-capture hotkey loaded from `Properties.Settings.Default.seqCaptureCombo` in `Screenzap.cs`. Users cannot change or discover this shortcut today, so the convenience feature is only half-delivered.
+### Basic Bold/Italic first:
+- Add `FontStyle` property to `TextAnnotation` (Bold, Italic, Underline)
+- Add B/I/U toggle buttons to text toolbar
+- This works with standard fonts and is a prerequisite for variable font support

@@ -59,6 +59,7 @@ namespace screenzap
         private bool isTextToolActive;
         private TextAnnotation? activeTextAnnotation;
         private TextAnnotation? selectedTextAnnotation;
+        private TextAnnotation? hoveredTextAnnotation;
         private Point textDragOriginPixel;
         private bool isTextAnnotationDragging;
         private List<TextAnnotation>? textAnnotationSnapshotBeforeEdit;
@@ -201,9 +202,17 @@ namespace screenzap
                 foreach (var annotation in textAnnotations)
                 {
                     DrawTextAnnotation(graphics, annotation, surface, scale);
-                    if (surface == AnnotationSurface.Screen && annotation.Selected)
+                    if (surface == AnnotationSurface.Screen)
                     {
-                        DrawTextAnnotationHandles(graphics, annotation);
+                        // Draw hover hitbox for non-selected annotations
+                        if (annotation == hoveredTextAnnotation && !annotation.Selected)
+                        {
+                            DrawTextAnnotationHoverHitbox(graphics, annotation);
+                        }
+                        if (annotation.Selected)
+                        {
+                            DrawTextAnnotationHandles(graphics, annotation);
+                        }
                     }
                 }
             }
@@ -297,6 +306,26 @@ namespace screenzap
             var handleRect = new Rectangle(screenBounds.X - half, screenBounds.Y - half, handleSize, handleSize);
             graphics.FillRectangle(Brushes.White, handleRect);
             graphics.DrawRectangle(Pens.Black, handleRect);
+        }
+
+        private void DrawTextAnnotationHoverHitbox(Graphics graphics, TextAnnotation annotation)
+        {
+            using var tempBitmap = new Bitmap(1, 1);
+            using var tempGraphics = Graphics.FromImage(tempBitmap);
+            var bounds = annotation.GetBounds(tempGraphics);
+            
+            // Add padding to make the hitbox more visible and easier to click
+            const int padding = 4;
+            bounds.Inflate(padding, padding);
+            
+            var screenBounds = PixelToFormCoord(bounds);
+
+            using var fillBrush = new SolidBrush(Color.FromArgb(30, Color.Cyan));
+            graphics.FillRectangle(fillBrush, screenBounds);
+            
+            using var pen = new Pen(Color.FromArgb(128, Color.Cyan), 1f);
+            pen.DashStyle = DashStyle.Dot;
+            graphics.DrawRectangle(pen, screenBounds);
         }
 
         private TextAnnotation? HitTestTextAnnotation(Point pixelPoint, Point formPoint)
@@ -420,11 +449,16 @@ namespace screenzap
             if (buttons == MouseButtons.None && textAnnotations.Count > 0)
             {
                 var hit = HitTestTextAnnotation(pixelPoint, formPoint);
+                SetHoveredTextAnnotation(hit);
                 if (hit != null)
                 {
                     Cursor = Cursors.IBeam;
                     return true;
                 }
+            }
+            else if (buttons == MouseButtons.None)
+            {
+                SetHoveredTextAnnotation(null);
             }
             
             // Only set cross cursor when text tool is actively selected
@@ -434,6 +468,15 @@ namespace screenzap
             }
 
             return false;
+        }
+
+        private void SetHoveredTextAnnotation(TextAnnotation? annotation)
+        {
+            if (hoveredTextAnnotation != annotation)
+            {
+                hoveredTextAnnotation = annotation;
+                pictureBox1?.Invalidate();
+            }
         }
 
         private bool HandleTextToolMouseUp(MouseButtons button, Point releasePixel)
