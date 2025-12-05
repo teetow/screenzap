@@ -87,6 +87,10 @@ namespace screenzap
                 {
                     height += censorToolStrip.Height;
                 }
+                if (textToolStrip != null && textToolStrip.Visible)
+                {
+                    height += textToolStrip.Height;
+                }
 
                 return height;
             }
@@ -96,8 +100,10 @@ namespace screenzap
         {
             var toolbarHeight = ToolbarHeight;
             var toolbarPreferredWidth = Math.Max(
-                mainToolStrip?.PreferredSize.Width ?? 0,
-                censorToolStrip?.PreferredSize.Width ?? 0);
+                Math.Max(
+                    mainToolStrip?.PreferredSize.Width ?? 0,
+                    censorToolStrip?.PreferredSize.Width ?? 0),
+                textToolStrip?.PreferredSize.Width ?? 0);
 
             var targetWidth = Math.Max(Math.Max(imageSize.Width, MinimumSize.Width), toolbarPreferredWidth);
             var targetHeight = Math.Max(imageSize.Height + toolbarHeight, MinimumSize.Height);
@@ -178,8 +184,14 @@ namespace screenzap
                 censorToolStrip.Visible = false;
             }
 
+            if (textToolStrip != null)
+            {
+                textToolStrip.Visible = false;
+            }
+
             UpdateCensorToolbarState();
             UpdateDrawingToolButtons();
+            UpdateTextToolButtons();
         }
         
         private void canvasPanel_SizeChanged(object? sender, EventArgs e)
@@ -205,6 +217,7 @@ namespace screenzap
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
             ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
             ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
+            ConfigureIconButton(textToolStripButton, IconChar.Font);
             ConfigureIconButton(censorToolStripButton, IconChar.UserSecret);
             ConfigureIconButton(copyClipboardToolStripButton, IconChar.Copy);
             ConfigureIconButton(reloadToolStripButton, IconChar.Rotate);
@@ -214,6 +227,7 @@ namespace screenzap
             ConfigureIconButton(cancelCensorToolStripButton, IconChar.Xmark);
             UpdateReloadIndicator();
             UpdateTraceButtonState();
+            InitializeTextToolbar();
         }
 
         private static void ConfigureIconButton(IconToolStripButton? button, IconChar icon)
@@ -334,7 +348,19 @@ namespace screenzap
             activeDrawingTool = DrawingTool.None;
             annotationTranslateModeActive = false;
             annotationDraftAnchorPixel = Point.Empty;
+            
+            // Reset text annotations
+            textAnnotations.Clear();
+            activeTextAnnotation = null;
+            selectedTextAnnotation = null;
+            isTextToolActive = false;
+            textAnnotationSnapshotBeforeEdit = null;
+            textAnnotationChangedDuringDrag = false;
+            isTextAnnotationDragging = false;
+            
             UpdateDrawingToolButtons();
+            UpdateTextToolButtons();
+            UpdateTextToolbarVisibility();
 
             var replacementImage = new Bitmap(imgData);
 
@@ -675,6 +701,7 @@ namespace screenzap
             isPlaceholderImage = false;
 
             ApplyCropToAnnotations(clampedSelection.Location, clampedSelection.Size);
+            ApplyCropToTextAnnotations(clampedSelection.Location, clampedSelection.Size);
             var annotationStateAfter = CloneAnnotations();
 
             PushUndoStep(Rectangle.Empty, beforeImage, afterSnapshot, selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
@@ -717,6 +744,7 @@ namespace screenzap
             }
 
             UpdateDrawingToolButtons();
+            UpdateTextToolButtons();
             UpdateTraceButtonState();
         }
 
@@ -792,7 +820,7 @@ namespace screenzap
 
             var composite = new Bitmap(pictureBox1.Image);
 
-            if (annotationShapes.Count == 0)
+            if (annotationShapes.Count == 0 && textAnnotations.Count == 0)
             {
                 return composite;
             }
@@ -800,6 +828,7 @@ namespace screenzap
             using (var graphics = Graphics.FromImage(composite))
             {
                 DrawAnnotations(graphics, AnnotationSurface.Image);
+                DrawTextAnnotations(graphics, AnnotationSurface.Image);
             }
 
             return composite;
@@ -904,6 +933,12 @@ namespace screenzap
         {
             //Console.WriteLine(e.Modifiers);
 
+            // Handle text tool keyboard input first
+            if (HandleTextToolKeyDown(e))
+            {
+                return;
+            }
+
             if (isCensorToolActive)
             {
                 if (e.KeyCode == Keys.Escape)
@@ -935,10 +970,22 @@ namespace screenzap
 
             if (e.KeyCode == Keys.Escape)
             {
+                if (isTextToolActive)
+                {
+                    FinalizeActiveTextAnnotation();
+                    isTextToolActive = false;
+                    UpdateTextToolButtons();
+                    UpdateTextToolbarVisibility();
+                    pictureBox1.Invalidate();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
                 if (isDrawingAnnotation || selectedAnnotation != null || activeDrawingTool != DrawingTool.None)
                 {
                     CancelAnnotationPreview();
-                    SelectAnnotation(null);
+                    SelectAnnotation(null);;
                     activeDrawingTool = DrawingTool.None;
                     UpdateDrawingToolButtons();
                     pictureBox1.Invalidate();
@@ -1083,6 +1130,16 @@ namespace screenzap
                 isMovingSelection = false;
                 annotationTranslateModeActive = false;
             }
+        }
+
+        protected override void OnKeyPress(KeyPressEventArgs e)
+        {
+            if (HandleTextToolKeyPress(e))
+            {
+                return;
+            }
+
+            base.OnKeyPress(e);
         }
 
         private void saveToolStripButton_Click(object sender, EventArgs e)

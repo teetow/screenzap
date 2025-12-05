@@ -42,10 +42,15 @@
             this.copyClipboardToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.rectangleToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.textToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.traceToolStripDropDown = new System.Windows.Forms.ToolStripDropDownButton();
             this.tracePosterMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.tracePhotoMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.traceBwMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.textToolStrip = new System.Windows.Forms.ToolStrip();
+            this.fontComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.fontSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.textColorButton = new System.Windows.Forms.ToolStripButton();
             this.censorToolStrip = new System.Windows.Forms.ToolStrip();
             this.selectAllToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.selectNoneToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -61,6 +66,7 @@
             this.canvasPanel = new System.Windows.Forms.Panel();
             this.pictureBox1 = new screenzap.Components.Shared.ImageViewportControl();
             this.mainToolStrip.SuspendLayout();
+            this.textToolStrip.SuspendLayout();
             this.censorToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).BeginInit();
@@ -80,6 +86,7 @@
             this.replaceToolStripButton,
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
+            this.textToolStripButton,
             this.traceToolStripDropDown,
             this.censorToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
@@ -88,6 +95,46 @@
             this.mainToolStrip.Size = new System.Drawing.Size(413, 27);
             this.mainToolStrip.TabIndex = 0;
             this.mainToolStrip.Text = "toolStrip1";
+            // 
+            // textToolStrip
+            // 
+            this.textToolStrip.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
+            this.textToolStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.textToolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.fontComboBox,
+            this.fontSizeComboBox,
+            this.textColorButton});
+            this.textToolStrip.Location = new System.Drawing.Point(0, 27);
+            this.textToolStrip.Name = "textToolStrip";
+            this.textToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
+            this.textToolStrip.Size = new System.Drawing.Size(413, 27);
+            this.textToolStrip.TabIndex = 3;
+            this.textToolStrip.Text = "textToolStrip";
+            this.textToolStrip.Visible = false;
+            // 
+            // fontComboBox
+            // 
+            this.fontComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.fontComboBox.Name = "fontComboBox";
+            this.fontComboBox.Size = new System.Drawing.Size(160, 23);
+            this.fontComboBox.ToolTipText = "Font Family";
+            this.fontComboBox.SelectedIndexChanged += new System.EventHandler(this.fontComboBox_SelectedIndexChanged);
+            // 
+            // fontSizeComboBox
+            // 
+            this.fontSizeComboBox.Name = "fontSizeComboBox";
+            this.fontSizeComboBox.Size = new System.Drawing.Size(60, 23);
+            this.fontSizeComboBox.ToolTipText = "Font Size";
+            this.fontSizeComboBox.TextChanged += new System.EventHandler(this.fontSizeComboBox_TextChanged);
+            // 
+            // textColorButton
+            // 
+            this.textColorButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.textColorButton.Name = "textColorButton";
+            this.textColorButton.Size = new System.Drawing.Size(43, 20);
+            this.textColorButton.Text = "Color";
+            this.textColorButton.ToolTipText = "Text Color";
+            this.textColorButton.Click += new System.EventHandler(this.textColorButton_Click);
             // 
             // censorToolStrip
             // 
@@ -257,6 +304,16 @@
             this.rectangleToolStripButton.ToolTipText = "Draw a rectangle annotation";
             this.rectangleToolStripButton.Click += new System.EventHandler(this.rectangleToolStripButton_Click);
             // 
+            // textToolStripButton
+            // 
+            this.textToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.textToolStripButton.Enabled = false;
+            this.textToolStripButton.Name = "textToolStripButton";
+            this.textToolStripButton.Size = new System.Drawing.Size(36, 23);
+            this.textToolStripButton.Text = "Text";
+            this.textToolStripButton.ToolTipText = "Add text annotation";
+            this.textToolStripButton.Click += new System.EventHandler(this.textToolStripButton_Click);
+            // 
             // traceToolStripDropDown
             // 
             this.traceToolStripDropDown.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -366,6 +423,7 @@
             this.BackColor = System.Drawing.SystemColors.Desktop;
             this.ClientSize = new System.Drawing.Size(413, 303);
             this.Controls.Add(this.canvasPanel);
+            this.Controls.Add(this.textToolStrip);
             this.Controls.Add(this.censorToolStrip);
             this.Controls.Add(this.mainToolStrip);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
@@ -380,6 +438,8 @@
             this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyDown);
             this.KeyUp += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyUp);
             this.canvasPanel.ResumeLayout(false);
+            this.textToolStrip.ResumeLayout(false);
+            this.textToolStrip.PerformLayout();
             this.censorToolStrip.ResumeLayout(false);
             this.censorToolStrip.PerformLayout();
             this.mainToolStrip.ResumeLayout(false);
@@ -405,6 +465,7 @@
     private System.Windows.Forms.ToolStripLabel reloadNotificationLabel;
     private FontAwesome.Sharp.IconToolStripButton arrowToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton rectangleToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton textToolStripButton;
     private System.Windows.Forms.ToolStripDropDownButton traceToolStripDropDown;
     private System.Windows.Forms.ToolStripMenuItem tracePosterMenuItem;
     private System.Windows.Forms.ToolStripMenuItem tracePhotoMenuItem;
@@ -421,5 +482,9 @@
         private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator2;
         private FontAwesome.Sharp.IconToolStripButton applyCensorToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton cancelCensorToolStripButton;
+        private System.Windows.Forms.ToolStrip textToolStrip;
+        private System.Windows.Forms.ToolStripComboBox fontComboBox;
+        private System.Windows.Forms.ToolStripComboBox fontSizeComboBox;
+        private System.Windows.Forms.ToolStripButton textColorButton;
     }
 }

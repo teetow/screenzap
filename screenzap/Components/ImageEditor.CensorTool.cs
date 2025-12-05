@@ -578,7 +578,28 @@ namespace screenzap
             hasUnsavedChanges = true;
         }
 
-        private void ApplyUndoStep(ImageUndoStep step, bool applyAfterState)
+        private void ApplyUndoStep(IUndoStep step, bool applyAfterState)
+        {
+            if (step == null)
+            {
+                return;
+            }
+
+            if (step is TextAnnotationUndoStep textStep)
+            {
+                var textState = applyAfterState ? textStep.After : textStep.Before;
+                ApplyTextAnnotationState(textState);
+                pictureBox1?.Invalidate();
+                return;
+            }
+
+            if (step is ImageUndoStep imageStep)
+            {
+                ApplyImageUndoStep(imageStep, applyAfterState);
+            }
+        }
+
+        private void ApplyImageUndoStep(ImageUndoStep step, bool applyAfterState)
         {
             if (step == null)
             {
@@ -587,6 +608,7 @@ namespace screenzap
 
             var source = applyAfterState ? step.After : step.Before;
             var shapeState = applyAfterState ? step.ShapesAfter : step.ShapesBefore;
+            var textState = applyAfterState ? step.TextsAfter : step.TextsBefore;
 
             if (source != null)
             {
@@ -631,6 +653,7 @@ namespace screenzap
 
             Selection = applyAfterState ? step.SelectionAfter : step.SelectionBefore;
             ApplyAnnotationState(shapeState);
+            ApplyTextAnnotationState(textState);
             UpdateCommandUI();
             pictureBox1.Invalidate();
         }

@@ -4,9 +4,13 @@ using System.Drawing;
 
 namespace screenzap
 {
-    internal sealed class ImageUndoStep : IDisposable
+    internal interface IUndoStep : IDisposable
     {
-        public ImageUndoStep(Rectangle region, Bitmap? before, Bitmap? after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage, List<AnnotationShape>? shapesBefore, List<AnnotationShape>? shapesAfter)
+    }
+
+    internal sealed class ImageUndoStep : IUndoStep
+    {
+        public ImageUndoStep(Rectangle region, Bitmap? before, Bitmap? after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage, List<AnnotationShape>? shapesBefore, List<AnnotationShape>? shapesAfter, List<TextAnnotation>? textsBefore = null, List<TextAnnotation>? textsAfter = null)
         {
             Region = region;
             Before = before;
@@ -16,6 +20,8 @@ namespace screenzap
             ReplacesImage = replacesImage;
             ShapesBefore = shapesBefore;
             ShapesAfter = shapesAfter;
+            TextsBefore = textsBefore;
+            TextsAfter = textsAfter;
         }
 
         public Rectangle Region { get; }
@@ -26,6 +32,8 @@ namespace screenzap
         public bool ReplacesImage { get; }
         public List<AnnotationShape>? ShapesBefore { get; }
         public List<AnnotationShape>? ShapesAfter { get; }
+        public List<TextAnnotation>? TextsBefore { get; }
+        public List<TextAnnotation>? TextsAfter { get; }
 
         public void Dispose()
         {
@@ -36,7 +44,7 @@ namespace screenzap
 
     internal sealed class UndoRedo : IDisposable
     {
-        private readonly List<ImageUndoStep> _steps = new List<ImageUndoStep>();
+        private readonly List<IUndoStep> _steps = new List<IUndoStep>();
         private int _currentIndex = -1;
 
         public bool CanUndo => _currentIndex >= 0;
@@ -53,7 +61,7 @@ namespace screenzap
             _currentIndex = -1;
         }
 
-        public void Push(ImageUndoStep? step)
+        public void Push(IUndoStep? step)
         {
             if (step == null)
             {
@@ -74,7 +82,7 @@ namespace screenzap
             _currentIndex = _steps.Count - 1;
         }
 
-        public ImageUndoStep? Undo()
+        public IUndoStep? Undo()
         {
             if (!CanUndo)
             {
@@ -86,7 +94,7 @@ namespace screenzap
             return step;
         }
 
-        public ImageUndoStep? Redo()
+        public IUndoStep? Redo()
         {
             if (!CanRedo)
             {

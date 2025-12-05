@@ -137,6 +137,15 @@ namespace screenzap
                 return;
             }
 
+            // Deactivate text tool when switching to drawing tools
+            if (isTextToolActive)
+            {
+                FinalizeActiveTextAnnotation();
+                isTextToolActive = false;
+                UpdateTextToolButtons();
+                UpdateTextToolbarVisibility();
+            }
+
             if (activeDrawingTool == tool && !isDrawingAnnotation)
             {
                 activeDrawingTool = DrawingTool.None;

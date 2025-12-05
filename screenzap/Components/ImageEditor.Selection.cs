@@ -222,6 +222,13 @@ namespace screenzap
 
             var cursorPixel = FormCoordToPixel(e.Location);
 
+            if (e.Button == MouseButtons.Left && HandleTextToolMouseDown(cursorPixel, e.Location))
+            {
+                pictureBox1.Invalidate();
+                base.OnMouseDown(e);
+                return;
+            }
+
             if (e.Button == MouseButtons.Left && HandleAnnotationMouseDown(cursorPixel, e.Location))
             {
                 pictureBox1.Invalidate();
@@ -272,6 +279,12 @@ namespace screenzap
             }
 
             var cursorPixel = FormCoordToPixel(e.Location);
+            if (HandleTextToolMouseMove(cursorPixel, e.Location, e.Button))
+            {
+                base.OnMouseMove(e);
+                return;
+            }
+
             if (HandleAnnotationMouseMove(cursorPixel, e.Location, e.Button))
             {
                 base.OnMouseMove(e);
@@ -354,6 +367,12 @@ namespace screenzap
                 return;
             }
 
+            if (HandleTextToolMouseUp(e.Button, FormCoordToPixel(e.Location)))
+            {
+                base.OnMouseUp(e);
+                return;
+            }
+
             if (HandleAnnotationMouseUp(e.Button, FormCoordToPixel(e.Location)))
             {
                 base.OnMouseUp(e);
@@ -389,6 +408,7 @@ namespace screenzap
             }
 
             DrawAnnotations(e.Graphics, AnnotationSurface.Screen);
+            DrawTextAnnotations(e.Graphics, AnnotationSurface.Screen);
 
             if (isCensorToolActive && censorRegions.Count > 0)
             {
