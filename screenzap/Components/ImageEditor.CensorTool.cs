@@ -629,6 +629,7 @@ namespace screenzap
                     pictureBox1.ClampPan();
                     ResizeWindowToImage(pictureBox1.GetImagePixelSize());
                     HandleResize();
+                    UpdateStatusBar();
                 }
                 else
                 {

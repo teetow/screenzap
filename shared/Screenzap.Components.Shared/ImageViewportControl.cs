@@ -15,6 +15,7 @@ namespace screenzap.Components.Shared
         private InterpolationMode interpolationMode = InterpolationMode.NearestNeighbor;
 
         public event EventHandler<PaintEventArgs>? OverlayPaint;
+        public event EventHandler? ZoomChanged;
 
         public ImageViewportControl()
         {
@@ -70,6 +71,7 @@ namespace screenzap.Components.Shared
                 zoomLevel = clamped;
                 ClampPan();
                 Invalidate();
+                ZoomChanged?.Invoke(this, EventArgs.Empty);
             }
         }
 

@@ -24,6 +24,7 @@ namespace screenzap
             {
                 _selection = value;
                 UpdateSelectionMetrics();
+                UpdateStatusBar();
             }
         }
 
@@ -329,6 +330,7 @@ namespace screenzap
 
                         MouseOutPixel = delta;
                     }
+                    UpdateRubberBandStatus();
                     pictureBox1.Invalidate();
                 }
             }

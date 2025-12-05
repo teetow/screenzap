@@ -176,6 +176,7 @@ namespace screenzap
 
             MouseWheel += ImageEditor_MouseWheel;
             pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            pictureBox1.ZoomChanged += pictureBox1_ZoomChanged;
 
             ClearSelection();
 
@@ -405,6 +406,7 @@ namespace screenzap
 
             UpdateCommandUI();
             UpdateWindowTitle();
+            UpdateStatusBar();
 
             if (Visible)
             {
@@ -748,6 +750,7 @@ namespace screenzap
             PushUndoStep(Rectangle.Empty, beforeImage, afterSnapshot, selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
 
             UpdateCommandUI();
+            UpdateStatusBar();
             pictureBox1.Invalidate();
             return true;
         }
@@ -806,6 +809,56 @@ namespace screenzap
             }
 
             Text = title;
+        }
+
+        private void pictureBox1_ZoomChanged(object? sender, EventArgs e)
+        {
+            UpdateStatusBar();
+        }
+
+        private void UpdateStatusBar()
+        {
+            if (resolutionStatusLabel == null || zoomStatusLabel == null || selectionStatusLabel == null)
+            {
+                return;
+            }
+
+            var imageSize = pictureBox1?.GetImagePixelSize() ?? Size.Empty;
+            if (imageSize.IsEmpty || !HasEditableImage)
+            {
+                resolutionStatusLabel.Text = string.Empty;
+                zoomStatusLabel.Text = string.Empty;
+                selectionStatusLabel.Text = string.Empty;
+            }
+            else
+            {
+                resolutionStatusLabel.Text = $"{imageSize.Width} × {imageSize.Height}";
+                var zoomPercent = (pictureBox1?.ZoomLevel ?? 1m) * 100;
+                zoomStatusLabel.Text = $"{zoomPercent:0}%";
+
+                if (Selection.IsEmpty)
+                {
+                    selectionStatusLabel.Text = string.Empty;
+                }
+                else
+                {
+                    selectionStatusLabel.Text = $"Sel: {Selection.X}, {Selection.Y}  {Selection.Width} × {Selection.Height}";
+                }
+            }
+        }
+
+        private void UpdateRubberBandStatus()
+        {
+            if (selectionStatusLabel == null)
+            {
+                return;
+            }
+
+            var rubberBand = GetNormalizedRect(MouseInPixel, MouseOutPixel);
+            if (rubberBand.Width > 0 || rubberBand.Height > 0)
+            {
+                selectionStatusLabel.Text = $"Sel: {rubberBand.X}, {rubberBand.Y}  {rubberBand.Width} × {rubberBand.Height}";
+            }
         }
 
         private string BuildDefaultSavePath()

@@ -65,10 +65,15 @@
             this.cancelCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.canvasPanel = new System.Windows.Forms.Panel();
             this.pictureBox1 = new screenzap.Components.Shared.ImageViewportControl();
+            this.statusStrip = new System.Windows.Forms.StatusStrip();
+            this.resolutionStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
+            this.zoomStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
+            this.selectionStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.mainToolStrip.SuspendLayout();
             this.textToolStrip.SuspendLayout();
             this.censorToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
+            this.statusStrip.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).BeginInit();
             this.SuspendLayout();
             // 
@@ -416,6 +421,34 @@
             this.pictureBox1.MouseUp += new System.Windows.Forms.MouseEventHandler(this.pictureBox1_MouseUp);
             this.pictureBox1.SizeChanged += new System.EventHandler(this.pictureBox1_SizeChanged);
             // 
+            // statusStrip
+            // 
+            this.statusStrip.BackColor = System.Drawing.SystemColors.Control;
+            this.statusStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.resolutionStatusLabel,
+            this.zoomStatusLabel,
+            this.selectionStatusLabel});
+            this.statusStrip.Location = new System.Drawing.Point(0, 281);
+            this.statusStrip.Name = "statusStrip";
+            this.statusStrip.Size = new System.Drawing.Size(413, 22);
+            this.statusStrip.SizingGrip = false;
+            this.statusStrip.TabIndex = 4;
+            // 
+            // resolutionStatusLabel
+            // 
+            this.resolutionStatusLabel.Name = "resolutionStatusLabel";
+            this.resolutionStatusLabel.Size = new System.Drawing.Size(0, 17);
+            // 
+            // zoomStatusLabel
+            // 
+            this.zoomStatusLabel.Name = "zoomStatusLabel";
+            this.zoomStatusLabel.Size = new System.Drawing.Size(0, 17);
+            // 
+            // selectionStatusLabel
+            // 
+            this.selectionStatusLabel.Name = "selectionStatusLabel";
+            this.selectionStatusLabel.Size = new System.Drawing.Size(0, 17);
+            // 
             // ImageEditor
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
@@ -423,6 +456,7 @@
             this.BackColor = System.Drawing.SystemColors.Desktop;
             this.ClientSize = new System.Drawing.Size(413, 303);
             this.Controls.Add(this.canvasPanel);
+            this.Controls.Add(this.statusStrip);
             this.Controls.Add(this.textToolStrip);
             this.Controls.Add(this.censorToolStrip);
             this.Controls.Add(this.mainToolStrip);
@@ -438,6 +472,8 @@
             this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyDown);
             this.KeyUp += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyUp);
             this.canvasPanel.ResumeLayout(false);
+            this.statusStrip.ResumeLayout(false);
+            this.statusStrip.PerformLayout();
             this.textToolStrip.ResumeLayout(false);
             this.textToolStrip.PerformLayout();
             this.censorToolStrip.ResumeLayout(false);
@@ -486,5 +522,9 @@
         private System.Windows.Forms.ToolStripComboBox fontComboBox;
         private System.Windows.Forms.ToolStripComboBox fontSizeComboBox;
         private System.Windows.Forms.ToolStripButton textColorButton;
+        private System.Windows.Forms.StatusStrip statusStrip;
+        private System.Windows.Forms.ToolStripStatusLabel resolutionStatusLabel;
+        private System.Windows.Forms.ToolStripStatusLabel zoomStatusLabel;
+        private System.Windows.Forms.ToolStripStatusLabel selectionStatusLabel;
     }
 }
