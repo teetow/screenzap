@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TextDetection\TextDetection.csproj" />
+    <ProjectReference Include="..\shared\Screenzap.Components.Shared\Screenzap.Components.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,9 +31,6 @@
     </Compile>
     <Compile Update="Components\TextEditor.Designer.cs">
       <DependentUpon>TextEditor.cs</DependentUpon>
-    </Compile>
-    <Compile Update="Components\ScalingPictureBox.Designer.cs">
-      <DependentUpon>ScalingPictureBox.cs</DependentUpon>
     </Compile>
     <Compile Update="Components\ShortcutEditor.Designer.cs">
       <DependentUpon>ShortcutEditor.cs</DependentUpon>
@@ -87,6 +85,9 @@
     <Content Include="res\screenzap-icon.ico" />
     <Content Include="res\screenzap0001_fav.ico" />
     <Content Include="res\zap.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="res\vtracer.exe">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

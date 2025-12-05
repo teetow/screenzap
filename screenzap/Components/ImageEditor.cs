@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using FontAwesome.Sharp;
 using TextDetection;
@@ -35,6 +36,7 @@ namespace screenzap
     {
         internal Func<TextEditor>? RequestTextEditor { get; set; }
         private EditorHostServices? hostServices;
+        private bool isHostedView;
 
         protected override void WndProc(ref Message m)
         {
@@ -68,6 +70,7 @@ namespace screenzap
         private ClipboardReloadTarget pendingReloadTarget = ClipboardReloadTarget.None;
 
         private bool HasEditableImage => pictureBox1.Image != null && !isPlaceholderImage;
+        internal ViewportMetrics ViewportDiagnostics => pictureBox1?.Metrics ?? default;
         private enum ClipboardReloadTarget
         {
             None,
@@ -89,15 +92,18 @@ namespace screenzap
             }
         }
 
-        private Size GetCanvasSize()
+        private void ResizeWindowToImage(Size imageSize)
         {
-            if (canvasPanel != null)
-            {
-                return canvasPanel.ClientSize;
-            }
+            var toolbarHeight = ToolbarHeight;
+            var toolbarPreferredWidth = Math.Max(
+                mainToolStrip?.PreferredSize.Width ?? 0,
+                censorToolStrip?.PreferredSize.Width ?? 0);
 
-            return new Size(ClientSize.Width, Math.Max(0, ClientSize.Height - ToolbarHeight));
+            var targetWidth = Math.Max(Math.Max(imageSize.Width, MinimumSize.Width), toolbarPreferredWidth);
+            var targetHeight = Math.Max(imageSize.Height + toolbarHeight, MinimumSize.Height);
+            ClientSize = new Size(targetWidth, targetHeight);
         }
+
         private void ShowPlaceholder()
         {
             using (Bitmap bmp = new Bitmap(640, 200))
@@ -119,28 +125,27 @@ namespace screenzap
 
         private Point PixelToFormCoord(Point pt)
         {
-            return pt.Multiply(ZoomLevel);
+            return pictureBox1?.PixelToClient(pt) ?? pt;
         }
+
         private Rectangle PixelToFormCoord(Rectangle rect)
         {
-            return RectangleExt.fromPoints(PixelToFormCoord(rect.Location), PixelToFormCoord(rect.Location.Add(rect.Size)));
+            return pictureBox1?.PixelToClient(rect) ?? rect;
         }
 
         private PointF PixelToFormCoordF(Point pt)
         {
-            float scale = (float)ZoomLevel;
-            return new PointF(pt.X * scale, pt.Y * scale);
+            return pictureBox1?.PixelToClientF(pt) ?? new PointF(pt.X, pt.Y);
         }
 
         private RectangleF PixelToFormCoordF(Rectangle rect)
         {
-            float scale = (float)ZoomLevel;
-            return new RectangleF(rect.Left * scale, rect.Top * scale, rect.Width * scale, rect.Height * scale);
+            return pictureBox1?.PixelToClientF(rect) ?? new RectangleF(rect.Location, rect.Size);
         }
 
         private Point FormCoordToPixel(Point pt)
         {
-            return pt.Divide(ZoomLevel);
+            return pictureBox1?.ClientToPixel(pt) ?? pt;
         }
 
         private Rectangle GetNormalizedRect(Point a, Point b)
@@ -176,6 +181,21 @@ namespace screenzap
             UpdateCensorToolbarState();
             UpdateDrawingToolButtons();
         }
+        
+        private void canvasPanel_SizeChanged(object? sender, EventArgs e)
+        {
+            HandleResize();
+        }
+
+        private void ImageEditor_ClientSizeChanged(object? sender, EventArgs e)
+        {
+            HandleResize();
+        }
+
+        private void pictureBox1_SizeChanged(object? sender, EventArgs e)
+        {
+            HandleResize();
+        }
 
         private void ConfigureToolbarIcons()
         {
@@ -193,6 +213,7 @@ namespace screenzap
             ConfigureIconButton(applyCensorToolStripButton, IconChar.Check);
             ConfigureIconButton(cancelCensorToolStripButton, IconChar.Xmark);
             UpdateReloadIndicator();
+            UpdateTraceButtonState();
         }
 
         private static void ConfigureIconButton(IconToolStripButton? button, IconChar icon)
@@ -219,7 +240,7 @@ namespace screenzap
                 return;
             }
 
-            reloadNotificationLabel.Visible = clipboardHasPendingReload;
+            reloadNotificationLabel.Visible = clipboardHasPendingReload && !isHostedView;
             reloadNotificationLabel.Text = clipboardHasPendingReload ? "●" : string.Empty;
             reloadToolStripButton.IconColor = clipboardHasPendingReload ? Color.OrangeRed : SystemColors.ControlText;
             hostServices?.SetReloadIndicator?.Invoke(clipboardHasPendingReload);
@@ -323,13 +344,10 @@ namespace screenzap
             }
 
             pictureBox1.Image = replacementImage;
-            pictureBox1.Location = Point.Empty;
-            pictureBox1.Size = imgData.Size;
+            pictureBox1.CenterImage();
+            _zoomlevel = pictureBox1.ZoomLevel;
 
-            var toolbarHeight = ToolbarHeight;
-            var targetWidth = Math.Max(imgData.Size.Width, MinimumSize.Width);
-            var targetHeight = Math.Max(imgData.Size.Height + toolbarHeight, MinimumSize.Height);
-            ClientSize = new Size(targetWidth, targetHeight);
+            ResizeWindowToImage(imgData.Size);
 
             HandleResize();
 
@@ -397,6 +415,7 @@ namespace screenzap
         internal void ResetZoom()
         {
             ZoomLevel = 1;
+            pictureBox1?.CenterImage();
         }
 
         internal void HandleResize()
@@ -407,40 +426,7 @@ namespace screenzap
 
         private void ClampImageLocationWithinCanvas()
         {
-            if (pictureBox1.Image == null)
-            {
-                return;
-            }
-
-            var canvasSize = GetCanvasSize();
-            if (canvasSize.Width <= 0 || canvasSize.Height <= 0)
-            {
-                return;
-            }
-
-            var constrainedLeft = pictureBox1.Location.X;
-            if (pictureBox1.Width <= canvasSize.Width)
-            {
-                constrainedLeft = (canvasSize.Width - pictureBox1.Width) / 2;
-            }
-            else
-            {
-                var minLeft = canvasSize.Width - pictureBox1.Width;
-                constrainedLeft = Math.Min(0, Math.Max(minLeft, constrainedLeft));
-            }
-
-            var constrainedTop = pictureBox1.Location.Y;
-            if (pictureBox1.Height <= canvasSize.Height)
-            {
-                constrainedTop = (canvasSize.Height - pictureBox1.Height) / 2;
-            }
-            else
-            {
-                var minTop = canvasSize.Height - pictureBox1.Height;
-                constrainedTop = Math.Min(0, Math.Max(minTop, constrainedTop));
-            }
-
-            pictureBox1.Location = new Point(constrainedLeft, constrainedTop);
+            pictureBox1?.ClampPan();
         }
 
         private Rectangle GetImageBounds()
@@ -610,7 +596,15 @@ namespace screenzap
                     after.UnlockBits(targetData);
                 }
 
-                using (var gImg = Graphics.FromImage(pictureBox1.Image))
+                var targetImage = pictureBox1.Image;
+                if (targetImage == null)
+                {
+                    before.Dispose();
+                    after?.Dispose();
+                    return false;
+                }
+
+                using (var gImg = Graphics.FromImage(targetImage))
                 {
                     gImg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
                     gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
@@ -648,7 +642,13 @@ namespace screenzap
             var selectionAfter = Rectangle.Empty;
             var annotationStateBefore = CloneAnnotations();
 
-            var beforeImage = new Bitmap(pictureBox1.Image);
+            var sourceImage = pictureBox1.Image;
+            if (sourceImage == null)
+            {
+                return false;
+            }
+
+            var beforeImage = new Bitmap(sourceImage);
 
             Bitmap afterSnapshot = new Bitmap(clampedSelection.Width, clampedSelection.Height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(afterSnapshot))
@@ -656,18 +656,18 @@ namespace screenzap
                 g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
                 g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
                 g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                g.DrawImage(pictureBox1.Image, new Rectangle(Point.Empty, clampedSelection.Size), clampedSelection, GraphicsUnit.Pixel);
+                g.DrawImage(sourceImage, new Rectangle(Point.Empty, clampedSelection.Size), clampedSelection, GraphicsUnit.Pixel);
             }
 
             var newImage = new Bitmap(afterSnapshot);
 
+            var currentZoom = ZoomLevel;
             pictureBox1.Image?.Dispose();
             pictureBox1.Image = newImage;
-            pictureBox1.Size = pictureBox1.Image.Size.Multiply(ZoomLevel);
+            ZoomLevel = currentZoom;
+            pictureBox1.ClampPan();
 
-            ClientSize = new Size(
-                Math.Max(pictureBox1.Image.Width, MinimumSize.Width),
-                Math.Max(pictureBox1.Image.Height + ToolbarHeight, MinimumSize.Height));
+            ResizeWindowToImage(pictureBox1.Image.Size);
 
             HandleResize();
 
@@ -717,6 +717,7 @@ namespace screenzap
             }
 
             UpdateDrawingToolButtons();
+            UpdateTraceButtonState();
         }
 
         private void UpdateWindowTitle()
@@ -1289,6 +1290,89 @@ namespace screenzap
             ToggleDrawingTool(DrawingTool.Rectangle);
         }
 
+        private async void tracePosterMenuItem_Click(object? sender, EventArgs e)
+        {
+            await TraceImageToSvgAsync(lib.ImageTracer.TracingPreset.Poster);
+        }
+
+        private async void tracePhotoMenuItem_Click(object? sender, EventArgs e)
+        {
+            await TraceImageToSvgAsync(lib.ImageTracer.TracingPreset.Photo);
+        }
+
+        private async void traceBwMenuItem_Click(object? sender, EventArgs e)
+        {
+            await TraceImageToSvgAsync(lib.ImageTracer.TracingPreset.BlackAndWhite);
+        }
+
+        private void UpdateTraceButtonState()
+        {
+            if (traceToolStripDropDown == null)
+            {
+                return;
+            }
+
+            traceToolStripDropDown.Enabled = HasEditableImage && lib.ImageTracer.IsAvailable();
+            traceToolStripDropDown.ToolTipText = lib.ImageTracer.IsAvailable()
+                ? "Trace bitmap to SVG and copy to clipboard"
+                : "VTracer not found. Download from github.com/visioncortex/vtracer/releases";
+        }
+
+        private async Task TraceImageToSvgAsync(lib.ImageTracer.TracingPreset preset)
+        {
+            if (!HasEditableImage || pictureBox1?.Image == null)
+            {
+                return;
+            }
+
+            if (!lib.ImageTracer.IsAvailable())
+            {
+                MessageBox.Show(
+                    "VTracer executable not found.\n\n" +
+                    "Download vtracer.exe from:\nhttps://github.com/visioncortex/vtracer/releases\n\n" +
+                    "Place vtracer.exe in the application folder.",
+                    "VTracer Not Found",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            var originalButtonText = traceToolStripDropDown?.Text;
+            try
+            {
+                if (traceToolStripDropDown != null)
+                {
+                    traceToolStripDropDown.Enabled = false;
+                    traceToolStripDropDown.Text = "Tracing...";
+                }
+
+                using var bitmap = new Bitmap(pictureBox1.Image);
+                var svg = await lib.ImageTracer.TraceToSvgAsync(bitmap, preset);
+
+                if (!string.IsNullOrEmpty(svg))
+                {
+                    Clipboard.SetText(svg);
+                    ignoreNextClipboardUpdate = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Failed to trace image:\n{ex.Message}",
+                    "Trace Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            finally
+            {
+                if (traceToolStripDropDown != null)
+                {
+                    traceToolStripDropDown.Text = originalButtonText;
+                    UpdateTraceButtonState();
+                }
+            }
+        }
+
         Control IClipboardDocumentPresenter.View => this;
 
         string IClipboardDocumentPresenter.DisplayName => "Image";
@@ -1392,9 +1476,29 @@ namespace screenzap
 
         private void ApplyHostChromeVisibility(bool isHosted)
         {
-            if (mainToolStrip != null)
+            isHostedView = isHosted;
+
+            void ToggleHostItemVisibility(ToolStripItem? item)
             {
-                mainToolStrip.Visible = !isHosted;
+                if (item != null)
+                {
+                    item.Visible = !isHosted;
+                }
+            }
+
+            ToggleHostItemVisibility(saveToolStripButton);
+            ToggleHostItemVisibility(saveAsToolStripButton);
+            ToggleHostItemVisibility(copyClipboardToolStripButton);
+            ToggleHostItemVisibility(reloadToolStripButton);
+
+            if (reloadNotificationLabel != null && isHosted)
+            {
+                reloadNotificationLabel.Visible = false;
+            }
+
+            if (!isHosted)
+            {
+                UpdateReloadIndicator();
             }
         }
 

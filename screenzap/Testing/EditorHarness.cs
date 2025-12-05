@@ -12,6 +12,9 @@ namespace screenzap.Testing
 {
     internal static class EditorHarness
     {
+        private static readonly Size HarnessImageSize = new Size(96, 64);
+        private static readonly Rectangle HarnessImageBounds = new Rectangle(Point.Empty, HarnessImageSize);
+
         public static int Run()
         {
             Logger.Log("Editor harness starting...");
@@ -27,7 +30,7 @@ namespace screenzap.Testing
 
             var failures = new List<string>();
             ValidateTextFlow(host, failures);
-            ValidateImageFlow(host, failures);
+            ValidateImageFlow(host, imagePresenter, failures);
             ValidateHostServices(failures);
 
             if (failures.Count == 0)
@@ -63,7 +66,7 @@ namespace screenzap.Testing
             ValidateCommand(host, EditorCommandId.Copy, failures, "Text presenter");
         }
 
-        private static void ValidateImageFlow(ClipboardEditorHostForm host, List<string> failures)
+        private static void ValidateImageFlow(ClipboardEditorHostForm host, ImagePresenter imagePresenter, List<string> failures)
         {
             var data = CreateImageData();
             if (!host.TryShowClipboardData(data))
@@ -72,6 +75,8 @@ namespace screenzap.Testing
                 return;
             }
 
+            ProcessPendingUi();
+
             if (host.ActivePresenter is not ImagePresenter)
             {
                 failures.Add("Image presenter was not activated after loading bitmap data.");
@@ -79,6 +84,118 @@ namespace screenzap.Testing
             }
 
             ValidateCommand(host, EditorCommandId.Copy, failures, "Image presenter");
+
+            imagePresenter.ResetZoom();
+            imagePresenter.HandleResize();
+            ProcessPendingUi();
+
+            ValidateViewportDiagnostics(imagePresenter, failures);
+            ValidateSelectionDiagnostics(imagePresenter, failures);
+        }
+
+        private static void ValidateViewportDiagnostics(ImagePresenter imagePresenter, List<string> failures)
+        {
+            var metrics = imagePresenter.ViewportDiagnostics;
+            Logger.Log($"Viewport metrics => zoom {metrics.ZoomLevel}, pan {metrics.PanOffset}, client {metrics.ClientSize}, image {metrics.ImageClientRectangle}.");
+            if (!metrics.HasImage)
+            {
+                failures.Add("Viewport diagnostics did not report an image after load.");
+                return;
+            }
+
+            if (metrics.ImagePixelSize != HarnessImageSize)
+            {
+                failures.Add($"Viewport reported unexpected image size {metrics.ImagePixelSize}.");
+            }
+
+            if (metrics.ZoomLevel != 1m)
+            {
+                failures.Add($"Viewport zoom expected 1 but was {metrics.ZoomLevel}.");
+            }
+
+            if (metrics.ClientSize.Width <= 0 || metrics.ClientSize.Height <= 0)
+            {
+                failures.Add("Viewport client area was not initialized.");
+            }
+
+            var expectedScaledWidth = metrics.ImagePixelSize.Width * (float)metrics.ZoomLevel;
+            var expectedScaledHeight = metrics.ImagePixelSize.Height * (float)metrics.ZoomLevel;
+
+            if (!IsNearlyEqual(metrics.ScaledImageSize.Width, expectedScaledWidth) ||
+                !IsNearlyEqual(metrics.ScaledImageSize.Height, expectedScaledHeight))
+            {
+                failures.Add("Scaled image size no longer matches zoom level.");
+            }
+
+            if (!IsNearlyEqual(metrics.ImageClientRectangle.Width, metrics.ScaledImageSize.Width) ||
+                !IsNearlyEqual(metrics.ImageClientRectangle.Height, metrics.ScaledImageSize.Height))
+            {
+                failures.Add("Image client rectangle drifted from scaled bounds.");
+            }
+
+            if (metrics.ImageClientRectangle.Left < -0.5f || metrics.ImageClientRectangle.Top < -0.5f)
+            {
+                failures.Add("Image viewport rendered outside the client area (negative offset).");
+            }
+
+            if (metrics.ImageClientRectangle.Right > metrics.ClientSize.Width + 0.5f ||
+                metrics.ImageClientRectangle.Bottom > metrics.ClientSize.Height + 0.5f)
+            {
+                failures.Add("Image viewport overflowed the client bounds.");
+            }
+        }
+
+        private static void ValidateSelectionDiagnostics(ImagePresenter imagePresenter, List<string> failures)
+        {
+            var inBoundsSelection = new Rectangle(10, 8, 24, 18);
+            imagePresenter.SetSelectionForDiagnostics(inBoundsSelection);
+            ProcessPendingUi();
+            var selection = imagePresenter.SelectionDiagnostics;
+            Logger.Log($"Selection diagnostics (in-bounds) => selection {selection.Selection}, clamped {selection.ClampedSelection}.");
+
+            if (!selection.HasSelection)
+            {
+                failures.Add("Selection diagnostics lost in-bounds selection.");
+            }
+
+            if (!selection.IsWithinBounds)
+            {
+                failures.Add("Selection diagnostics marked in-bounds selection as clamped.");
+            }
+
+            if (selection.ClampedSelection != inBoundsSelection)
+            {
+                failures.Add("Selection metrics for in-bounds selection were altered unexpectedly.");
+            }
+
+            var outOfBoundsSelection = new Rectangle(-12, -6, 50, 48);
+            imagePresenter.SetSelectionForDiagnostics(outOfBoundsSelection);
+            ProcessPendingUi();
+            selection = imagePresenter.SelectionDiagnostics;
+            Logger.Log($"Selection diagnostics (out-of-bounds) => selection {selection.Selection}, clamped {selection.ClampedSelection}.");
+
+            if (selection.ImageBounds != HarnessImageBounds)
+            {
+                failures.Add("Selection diagnostics reported unexpected image bounds.");
+            }
+
+            if (selection.IsWithinBounds)
+            {
+                failures.Add("Selection diagnostics failed to flag out-of-bounds selection.");
+            }
+
+            var expectedClamp = Rectangle.Intersect(outOfBoundsSelection, HarnessImageBounds);
+            if (selection.ClampedSelection != expectedClamp)
+            {
+                failures.Add($"Selection diagnostics did not clamp selection (expected {expectedClamp}, got {selection.ClampedSelection}).");
+            }
+
+            imagePresenter.SetSelectionForDiagnostics(Rectangle.Empty);
+        }
+
+        private static bool IsNearlyEqual(float a, float b, float tolerance = 0.1f)
+        {
+            return Math.Abs(a - b) <= tolerance;
         }
 
         private static void ValidateHostServices(List<string> failures)
@@ -170,7 +287,7 @@ namespace screenzap.Testing
 
         private static IDataObject CreateImageData()
         {
-            var bmp = new Bitmap(96, 64);
+            var bmp = new Bitmap(HarnessImageSize.Width, HarnessImageSize.Height);
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.DarkSlateBlue);

@@ -341,7 +341,14 @@ namespace screenzap
 
             try
             {
-                using (var gImg = Graphics.FromImage(pictureBox1.Image))
+                var canvas = pictureBox1.Image;
+                if (canvas == null)
+                {
+                    beforeSnapshot.Dispose();
+                    return;
+                }
+
+                using (var gImg = Graphics.FromImage(canvas))
                 {
                     gImg.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
                     gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
@@ -591,10 +598,12 @@ namespace screenzap
                 if (step.ReplacesImage)
                 {
                     var replacement = new Bitmap(source);
+                    var currentZoom = ZoomLevel;
                     pictureBox1.Image?.Dispose();
                     pictureBox1.Image = replacement;
-                    pictureBox1.Size = pictureBox1.Image.Size.Multiply(ZoomLevel);
-                    ClientSize = new Size(Math.Max(pictureBox1.Image.Width, MinimumSize.Width), Math.Max(pictureBox1.Image.Height + ToolbarHeight, MinimumSize.Height));
+                    ZoomLevel = currentZoom;
+                    pictureBox1.ClampPan();
+                    ResizeWindowToImage(pictureBox1.Image.Size);
                     HandleResize();
                 }
                 else
@@ -605,7 +614,13 @@ namespace screenzap
                         return;
                     }
 
-                    using (var g = Graphics.FromImage(pictureBox1.Image))
+                    var canvas = pictureBox1.Image;
+                    if (canvas == null)
+                    {
+                        return;
+                    }
+
+                    using (var g = Graphics.FromImage(canvas))
                     {
                         g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
                         g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
@@ -647,7 +662,15 @@ namespace screenzap
             {
                 after = GenerateCensoredBitmap(before, clampedSelection);
 
-                using (var gImg = Graphics.FromImage(pictureBox1.Image))
+                var canvas = pictureBox1.Image;
+                if (canvas == null)
+                {
+                    before.Dispose();
+                    after?.Dispose();
+                    return false;
+                }
+
+                using (var gImg = Graphics.FromImage(canvas))
                 {
                     gImg.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
                     gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;

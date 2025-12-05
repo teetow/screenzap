@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using screenzap.Components.Shared;
 using screenzap.lib;
 
 namespace screenzap
@@ -14,7 +15,30 @@ namespace screenzap
         private bool isMovingSelection;
         private Point MoveInPixel;
 
-        private Rectangle Selection;
+        private Rectangle _selection;
+        private SelectionMetrics _selectionMetrics = SelectionMetrics.Empty;
+        private Rectangle Selection
+        {
+            get => _selection;
+            set
+            {
+                _selection = value;
+                UpdateSelectionMetrics();
+            }
+        }
+
+        internal SelectionMetrics SelectionDiagnostics => _selectionMetrics;
+
+        internal void SetSelectionForDiagnostics(Rectangle selection)
+        {
+            Selection = selection;
+        }
+
+        private void UpdateSelectionMetrics()
+        {
+            var bounds = GetImageBounds();
+            _selectionMetrics = SelectionMetrics.From(_selection, bounds);
+        }
         private Rectangle SelectionGrabOrigin;
 
         private ResizeMode rzMode;
@@ -41,13 +65,14 @@ namespace screenzap
         private decimal _zoomlevel = 1;
         private decimal ZoomLevel
         {
-            get { return _zoomlevel; }
+            get => pictureBox1?.ZoomLevel ?? _zoomlevel;
             set
             {
                 _zoomlevel = value;
-                if (pictureBox1.Image != null)
+                if (pictureBox1 != null)
                 {
-                    pictureBox1.Size = pictureBox1.Image.Size.Multiply(_zoomlevel);
+                    pictureBox1.ZoomLevel = value;
+                    _zoomlevel = pictureBox1.ZoomLevel;
                 }
             }
         }
@@ -122,38 +147,24 @@ namespace screenzap
             if (rzMode == ResizeMode.Move)
             {
                 var Delta = MouseInPixel.Subtract(pixel);
-                Selection.Location = new Point(SelectionGrabOrigin.X - Delta.X, SelectionGrabOrigin.Y - Delta.Y);
+                var newLocation = new Point(SelectionGrabOrigin.X - Delta.X, SelectionGrabOrigin.Y - Delta.Y);
+                Selection = new Rectangle(newLocation, Selection.Size);
             }
         }
 
         private void ImageEditor_MouseWheel(object? sender, MouseEventArgs e)
         {
-            if (pictureBox1.Image == null)
+            if (pictureBox1?.Image == null)
                 return;
-            if (canvasPanel == null)
-                return;
+
             var cursorScreen = PointToScreen(e.Location);
-            var cursorInPanel = canvasPanel.PointToClient(cursorScreen);
-            var targetPixel = FormCoordToPixel(cursorInPanel.Subtract(pictureBox1.Location));
+            var cursorInViewport = pictureBox1.PointToClient(cursorScreen);
+            if (Math.Abs(e.Delta) == 0)
+                return;
 
-            var pol = e.Delta / Math.Abs(e.Delta);
-
-            ZoomLevel = pol > 0 ? FindZoomIn(ZoomLevel) : FindZoomOut(ZoomLevel);
-
-            cursorInPanel = canvasPanel.PointToClient(cursorScreen);
-            var newTargetPixel = FormCoordToPixel(cursorInPanel.Subtract(pictureBox1.Location));
-            var offset = PixelToFormCoord(targetPixel.Subtract(newTargetPixel));
-            pictureBox1.Location = pictureBox1.Location.Subtract(offset);
-
-            var canvasSize = GetCanvasSize();
-            if (pictureBox1.Width <= canvasSize.Width && pictureBox1.Height <= canvasSize.Height)
-            {
-                HandleResize();
-            }
-            else
-            {
-                ClampImageLocationWithinCanvas();
-            }
+            var nextZoom = e.Delta > 0 ? FindZoomIn(ZoomLevel) : FindZoomOut(ZoomLevel);
+            pictureBox1.ZoomAround(nextZoom, cursorInViewport);
+            _zoomlevel = pictureBox1.ZoomLevel;
         }
 
         private bool IsClose(int a, int b) => Math.Abs(Math.Max(a, b) - Math.Min(a, b)) < rzTolerance;
@@ -312,9 +323,9 @@ namespace screenzap
 
             else if (e.Button == MouseButtons.Middle && isPanning)
             {
-                var ofs = new Size(e.Location.Subtract(MouseInPixel));
-                pictureBox1.Location += ofs;
-                ClampImageLocationWithinCanvas();
+                var ofsPoint = e.Location.Subtract(MouseInPixel);
+                pictureBox1.PanBy(new Size(ofsPoint));
+                MouseInPixel = e.Location;
             }
             else
             {

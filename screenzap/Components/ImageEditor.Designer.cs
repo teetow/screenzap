@@ -42,6 +42,10 @@
             this.copyClipboardToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.rectangleToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.traceToolStripDropDown = new System.Windows.Forms.ToolStripDropDownButton();
+            this.tracePosterMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.tracePhotoMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.traceBwMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.censorToolStrip = new System.Windows.Forms.ToolStrip();
             this.selectAllToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.selectNoneToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -55,11 +59,10 @@
             this.applyCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.cancelCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.canvasPanel = new System.Windows.Forms.Panel();
-            this.pictureBox1 = new screenzap.ScalingPictureBox();
+            this.pictureBox1 = new screenzap.Components.Shared.ImageViewportControl();
             this.mainToolStrip.SuspendLayout();
             this.censorToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).BeginInit();
             this.SuspendLayout();
             // 
@@ -77,6 +80,7 @@
             this.replaceToolStripButton,
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
+            this.traceToolStripDropDown,
             this.censorToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
             this.mainToolStrip.Name = "mainToolStrip";
@@ -253,6 +257,40 @@
             this.rectangleToolStripButton.ToolTipText = "Draw a rectangle annotation";
             this.rectangleToolStripButton.Click += new System.EventHandler(this.rectangleToolStripButton_Click);
             // 
+            // traceToolStripDropDown
+            // 
+            this.traceToolStripDropDown.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.traceToolStripDropDown.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.tracePosterMenuItem,
+            this.tracePhotoMenuItem,
+            this.traceBwMenuItem});
+            this.traceToolStripDropDown.Enabled = false;
+            this.traceToolStripDropDown.Name = "traceToolStripDropDown";
+            this.traceToolStripDropDown.Size = new System.Drawing.Size(73, 23);
+            this.traceToolStripDropDown.Text = "Trace";
+            this.traceToolStripDropDown.ToolTipText = "Trace bitmap to SVG and copy to clipboard";
+            // 
+            // tracePosterMenuItem
+            // 
+            this.tracePosterMenuItem.Name = "tracePosterMenuItem";
+            this.tracePosterMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.tracePosterMenuItem.Text = "Poster (logos, icons)";
+            this.tracePosterMenuItem.Click += new System.EventHandler(this.tracePosterMenuItem_Click);
+            // 
+            // tracePhotoMenuItem
+            // 
+            this.tracePhotoMenuItem.Name = "tracePhotoMenuItem";
+            this.tracePhotoMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.tracePhotoMenuItem.Text = "Photo (complex images)";
+            this.tracePhotoMenuItem.Click += new System.EventHandler(this.tracePhotoMenuItem_Click);
+            // 
+            // traceBwMenuItem
+            // 
+            this.traceBwMenuItem.Name = "traceBwMenuItem";
+            this.traceBwMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.traceBwMenuItem.Text = "B&&W (line art, sketches)";
+            this.traceBwMenuItem.Click += new System.EventHandler(this.traceBwMenuItem_Click);
+            // 
             // censorToolStripButton
             // 
             this.censorToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -303,20 +341,23 @@
             this.canvasPanel.Name = "canvasPanel";
             this.canvasPanel.Size = new System.Drawing.Size(413, 276);
             this.canvasPanel.TabIndex = 2;
+            this.canvasPanel.SizeChanged += new System.EventHandler(this.canvasPanel_SizeChanged);
             // 
             // pictureBox1
             // 
-            this.pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Default;
+            this.pictureBox1.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
             this.pictureBox1.Location = new System.Drawing.Point(0, 0);
+            this.pictureBox1.Margin = new System.Windows.Forms.Padding(0);
             this.pictureBox1.Name = "pictureBox1";
-            this.pictureBox1.Size = new System.Drawing.Size(207, 139);
-            this.pictureBox1.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
+            this.pictureBox1.Size = new System.Drawing.Size(413, 276);
             this.pictureBox1.TabIndex = 0;
             this.pictureBox1.TabStop = false;
             this.pictureBox1.Paint += new System.Windows.Forms.PaintEventHandler(this.pictureBox1_Paint);
             this.pictureBox1.MouseDown += new System.Windows.Forms.MouseEventHandler(this.pictureBox1_MouseDown);
             this.pictureBox1.MouseMove += new System.Windows.Forms.MouseEventHandler(this.pictureBox1_MouseMove);
             this.pictureBox1.MouseUp += new System.Windows.Forms.MouseEventHandler(this.pictureBox1_MouseUp);
+            this.pictureBox1.SizeChanged += new System.EventHandler(this.pictureBox1_SizeChanged);
             // 
             // ImageEditor
             // 
@@ -333,6 +374,7 @@
             this.SizeGripStyle = System.Windows.Forms.SizeGripStyle.Hide;
             this.Text = "Screenzap Image Editor";
             this.KeyPreview = true;
+            this.ClientSizeChanged += new System.EventHandler(this.ImageEditor_ClientSizeChanged);
             this.ResizeEnd += new System.EventHandler(this.ImageEditor_ResizeEnd);
             this.Paint += new System.Windows.Forms.PaintEventHandler(this.ImageEditor_Paint);
             this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ImageEditor_KeyDown);
@@ -342,7 +384,6 @@
             this.censorToolStrip.PerformLayout();
             this.mainToolStrip.ResumeLayout(false);
             this.mainToolStrip.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
@@ -355,7 +396,7 @@
         private FontAwesome.Sharp.IconToolStripButton saveToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton saveAsToolStripButton;
         private System.Windows.Forms.Panel canvasPanel;
-        private ScalingPictureBox pictureBox1;
+        private Components.Shared.ImageViewportControl pictureBox1;
         private FontAwesome.Sharp.IconToolStripButton cropToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton censorToolStripButton;
@@ -364,6 +405,10 @@
     private System.Windows.Forms.ToolStripLabel reloadNotificationLabel;
     private FontAwesome.Sharp.IconToolStripButton arrowToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton rectangleToolStripButton;
+    private System.Windows.Forms.ToolStripDropDownButton traceToolStripDropDown;
+    private System.Windows.Forms.ToolStripMenuItem tracePosterMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem tracePhotoMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem traceBwMenuItem;
         private System.Windows.Forms.ToolStrip censorToolStrip;
         private FontAwesome.Sharp.IconToolStripButton selectAllToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton selectNoneToolStripButton;
