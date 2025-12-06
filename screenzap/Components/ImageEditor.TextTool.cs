@@ -16,6 +16,7 @@ namespace screenzap
         public string Text { get; set; } = string.Empty;
         public string FontFamily { get; set; } = "Segoe UI";
         public float FontSize { get; set; } = 16f;
+        public FontStyle FontStyle { get; set; } = FontStyle.Regular;
         public Color TextColor { get; set; } = Color.Red;
         public bool Selected { get; set; }
         public bool IsEditing { get; set; }
@@ -29,6 +30,7 @@ namespace screenzap
                 Text = Text,
                 FontFamily = FontFamily,
                 FontSize = FontSize,
+                FontStyle = FontStyle,
                 TextColor = TextColor,
                 Selected = Selected,
                 IsEditing = false
@@ -42,7 +44,7 @@ namespace screenzap
                 return new Rectangle(Position, new Size(100, (int)(FontSize * 1.5f)));
             }
 
-            using var font = new Font(FontFamily, FontSize, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var font = new Font(FontFamily, FontSize, FontStyle, GraphicsUnit.Pixel);
             var size = graphics.MeasureString(Text, font);
             return new Rectangle(Position, new Size((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height)));
         }
@@ -68,6 +70,7 @@ namespace screenzap
         // Text tool settings
         private string textToolFontFamily = "Segoe UI";
         private float textToolFontSize = 24f;
+        private FontStyle textToolFontStyle = FontStyle.Regular;
         private Color textToolColor = Color.Red;
 
         private List<TextAnnotation> CloneTextAnnotations()
@@ -151,6 +154,18 @@ namespace screenzap
             if (fontSizeComboBox != null)
             {
                 fontSizeComboBox.Visible = isTextToolActive;
+            }
+            if (boldButton != null)
+            {
+                boldButton.Visible = isTextToolActive;
+            }
+            if (italicButton != null)
+            {
+                italicButton.Visible = isTextToolActive;
+            }
+            if (underlineButton != null)
+            {
+                underlineButton.Visible = isTextToolActive;
             }
             if (textColorButton != null)
             {
@@ -249,7 +264,7 @@ namespace screenzap
             }
 
             float fontSize = surface == AnnotationSurface.Screen ? annotation.FontSize * scale : annotation.FontSize;
-            using var font = new Font(annotation.FontFamily, fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var font = new Font(annotation.FontFamily, fontSize, annotation.FontStyle, GraphicsUnit.Pixel);
             using var brush = new SolidBrush(annotation.TextColor);
 
             PointF position;
@@ -397,6 +412,7 @@ namespace screenzap
                 SelectTextAnnotation(hit);
                 hit.IsEditing = true;
                 activeTextAnnotation = hit;
+                UpdateStyleButtonsFromFontStyle(hit.FontStyle);
                 textDragOriginPixel = pixelPoint;
                 isTextAnnotationDragging = true;
                 textAnnotationChangedDuringDrag = false;
@@ -421,6 +437,7 @@ namespace screenzap
                 Position = clampedPoint,
                 FontFamily = textToolFontFamily,
                 FontSize = textToolFontSize,
+                FontStyle = textToolFontStyle,
                 TextColor = textToolColor,
                 Text = string.Empty,
                 Selected = true,
@@ -727,6 +744,61 @@ namespace screenzap
             {
                 textColorButton.BackColor = textToolColor;
                 textColorButton.ForeColor = GetContrastColor(textToolColor);
+            }
+        }
+
+        private void boldButton_CheckedChanged(object? sender, EventArgs e)
+        {
+            UpdateFontStyleFromButtons();
+        }
+
+        private void italicButton_CheckedChanged(object? sender, EventArgs e)
+        {
+            UpdateFontStyleFromButtons();
+        }
+
+        private void underlineButton_CheckedChanged(object? sender, EventArgs e)
+        {
+            UpdateFontStyleFromButtons();
+        }
+
+        private void UpdateFontStyleFromButtons()
+        {
+            FontStyle style = FontStyle.Regular;
+            if (boldButton?.Checked == true)
+            {
+                style |= FontStyle.Bold;
+            }
+            if (italicButton?.Checked == true)
+            {
+                style |= FontStyle.Italic;
+            }
+            if (underlineButton?.Checked == true)
+            {
+                style |= FontStyle.Underline;
+            }
+
+            textToolFontStyle = style;
+            if (activeTextAnnotation != null)
+            {
+                activeTextAnnotation.FontStyle = style;
+                pictureBox1?.Invalidate();
+            }
+        }
+
+        private void UpdateStyleButtonsFromFontStyle(FontStyle style)
+        {
+            if (boldButton != null)
+            {
+                boldButton.Checked = style.HasFlag(FontStyle.Bold);
+            }
+            if (italicButton != null)
+            {
+                italicButton.Checked = style.HasFlag(FontStyle.Italic);
+            }
+            if (underlineButton != null)
+            {
+                underlineButton.Checked = style.HasFlag(FontStyle.Underline);
             }
         }
 

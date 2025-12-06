@@ -46,6 +46,9 @@
             this.textToolSeparator = new System.Windows.Forms.ToolStripSeparator();
             this.fontComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.fontSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.boldButton = new System.Windows.Forms.ToolStripButton();
+            this.italicButton = new System.Windows.Forms.ToolStripButton();
+            this.underlineButton = new System.Windows.Forms.ToolStripButton();
             this.textColorButton = new System.Windows.Forms.ToolStripButton();
             this.traceToolStripDropDown = new System.Windows.Forms.ToolStripDropDownButton();
             this.tracePosterMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -94,6 +97,9 @@
             this.textToolSeparator,
             this.fontComboBox,
             this.fontSizeComboBox,
+            this.boldButton,
+            this.italicButton,
+            this.underlineButton,
             this.textColorButton,
             this.traceToolStripDropDown,
             this.censorToolStripButton});
@@ -129,6 +135,45 @@
             this.fontSizeComboBox.ToolTipText = "Font Size";
             this.fontSizeComboBox.Visible = false;
             this.fontSizeComboBox.TextChanged += new System.EventHandler(this.fontSizeComboBox_TextChanged);
+            // 
+            // boldButton
+            // 
+            this.boldButton.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.boldButton.CheckOnClick = true;
+            this.boldButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.boldButton.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+            this.boldButton.Name = "boldButton";
+            this.boldButton.Size = new System.Drawing.Size(23, 20);
+            this.boldButton.Text = "B";
+            this.boldButton.ToolTipText = "Bold";
+            this.boldButton.Visible = false;
+            this.boldButton.CheckedChanged += new System.EventHandler(this.boldButton_CheckedChanged);
+            // 
+            // italicButton
+            // 
+            this.italicButton.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.italicButton.CheckOnClick = true;
+            this.italicButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.italicButton.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Italic);
+            this.italicButton.Name = "italicButton";
+            this.italicButton.Size = new System.Drawing.Size(23, 20);
+            this.italicButton.Text = "I";
+            this.italicButton.ToolTipText = "Italic";
+            this.italicButton.Visible = false;
+            this.italicButton.CheckedChanged += new System.EventHandler(this.italicButton_CheckedChanged);
+            // 
+            // underlineButton
+            // 
+            this.underlineButton.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.underlineButton.CheckOnClick = true;
+            this.underlineButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.underlineButton.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Underline);
+            this.underlineButton.Name = "underlineButton";
+            this.underlineButton.Size = new System.Drawing.Size(23, 20);
+            this.underlineButton.Text = "U";
+            this.underlineButton.ToolTipText = "Underline";
+            this.underlineButton.Visible = false;
+            this.underlineButton.CheckedChanged += new System.EventHandler(this.underlineButton_CheckedChanged);
             // 
             // textColorButton
             // 
@@ -518,6 +563,9 @@
         private FontAwesome.Sharp.IconToolStripButton cancelCensorToolStripButton;
         private System.Windows.Forms.ToolStripComboBox fontComboBox;
         private System.Windows.Forms.ToolStripComboBox fontSizeComboBox;
+        private System.Windows.Forms.ToolStripButton boldButton;
+        private System.Windows.Forms.ToolStripButton italicButton;
+        private System.Windows.Forms.ToolStripButton underlineButton;
         private System.Windows.Forms.ToolStripButton textColorButton;
         private System.Windows.Forms.StatusStrip statusStrip;
         private System.Windows.Forms.ToolStripStatusLabel resolutionStatusLabel;
