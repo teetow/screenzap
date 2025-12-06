@@ -43,14 +43,14 @@
             this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.rectangleToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.textToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.textToolSeparator = new System.Windows.Forms.ToolStripSeparator();
+            this.fontComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.fontSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.textColorButton = new System.Windows.Forms.ToolStripButton();
             this.traceToolStripDropDown = new System.Windows.Forms.ToolStripDropDownButton();
             this.tracePosterMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.tracePhotoMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.traceBwMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.textToolStrip = new System.Windows.Forms.ToolStrip();
-            this.fontComboBox = new System.Windows.Forms.ToolStripComboBox();
-            this.fontSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
-            this.textColorButton = new System.Windows.Forms.ToolStripButton();
             this.censorToolStrip = new System.Windows.Forms.ToolStrip();
             this.selectAllToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.selectNoneToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -70,7 +70,6 @@
             this.zoomStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.selectionStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.mainToolStrip.SuspendLayout();
-            this.textToolStrip.SuspendLayout();
             this.censorToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
             this.statusStrip.SuspendLayout();
@@ -92,6 +91,10 @@
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
             this.textToolStripButton,
+            this.textToolSeparator,
+            this.fontComboBox,
+            this.fontSizeComboBox,
+            this.textColorButton,
             this.traceToolStripDropDown,
             this.censorToolStripButton});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
@@ -101,44 +104,41 @@
             this.mainToolStrip.TabIndex = 0;
             this.mainToolStrip.Text = "toolStrip1";
             // 
-            // textToolStrip
+            // textToolSeparator
             // 
-            this.textToolStrip.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
-            this.textToolStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
-            this.textToolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.fontComboBox,
-            this.fontSizeComboBox,
-            this.textColorButton});
-            this.textToolStrip.Location = new System.Drawing.Point(0, 27);
-            this.textToolStrip.Name = "textToolStrip";
-            this.textToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
-            this.textToolStrip.Size = new System.Drawing.Size(413, 27);
-            this.textToolStrip.TabIndex = 3;
-            this.textToolStrip.Text = "textToolStrip";
-            this.textToolStrip.Visible = false;
+            this.textToolSeparator.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.textToolSeparator.Name = "textToolSeparator";
+            this.textToolSeparator.Size = new System.Drawing.Size(6, 23);
+            this.textToolSeparator.Visible = false;
             // 
             // fontComboBox
             // 
+            this.fontComboBox.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
             this.fontComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.fontComboBox.Name = "fontComboBox";
             this.fontComboBox.Size = new System.Drawing.Size(160, 23);
             this.fontComboBox.ToolTipText = "Font Family";
+            this.fontComboBox.Visible = false;
             this.fontComboBox.SelectedIndexChanged += new System.EventHandler(this.fontComboBox_SelectedIndexChanged);
             // 
             // fontSizeComboBox
             // 
+            this.fontSizeComboBox.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
             this.fontSizeComboBox.Name = "fontSizeComboBox";
             this.fontSizeComboBox.Size = new System.Drawing.Size(60, 23);
             this.fontSizeComboBox.ToolTipText = "Font Size";
+            this.fontSizeComboBox.Visible = false;
             this.fontSizeComboBox.TextChanged += new System.EventHandler(this.fontSizeComboBox_TextChanged);
             // 
             // textColorButton
             // 
+            this.textColorButton.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
             this.textColorButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
             this.textColorButton.Name = "textColorButton";
             this.textColorButton.Size = new System.Drawing.Size(43, 20);
             this.textColorButton.Text = "Color";
             this.textColorButton.ToolTipText = "Text Color";
+            this.textColorButton.Visible = false;
             this.textColorButton.Click += new System.EventHandler(this.textColorButton_Click);
             // 
             // censorToolStrip
@@ -457,7 +457,6 @@
             this.ClientSize = new System.Drawing.Size(413, 303);
             this.Controls.Add(this.canvasPanel);
             this.Controls.Add(this.statusStrip);
-            this.Controls.Add(this.textToolStrip);
             this.Controls.Add(this.censorToolStrip);
             this.Controls.Add(this.mainToolStrip);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
@@ -474,8 +473,6 @@
             this.canvasPanel.ResumeLayout(false);
             this.statusStrip.ResumeLayout(false);
             this.statusStrip.PerformLayout();
-            this.textToolStrip.ResumeLayout(false);
-            this.textToolStrip.PerformLayout();
             this.censorToolStrip.ResumeLayout(false);
             this.censorToolStrip.PerformLayout();
             this.mainToolStrip.ResumeLayout(false);
@@ -506,6 +503,7 @@
     private System.Windows.Forms.ToolStripMenuItem tracePosterMenuItem;
     private System.Windows.Forms.ToolStripMenuItem tracePhotoMenuItem;
     private System.Windows.Forms.ToolStripMenuItem traceBwMenuItem;
+        private System.Windows.Forms.ToolStripSeparator textToolSeparator;
         private System.Windows.Forms.ToolStrip censorToolStrip;
         private FontAwesome.Sharp.IconToolStripButton selectAllToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton selectNoneToolStripButton;
@@ -518,7 +516,6 @@
         private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator2;
         private FontAwesome.Sharp.IconToolStripButton applyCensorToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton cancelCensorToolStripButton;
-        private System.Windows.Forms.ToolStrip textToolStrip;
         private System.Windows.Forms.ToolStripComboBox fontComboBox;
         private System.Windows.Forms.ToolStripComboBox fontSizeComboBox;
         private System.Windows.Forms.ToolStripButton textColorButton;

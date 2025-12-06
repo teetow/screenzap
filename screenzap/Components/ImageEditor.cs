@@ -87,10 +87,6 @@ namespace screenzap
                 {
                     height += censorToolStrip.Height;
                 }
-                if (textToolStrip != null && textToolStrip.Visible)
-                {
-                    height += textToolStrip.Height;
-                }
 
                 return height;
             }
@@ -100,10 +96,8 @@ namespace screenzap
         {
             var toolbarHeight = ToolbarHeight;
             var toolbarPreferredWidth = Math.Max(
-                Math.Max(
                     mainToolStrip?.PreferredSize.Width ?? 0,
-                    censorToolStrip?.PreferredSize.Width ?? 0),
-                textToolStrip?.PreferredSize.Width ?? 0);
+                    censorToolStrip?.PreferredSize.Width ?? 0);
 
             var targetWidth = Math.Max(Math.Max(imageSize.Width, MinimumSize.Width), toolbarPreferredWidth);
             var targetHeight = Math.Max(imageSize.Height + toolbarHeight, MinimumSize.Height);
@@ -183,11 +177,6 @@ namespace screenzap
             if (censorToolStrip != null)
             {
                 censorToolStrip.Visible = false;
-            }
-
-            if (textToolStrip != null)
-            {
-                textToolStrip.Visible = false;
             }
 
             UpdateCensorToolbarState();

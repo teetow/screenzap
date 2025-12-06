@@ -140,9 +140,21 @@ namespace screenzap
 
         private void UpdateTextToolbarVisibility()
         {
-            if (textToolStrip != null)
+            if (textToolSeparator != null)
             {
-                textToolStrip.Visible = isTextToolActive;
+                textToolSeparator.Visible = isTextToolActive;
+            }
+            if (fontComboBox != null)
+            {
+                fontComboBox.Visible = isTextToolActive;
+            }
+            if (fontSizeComboBox != null)
+            {
+                fontSizeComboBox.Visible = isTextToolActive;
+            }
+            if (textColorButton != null)
+            {
+                textColorButton.Visible = isTextToolActive;
             }
         }
 
