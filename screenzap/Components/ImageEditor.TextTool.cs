@@ -69,9 +69,13 @@ namespace screenzap
 
         // Text tool settings
         private string textToolFontFamily = "Segoe UI";
+        private string? textToolFontVariant = null; // null means use base family
         private float textToolFontSize = 24f;
         private FontStyle textToolFontStyle = FontStyle.Regular;
         private Color textToolColor = Color.Red;
+
+        // Font variant mapping: base name -> list of (display name, full font name)
+        private Dictionary<string, List<(string DisplayName, string FullName)>>? fontVariantMap;
 
         private List<TextAnnotation> CloneTextAnnotations()
         {
@@ -150,6 +154,11 @@ namespace screenzap
             if (fontComboBox != null)
             {
                 fontComboBox.Visible = isTextToolActive;
+            }
+            if (fontVariantComboBox != null)
+            {
+                // Only show variant dropdown if there are variants for current font
+                fontVariantComboBox.Visible = isTextToolActive && fontVariantComboBox.Items.Count > 1;
             }
             if (fontSizeComboBox != null)
             {
@@ -435,7 +444,7 @@ namespace screenzap
             var newAnnotation = new TextAnnotation
             {
                 Position = clampedPoint,
-                FontFamily = textToolFontFamily,
+                FontFamily = GetEffectiveFontFamily(),
                 FontSize = textToolFontSize,
                 FontStyle = textToolFontStyle,
                 TextColor = textToolColor,
@@ -699,10 +708,34 @@ namespace screenzap
             if (fontComboBox?.SelectedItem is string fontName)
             {
                 textToolFontFamily = fontName;
+                textToolFontVariant = null; // Reset variant when base family changes
+                UpdateFontVariantDropdown();
+                
+                var effectiveFont = GetEffectiveFontFamily();
                 if (activeTextAnnotation != null)
                 {
-                    activeTextAnnotation.FontFamily = fontName;
+                    activeTextAnnotation.FontFamily = effectiveFont;
                     pictureBox1?.Invalidate();
+                }
+            }
+        }
+
+        private void fontVariantComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (fontVariantComboBox?.SelectedItem is string displayName && fontVariantMap != null)
+            {
+                if (fontVariantMap.TryGetValue(textToolFontFamily, out var variants))
+                {
+                    var match = variants.Find(v => v.DisplayName == displayName);
+                    if (!string.IsNullOrEmpty(match.FullName))
+                    {
+                        textToolFontVariant = match.FullName;
+                        if (activeTextAnnotation != null)
+                        {
+                            activeTextAnnotation.FontFamily = match.FullName;
+                            pictureBox1?.Invalidate();
+                        }
+                    }
                 }
             }
         }
@@ -804,12 +837,23 @@ namespace screenzap
 
         private void InitializeTextToolbar()
         {
+            // Build font variant map
+            fontVariantMap = BuildFontVariantMap();
+
             if (fontComboBox != null)
             {
-                var installedFonts = new InstalledFontCollection();
-                foreach (var family in installedFonts.Families)
+                // Add only base font names (those that have variants grouped under them)
+                // plus standalone fonts
+                var allFonts = new InstalledFontCollection();
+                var baseNames = new HashSet<string>(fontVariantMap.Keys, StringComparer.OrdinalIgnoreCase);
+                
+                foreach (var family in allFonts.Families)
                 {
-                    fontComboBox.Items.Add(family.Name);
+                    // Add if it's a base name, or if it's not a variant of another font
+                    if (baseNames.Contains(family.Name) || !IsVariantOfAnotherFont(family.Name, baseNames))
+                    {
+                        fontComboBox.Items.Add(family.Name);
+                    }
                 }
 
                 int defaultIndex = fontComboBox.Items.IndexOf(textToolFontFamily);
@@ -830,7 +874,147 @@ namespace screenzap
                 fontSizeComboBox.Text = textToolFontSize.ToString();
             }
 
+            UpdateFontVariantDropdown();
             UpdateTextColorButtonAppearance();
+        }
+
+        private Dictionary<string, List<(string DisplayName, string FullName)>> BuildFontVariantMap()
+        {
+            var map = new Dictionary<string, List<(string DisplayName, string FullName)>>(StringComparer.OrdinalIgnoreCase);
+            var installedFonts = new InstalledFontCollection();
+            var allFontNames = installedFonts.Families.Select(f => f.Name).ToList();
+
+            // Common weight/style suffixes to detect variants
+            string[] variantSuffixes = {
+                " Thin", " Hairline", " ExtraLight", " Extra Light", " UltraLight", " Ultra Light",
+                " Light", " SemiLight", " Semi Light", " DemiLight", " Demi Light",
+                " Regular", " Normal", " Book", " Text", " Roman",
+                " Medium", " SemiBold", " Semi Bold", " DemiBold", " Demi Bold",
+                " Bold", " ExtraBold", " Extra Bold", " UltraBold", " Ultra Bold", " Heavy", " Black",
+                " ExtraBlack", " Extra Black", " UltraBlack", " Ultra Black", " Fat",
+                " Condensed", " Cond", " Narrow", " Compressed",
+                " Extended", " Expanded", " Wide",
+                " Italic", " Oblique", " Slanted"
+            };
+
+            foreach (var fontName in allFontNames)
+            {
+                // Try to find the base name by removing known suffixes
+                string baseName = fontName;
+                string variantPart = "";
+
+                foreach (var suffix in variantSuffixes)
+                {
+                    if (fontName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var potentialBase = fontName.Substring(0, fontName.Length - suffix.Length);
+                        // Check if the base exists as a font or has other variants
+                        if (allFontNames.Any(f => f.Equals(potentialBase, StringComparison.OrdinalIgnoreCase)) ||
+                            allFontNames.Any(f => f.StartsWith(potentialBase + " ", StringComparison.OrdinalIgnoreCase) && f != fontName))
+                        {
+                            baseName = potentialBase;
+                            variantPart = suffix.Trim();
+                            break;
+                        }
+                    }
+                }
+
+                if (!map.ContainsKey(baseName))
+                {
+                    map[baseName] = new List<(string DisplayName, string FullName)>();
+                }
+
+                string displayName = string.IsNullOrEmpty(variantPart) ? "Regular" : variantPart;
+                map[baseName].Add((displayName, fontName));
+            }
+
+            // Sort variants by typical weight order
+            var weightOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Thin"] = 100, ["Hairline"] = 100,
+                ["ExtraLight"] = 200, ["Extra Light"] = 200, ["UltraLight"] = 200, ["Ultra Light"] = 200,
+                ["Light"] = 300,
+                ["SemiLight"] = 350, ["Semi Light"] = 350, ["DemiLight"] = 350, ["Demi Light"] = 350,
+                ["Regular"] = 400, ["Normal"] = 400, ["Book"] = 400, ["Text"] = 400, ["Roman"] = 400,
+                ["Medium"] = 500,
+                ["SemiBold"] = 600, ["Semi Bold"] = 600, ["DemiBold"] = 600, ["Demi Bold"] = 600,
+                ["Bold"] = 700,
+                ["ExtraBold"] = 800, ["Extra Bold"] = 800, ["UltraBold"] = 800, ["Ultra Bold"] = 800, ["Heavy"] = 800,
+                ["Black"] = 900,
+                ["ExtraBlack"] = 950, ["Extra Black"] = 950, ["UltraBlack"] = 950, ["Ultra Black"] = 950, ["Fat"] = 950
+            };
+
+            foreach (var kvp in map)
+            {
+                kvp.Value.Sort((a, b) =>
+                {
+                    int orderA = weightOrder.TryGetValue(a.DisplayName, out int wA) ? wA : 400;
+                    int orderB = weightOrder.TryGetValue(b.DisplayName, out int wB) ? wB : 400;
+                    return orderA.CompareTo(orderB);
+                });
+            }
+
+            return map;
+        }
+
+        private bool IsVariantOfAnotherFont(string fontName, HashSet<string> baseNames)
+        {
+            // Check if this font name starts with any base name followed by a space
+            foreach (var baseName in baseNames)
+            {
+                if (fontName.StartsWith(baseName + " ", StringComparison.OrdinalIgnoreCase) && fontName != baseName)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void UpdateFontVariantDropdown()
+        {
+            if (fontVariantComboBox == null || fontVariantMap == null)
+            {
+                return;
+            }
+
+            fontVariantComboBox.Items.Clear();
+
+            if (fontVariantMap.TryGetValue(textToolFontFamily, out var variants) && variants.Count > 1)
+            {
+                foreach (var (displayName, _) in variants)
+                {
+                    fontVariantComboBox.Items.Add(displayName);
+                }
+
+                // Select current variant or default to first
+                int index = 0;
+                if (textToolFontVariant != null)
+                {
+                    var match = variants.FindIndex(v => v.FullName.Equals(textToolFontVariant, StringComparison.OrdinalIgnoreCase));
+                    if (match >= 0)
+                    {
+                        index = match;
+                    }
+                }
+                fontVariantComboBox.SelectedIndex = index;
+                fontVariantComboBox.Visible = isTextToolActive;
+            }
+            else
+            {
+                // No variants, hide the dropdown
+                fontVariantComboBox.Visible = false;
+                textToolFontVariant = null;
+            }
+        }
+
+        private string GetEffectiveFontFamily()
+        {
+            // If a variant is selected, return that; otherwise return base family
+            if (textToolFontVariant != null)
+            {
+                return textToolFontVariant;
+            }
+            return textToolFontFamily;
         }
     }
 

@@ -45,6 +45,7 @@
             this.textToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.textToolSeparator = new System.Windows.Forms.ToolStripSeparator();
             this.fontComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.fontVariantComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.fontSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.boldButton = new System.Windows.Forms.ToolStripButton();
             this.italicButton = new System.Windows.Forms.ToolStripButton();
@@ -96,6 +97,7 @@
             this.textToolStripButton,
             this.textToolSeparator,
             this.fontComboBox,
+            this.fontVariantComboBox,
             this.fontSizeComboBox,
             this.boldButton,
             this.italicButton,
@@ -126,6 +128,16 @@
             this.fontComboBox.ToolTipText = "Font Family";
             this.fontComboBox.Visible = false;
             this.fontComboBox.SelectedIndexChanged += new System.EventHandler(this.fontComboBox_SelectedIndexChanged);
+            // 
+            // fontVariantComboBox
+            // 
+            this.fontVariantComboBox.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.fontVariantComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.fontVariantComboBox.Name = "fontVariantComboBox";
+            this.fontVariantComboBox.Size = new System.Drawing.Size(100, 23);
+            this.fontVariantComboBox.ToolTipText = "Font Weight/Style Variant";
+            this.fontVariantComboBox.Visible = false;
+            this.fontVariantComboBox.SelectedIndexChanged += new System.EventHandler(this.fontVariantComboBox_SelectedIndexChanged);
             // 
             // fontSizeComboBox
             // 
@@ -562,6 +574,7 @@
         private FontAwesome.Sharp.IconToolStripButton applyCensorToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton cancelCensorToolStripButton;
         private System.Windows.Forms.ToolStripComboBox fontComboBox;
+        private System.Windows.Forms.ToolStripComboBox fontVariantComboBox;
         private System.Windows.Forms.ToolStripComboBox fontSizeComboBox;
         private System.Windows.Forms.ToolStripButton boldButton;
         private System.Windows.Forms.ToolStripButton italicButton;
