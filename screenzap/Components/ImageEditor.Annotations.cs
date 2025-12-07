@@ -38,6 +38,8 @@ namespace screenzap
         public AnnotationType Type { get; init; }
         public Point Start { get; set; }
         public Point End { get; set; }
+        public float LineThickness { get; set; } = 2f;
+        public float ArrowSize { get; set; } = 1f; // Multiplier for arrow head size
         public bool Selected { get; set; }
 
         public AnnotationShape Clone()
@@ -48,6 +50,8 @@ namespace screenzap
                 Type = Type,
                 Start = Start,
                 End = End,
+                LineThickness = LineThickness,
+                ArrowSize = ArrowSize,
                 Selected = Selected
             };
         }
@@ -87,6 +91,11 @@ namespace screenzap
         private Point annotationTranslationAnchorSnapshot;
         private List<AnnotationShape>? annotationSnapshotBeforeEdit;
         private bool annotationChangedDuringDrag;
+
+        // Annotation tool settings
+        private float annotationLineThickness = 2f;
+        private float annotationArrowSize = 1f;
+
         private List<AnnotationShape> CloneAnnotations()
         {
             return annotationShapes.Select(a => a.Clone()).ToList();
@@ -100,6 +109,7 @@ namespace screenzap
             }
 
             selectedAnnotation = target;
+            UpdateAnnotationToolbarFromSelection();
             pictureBox1?.Invalidate();
         }
 
@@ -128,6 +138,35 @@ namespace screenzap
             {
                 rectangleToolStripButton.Enabled = enable;
                 rectangleToolStripButton.Checked = enable && activeDrawingTool == DrawingTool.Rectangle;
+            }
+
+            UpdateAnnotationToolbarVisibility();
+        }
+
+        private void UpdateAnnotationToolbarVisibility()
+        {
+            bool isAnnotationToolActive = activeDrawingTool != DrawingTool.None;
+            bool isArrowTool = activeDrawingTool == DrawingTool.Arrow;
+
+            if (annotationToolSeparator != null)
+            {
+                annotationToolSeparator.Visible = isAnnotationToolActive;
+            }
+            if (lineThicknessLabel != null)
+            {
+                lineThicknessLabel.Visible = isAnnotationToolActive;
+            }
+            if (lineThicknessComboBox != null)
+            {
+                lineThicknessComboBox.Visible = isAnnotationToolActive;
+            }
+            if (arrowSizeLabel != null)
+            {
+                arrowSizeLabel.Visible = isArrowTool;
+            }
+            if (arrowSizeComboBox != null)
+            {
+                arrowSizeComboBox.Visible = isArrowTool;
             }
         }
 
@@ -190,9 +229,6 @@ namespace screenzap
                 return;
             }
 
-            float scale = surface == AnnotationSurface.Screen ? (float)ZoomLevel : 1f;
-            float strokeWidth = Math.Max(1f, 2f * scale);
-
             var previousSmoothing = graphics.SmoothingMode;
             graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
@@ -200,7 +236,7 @@ namespace screenzap
             {
                 foreach (var annotation in annotationShapes)
                 {
-                    DrawAnnotationShape(graphics, annotation, surface, strokeWidth);
+                    DrawAnnotationShape(graphics, annotation, surface);
                     if (surface == AnnotationSurface.Screen)
                     {
                         DrawAnnotationHandles(graphics, annotation);
@@ -213,8 +249,11 @@ namespace screenzap
             }
         }
 
-        private void DrawAnnotationShape(Graphics graphics, AnnotationShape annotation, AnnotationSurface surface, float strokeWidth)
+        private void DrawAnnotationShape(Graphics graphics, AnnotationShape annotation, AnnotationSurface surface)
         {
+            float scale = surface == AnnotationSurface.Screen ? (float)ZoomLevel : 1f;
+            float strokeWidth = Math.Max(1f, annotation.LineThickness * scale);
+            
             var penColor = annotation.Selected ? Color.OrangeRed : Color.Red;
             using var pen = new Pen(penColor, strokeWidth)
             {
@@ -223,7 +262,7 @@ namespace screenzap
 
             if (annotation.Type == AnnotationType.Arrow)
             {
-                float arrowScale = surface == AnnotationSurface.Screen ? (float)ZoomLevel : 1f;
+                float arrowScale = scale * annotation.ArrowSize;
                 using var arrowCap = new System.Drawing.Drawing2D.AdjustableArrowCap(4f * arrowScale, 6f * arrowScale, true);
                 pen.CustomEndCap = arrowCap;
                 var start = ConvertAnnotationPoint(annotation.Start, surface);
@@ -428,6 +467,8 @@ namespace screenzap
                     Type = annotationType,
                     Start = clampedPoint,
                     End = clampedPoint,
+                    LineThickness = annotationLineThickness,
+                    ArrowSize = annotationArrowSize,
                     Selected = true
                 };
                 annotationShapes.Add(workingAnnotation);
@@ -891,6 +932,73 @@ namespace screenzap
             SyncSelectedAnnotation();
         }
 
+        private void InitializeAnnotationToolbar()
+        {
+            if (lineThicknessComboBox != null)
+            {
+                lineThicknessComboBox.Items.AddRange(new object[] { "1", "2", "3", "4", "5", "6", "8", "10" });
+                int defaultIndex = lineThicknessComboBox.Items.IndexOf(annotationLineThickness.ToString());
+                lineThicknessComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 1; // Default to "2"
+            }
+
+            if (arrowSizeComboBox != null)
+            {
+                arrowSizeComboBox.Items.AddRange(new object[] { "0.5", "0.75", "1", "1.25", "1.5", "2", "2.5", "3" });
+                int defaultIndex = arrowSizeComboBox.Items.IndexOf(annotationArrowSize.ToString());
+                arrowSizeComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 2; // Default to "1"
+            }
+        }
+
+        private void lineThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (lineThicknessComboBox?.SelectedItem is string thicknessStr && 
+                float.TryParse(thicknessStr, out float thickness) && thickness > 0)
+            {
+                annotationLineThickness = thickness;
+                if (selectedAnnotation != null)
+                {
+                    selectedAnnotation.LineThickness = thickness;
+                    pictureBox1?.Invalidate();
+                }
+            }
+        }
+
+        private void arrowSizeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (arrowSizeComboBox?.SelectedItem is string sizeStr && 
+                float.TryParse(sizeStr, out float size) && size > 0)
+            {
+                annotationArrowSize = size;
+                if (selectedAnnotation != null && selectedAnnotation.Type == AnnotationType.Arrow)
+                {
+                    selectedAnnotation.ArrowSize = size;
+                    pictureBox1?.Invalidate();
+                }
+            }
+        }
+
+        private void UpdateAnnotationToolbarFromSelection()
+        {
+            if (selectedAnnotation != null)
+            {
+                if (lineThicknessComboBox != null)
+                {
+                    int index = lineThicknessComboBox.Items.IndexOf(selectedAnnotation.LineThickness.ToString());
+                    if (index >= 0)
+                    {
+                        lineThicknessComboBox.SelectedIndex = index;
+                    }
+                }
+                if (arrowSizeComboBox != null && selectedAnnotation.Type == AnnotationType.Arrow)
+                {
+                    int index = arrowSizeComboBox.Items.IndexOf(selectedAnnotation.ArrowSize.ToString());
+                    if (index >= 0)
+                    {
+                        arrowSizeComboBox.SelectedIndex = index;
+                    }
+                }
+            }
+        }
 
     }
 }

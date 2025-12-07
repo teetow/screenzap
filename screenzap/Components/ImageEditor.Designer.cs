@@ -42,6 +42,11 @@
             this.copyClipboardToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.rectangleToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.annotationToolSeparator = new System.Windows.Forms.ToolStripSeparator();
+            this.lineThicknessLabel = new System.Windows.Forms.ToolStripLabel();
+            this.lineThicknessComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.arrowSizeLabel = new System.Windows.Forms.ToolStripLabel();
+            this.arrowSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.textToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.textToolSeparator = new System.Windows.Forms.ToolStripSeparator();
             this.fontComboBox = new System.Windows.Forms.ToolStripComboBox();
@@ -95,16 +100,21 @@
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
             this.textToolStripButton,
-            this.textToolSeparator,
-            this.fontComboBox,
-            this.fontVariantComboBox,
-            this.fontSizeComboBox,
-            this.boldButton,
-            this.italicButton,
-            this.underlineButton,
-            this.textColorButton,
             this.traceToolStripDropDown,
-            this.censorToolStripButton});
+            this.censorToolStripButton,
+            this.textColorButton,
+            this.underlineButton,
+            this.italicButton,
+            this.boldButton,
+            this.fontSizeComboBox,
+            this.fontVariantComboBox,
+            this.fontComboBox,
+            this.textToolSeparator,
+            this.arrowSizeComboBox,
+            this.arrowSizeLabel,
+            this.lineThicknessComboBox,
+            this.lineThicknessLabel,
+            this.annotationToolSeparator});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
             this.mainToolStrip.Name = "mainToolStrip";
             this.mainToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
@@ -366,6 +376,49 @@
             this.rectangleToolStripButton.ToolTipText = "Draw a rectangle annotation";
             this.rectangleToolStripButton.Click += new System.EventHandler(this.rectangleToolStripButton_Click);
             // 
+            // annotationToolSeparator
+            // 
+            this.annotationToolSeparator.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.annotationToolSeparator.Name = "annotationToolSeparator";
+            this.annotationToolSeparator.Size = new System.Drawing.Size(6, 23);
+            this.annotationToolSeparator.Visible = false;
+            // 
+            // lineThicknessLabel
+            // 
+            this.lineThicknessLabel.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.lineThicknessLabel.Name = "lineThicknessLabel";
+            this.lineThicknessLabel.Size = new System.Drawing.Size(36, 23);
+            this.lineThicknessLabel.Text = "Line:";
+            this.lineThicknessLabel.Visible = false;
+            // 
+            // lineThicknessComboBox
+            // 
+            this.lineThicknessComboBox.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.lineThicknessComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.lineThicknessComboBox.Name = "lineThicknessComboBox";
+            this.lineThicknessComboBox.Size = new System.Drawing.Size(50, 23);
+            this.lineThicknessComboBox.ToolTipText = "Line Thickness";
+            this.lineThicknessComboBox.Visible = false;
+            this.lineThicknessComboBox.SelectedIndexChanged += new System.EventHandler(this.lineThicknessComboBox_SelectedIndexChanged);
+            // 
+            // arrowSizeLabel
+            // 
+            this.arrowSizeLabel.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.arrowSizeLabel.Name = "arrowSizeLabel";
+            this.arrowSizeLabel.Size = new System.Drawing.Size(44, 23);
+            this.arrowSizeLabel.Text = "Head:";
+            this.arrowSizeLabel.Visible = false;
+            // 
+            // arrowSizeComboBox
+            // 
+            this.arrowSizeComboBox.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.arrowSizeComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.arrowSizeComboBox.Name = "arrowSizeComboBox";
+            this.arrowSizeComboBox.Size = new System.Drawing.Size(50, 23);
+            this.arrowSizeComboBox.ToolTipText = "Arrow Head Size";
+            this.arrowSizeComboBox.Visible = false;
+            this.arrowSizeComboBox.SelectedIndexChanged += new System.EventHandler(this.arrowSizeComboBox_SelectedIndexChanged);
+            // 
             // textToolStripButton
             // 
             this.textToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -555,6 +608,11 @@
     private System.Windows.Forms.ToolStripLabel reloadNotificationLabel;
     private FontAwesome.Sharp.IconToolStripButton arrowToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton rectangleToolStripButton;
+    private System.Windows.Forms.ToolStripSeparator annotationToolSeparator;
+    private System.Windows.Forms.ToolStripLabel lineThicknessLabel;
+    private System.Windows.Forms.ToolStripComboBox lineThicknessComboBox;
+    private System.Windows.Forms.ToolStripLabel arrowSizeLabel;
+    private System.Windows.Forms.ToolStripComboBox arrowSizeComboBox;
     private FontAwesome.Sharp.IconToolStripButton textToolStripButton;
     private System.Windows.Forms.ToolStripDropDownButton traceToolStripDropDown;
     private System.Windows.Forms.ToolStripMenuItem tracePosterMenuItem;
