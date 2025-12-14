@@ -30,6 +30,7 @@ namespace screenzap
         private readonly Font captionFont;
         private Point start;
         private Point end;
+        private bool isDragging;
 
         private int left
         {
@@ -142,17 +143,23 @@ namespace screenzap
             if (e.KeyCode == Keys.Space)
             {
                 doPan = true;
-                var screenPoint = form.PointToScreen(end);
-                if (Cursor.Position != screenPoint)
-                    Cursor.Position = screenPoint;
+                if (isDragging)
+                {
+                    var screenPoint = form.PointToScreen(end);
+                    if (Cursor.Position != screenPoint)
+                        Cursor.Position = screenPoint;
+                }
             }
 
             if (e.Modifiers.HasFlag(Keys.Alt))
             {
                 doCenter = true;
-                var screenPoint = form.PointToScreen(end);
-                if (Cursor.Position != screenPoint)
-                    Cursor.Position = screenPoint;
+                if (isDragging)
+                {
+                    var screenPoint = form.PointToScreen(end);
+                    if (Cursor.Position != screenPoint)
+                        Cursor.Position = screenPoint;
+                }
             }
 
             if (e.KeyCode == Keys.Escape)
@@ -237,12 +244,14 @@ namespace screenzap
         {
             start = new Point(e.X, e.Y);
             end = start;
+            isDragging = true;
             //Cursor.Hide();
         }
 
         private void Form_MouseUp(object? sender, MouseEventArgs e)
         {
             Cursor.Show();
+            isDragging = false;
             form.DialogResult = DialogResult.OK;
             form.Close();
         }

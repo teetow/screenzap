@@ -37,6 +37,9 @@ namespace screenzap
             Logger.StartNewSession(clearExisting: true);
             Logger.Log($"Startup directories: base='{AppContext.BaseDirectory}', current='{Environment.CurrentDirectory}'");
             InitializeComponent();
+
+            AddBuildInfoMenuItem();
+
             rectCaptureCombo = ParseKeyCombo(Properties.Settings.Default.currentCombo);
             seqCaptureCombo = ParseKeyCombo(Properties.Settings.Default.seqCaptureCombo);
             startWhenLoggedInToolStripMenuItem.Checked = Util.IsAutoStartEnabled(autostartAppName, assemblyLocation);
@@ -56,6 +59,40 @@ namespace screenzap
             RegisterSeqCaptureHotkeys();
 
             Logger.Log("Screenzap initialized");
+        }
+
+        private void AddBuildInfoMenuItem()
+        {
+            try
+            {
+                var exePath = Application.ExecutablePath;
+                var lastWriteLocal = File.GetLastWriteTime(exePath);
+
+                var assembly = Assembly.GetExecutingAssembly();
+                var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+                var version = assembly.GetName().Version?.ToString();
+                var versionText = informational ?? version ?? "unknown";
+
+                var itemText = $"Build: {lastWriteLocal:yyyy-MM-dd HH:mm:ss}   v{versionText}";
+                var buildInfoItem = new ToolStripMenuItem(itemText)
+                {
+                    Enabled = false
+                };
+
+                var insertIndex = contextMenuStrip1.Items.IndexOf(toolStripSeparator3);
+                if (insertIndex >= 0)
+                {
+                    contextMenuStrip1.Items.Insert(insertIndex + 1, buildInfoItem);
+                }
+                else
+                {
+                    contextMenuStrip1.Items.Add(buildInfoItem);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to add build info menu item: {ex}");
+            }
         }
 
         protected override void OnLoad(EventArgs e)
