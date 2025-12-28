@@ -32,6 +32,10 @@ namespace screenzap
         private readonly List<int> seqCaptureHotkeyIds = new();
         private static bool zapResourceUnavailable;
 
+        private ClipboardMonitor? clipboardMonitor;
+        private string? lastQrPayload;
+        private DateTime lastQrNotificationUtc;
+
         public Screenzap()
         {
             Logger.StartNewSession(clearExisting: true);
@@ -58,7 +62,139 @@ namespace screenzap
             seqCaptureHook.KeyPressed += new EventHandler<KeyPressedEventArgs>(DoInstantCapture);
             RegisterSeqCaptureHotkeys();
 
+            InitializeQrClipboardMonitor();
+
             Logger.Log("Screenzap initialized");
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            base.OnFormClosed(e);
+
+            if (clipboardMonitor != null)
+            {
+                clipboardMonitor.OnUpdateImage -= ClipboardMonitor_OnUpdateImageForQr;
+                clipboardMonitor.Dispose();
+                clipboardMonitor = null;
+            }
+        }
+
+        private void InitializeQrClipboardMonitor()
+        {
+            try
+            {
+                clipboardMonitor = new ClipboardMonitor();
+                clipboardMonitor.OnUpdateImage += ClipboardMonitor_OnUpdateImageForQr;
+                clipboardMonitor.isListening = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to initialize QR clipboard monitor: {ex.Message}");
+            }
+        }
+
+        private void ClipboardMonitor_OnUpdateImageForQr(object? sender, Bitmap image)
+        {
+            if (image == null)
+            {
+                return;
+            }
+
+            // Clone so we can decode off-thread safely.
+            Bitmap? clone = null;
+            try
+            {
+                clone = (Bitmap)image.Clone();
+            }
+            catch
+            {
+                return;
+            }
+
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                using (clone)
+                {
+                    var payload = QrCodeDecoder.TryDecode(clone);
+                    if (string.IsNullOrWhiteSpace(payload))
+                    {
+                        return;
+                    }
+
+                    try
+                    {
+                        BeginInvoke(new Action(() => ShowQrBalloon(payload)));
+                    }
+                    catch
+                    {
+                        // Ignore if app is shutting down.
+                    }
+                }
+            });
+        }
+
+        private void ShowQrBalloon(string payload)
+        {
+            var now = DateTime.UtcNow;
+
+            if (string.Equals(payload, lastQrPayload, StringComparison.Ordinal) && (now - lastQrNotificationUtc).TotalSeconds < 30)
+            {
+                return;
+            }
+
+            lastQrPayload = payload;
+            lastQrNotificationUtc = now;
+
+            var title = "QR code detected";
+            var message = TruncateForBalloon(payload, 200);
+
+            if (Uri.TryCreate(payload, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Scheme))
+            {
+                // Prefer showing the URL (possibly shortened) rather than raw payload.
+                message = TruncateForBalloon(uri.ToString(), 200);
+            }
+
+            AttachShellLauncher(payload);
+            notifyIcon1.ShowBalloonTip(4000, title, message, ToolTipIcon.Info);
+        }
+
+        private static string TruncateForBalloon(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length <= maxLength)
+            {
+                return value;
+            }
+
+            return value.Substring(0, maxLength - 1) + "…";
+        }
+
+        private void AttachShellLauncher(string payload)
+        {
+            EventHandler? handler = null;
+
+            handler = (s, ev) =>
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = payload,
+                        UseShellExecute = true
+                    };
+                    Process.Start(psi);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to launch QR payload: {ex.Message}");
+                    notifyIcon1.ShowBalloonTip(3000, "Unable to open", "Could not launch QR code content.", ToolTipIcon.Error);
+                }
+                finally
+                {
+                    notifyIcon1.BalloonTipClicked -= handler;
+                }
+            };
+
+            notifyIcon1.BalloonTipClicked += handler;
         }
 
         private void AddBuildInfoMenuItem()

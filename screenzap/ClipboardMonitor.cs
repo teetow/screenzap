@@ -45,7 +45,17 @@ namespace screenzap
 
                 if (m.Msg == WM_CLIPBOARDUPDATE)
                 {
-                    IDataObject? iData = Clipboard.GetDataObject();
+                    IDataObject? iData = null;
+                    try
+                    {
+                        iData = Clipboard.GetDataObject();
+                    }
+                    catch (ExternalException)
+                    {
+                        // Clipboard can be temporarily locked by another process.
+                        return;
+                    }
+
                     if (iData == null)
                     {
                         return;
