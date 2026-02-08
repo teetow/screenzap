@@ -39,6 +39,7 @@
             this.cropToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.optimizeTextToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.straightenToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.censorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.copyClipboardToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -99,6 +100,7 @@
             this.cropToolStripButton,
             this.replaceToolStripButton,
             this.optimizeTextToolStripButton,
+            this.straightenToolStripButton,
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
             this.textToolStripButton,
@@ -368,6 +370,16 @@
             this.optimizeTextToolStripButton.ToolTipText = "Optimize contrast for photographed text";
             this.optimizeTextToolStripButton.Click += new System.EventHandler(this.optimizeTextToolStripButton_Click);
             // 
+            // straightenToolStripButton
+            // 
+            this.straightenToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.straightenToolStripButton.Enabled = false;
+            this.straightenToolStripButton.Name = "straightenToolStripButton";
+            this.straightenToolStripButton.Size = new System.Drawing.Size(75, 23);
+            this.straightenToolStripButton.Text = "Straighten";
+            this.straightenToolStripButton.ToolTipText = "Auto-detect and correct rotation/perspective distortion (Ctrl+L)";
+            this.straightenToolStripButton.Click += new System.EventHandler(this.straightenToolStripButton_Click);
+            // 
             // arrowToolStripButton
             // 
             this.arrowToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -615,6 +627,7 @@
         private FontAwesome.Sharp.IconToolStripButton cropToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton optimizeTextToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton straightenToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton censorToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton copyClipboardToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton reloadToolStripButton;

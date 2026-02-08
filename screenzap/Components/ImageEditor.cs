@@ -740,6 +740,103 @@ namespace screenzap
             }
         }
 
+        private bool ExecuteStraighten()
+        {
+            if (!HasEditableImage)
+            {
+                return false;
+            }
+
+            var targetRegion = Selection.IsEmpty ? GetImageBounds() : ClampToImage(Selection);
+            if (targetRegion.Width <= 0 || targetRegion.Height <= 0)
+            {
+                return false;
+            }
+
+            var selectionBefore = Selection;
+            var before = CaptureRegion(targetRegion);
+            if (before == null)
+            {
+                return false;
+            }
+
+            lib.StraightenResult? result = null;
+
+            try
+            {
+                result = lib.ImageStraightener.Straighten(before);
+
+                if (!result.WasCorrected)
+                {
+                    before.Dispose();
+                    result.Image.Dispose();
+                    return false;
+                }
+
+                var after = result.Image;
+                bool dimensionsChanged = after.Width != targetRegion.Width || after.Height != targetRegion.Height;
+                bool replacesImage = dimensionsChanged && Selection.IsEmpty;
+
+                if (replacesImage)
+                {
+                    // The straightened image has different dimensions — replace the entire image
+                    var beforeFullImage = pictureBox1.Image != null ? new Bitmap(pictureBox1.Image) : null;
+                    pictureBox1.Image?.Dispose();
+                    pictureBox1.Image = new Bitmap(after);
+
+                    PushUndoStep(Rectangle.Empty, beforeFullImage, new Bitmap(after), selectionBefore, Rectangle.Empty, true);
+
+                    before.Dispose();  // Not used in full-image undo step
+                    after.Dispose();   // Copies were made for pictureBox and undo step
+                }
+                else
+                {
+                    // Same dimensions or working on a selection — blit onto existing image
+                    var targetImage = pictureBox1.Image;
+                    if (targetImage == null)
+                    {
+                        before.Dispose();
+                        after.Dispose();
+                        return false;
+                    }
+
+                    // If dimensions changed within a selection, scale to fit the selection region
+                    Bitmap blitSource = after;
+                    if (dimensionsChanged)
+                    {
+                        blitSource = new Bitmap(targetRegion.Width, targetRegion.Height);
+                        using (var g = Graphics.FromImage(blitSource))
+                        {
+                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                            g.DrawImage(after, 0, 0, targetRegion.Width, targetRegion.Height);
+                        }
+                        after.Dispose();  // Scaled copy created; original no longer needed
+                    }
+
+                    using (var gImg = Graphics.FromImage(targetImage))
+                    {
+                        gImg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                        gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                        gImg.DrawImage(blitSource, targetRegion);
+                    }
+
+                    // before and blitSource ownership transfers to undo step
+                    PushUndoStep(targetRegion, before, blitSource, selectionBefore, Selection);
+                }
+
+                pictureBox1.Invalidate();
+                UpdateCommandUI();
+                UpdateStatusBar();
+                return true;
+            }
+            catch
+            {
+                before.Dispose();
+                result?.Image.Dispose();
+                throw;
+            }
+        }
+
         private static Bitmap CreateOptimizedForTextCopy(Bitmap source)
         {
             using var original = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
@@ -988,6 +1085,10 @@ namespace screenzap
             if (optimizeTextToolStripButton != null)
             {
                 optimizeTextToolStripButton.Enabled = enable;
+            }
+            if (straightenToolStripButton != null)
+            {
+                straightenToolStripButton.Enabled = enable;
             }
             if (censorToolStripButton != null)
             {
@@ -1401,6 +1502,14 @@ namespace screenzap
                     e.Handled = true;
                 }
             }
+            else if (e.KeyCode == Keys.L && e.Control)
+            {
+                if (ExecuteStraighten())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
+            }
 
             else if (e.KeyCode == Keys.Z)
             {
@@ -1474,6 +1583,14 @@ namespace screenzap
         private void optimizeTextToolStripButton_Click(object sender, EventArgs e)
         {
             if (ExecuteOptimizeForText())
+            {
+                pictureBox1?.Focus();
+            }
+        }
+
+        private void straightenToolStripButton_Click(object sender, EventArgs e)
+        {
+            if (ExecuteStraighten())
             {
                 pictureBox1?.Focus();
             }
