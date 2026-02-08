@@ -38,6 +38,7 @@
             this.reloadNotificationLabel = new System.Windows.Forms.ToolStripLabel();
             this.cropToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.optimizeTextToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.censorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.copyClipboardToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -97,6 +98,7 @@
             this.reloadNotificationLabel,
             this.cropToolStripButton,
             this.replaceToolStripButton,
+            this.optimizeTextToolStripButton,
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
             this.textToolStripButton,
@@ -356,6 +358,16 @@
             this.replaceToolStripButton.ToolTipText = "Replace with Background (Ctrl+B or Backspace)";
             this.replaceToolStripButton.Click += new System.EventHandler(this.replaceToolStripButton_Click);
             // 
+            // optimizeTextToolStripButton
+            // 
+            this.optimizeTextToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.optimizeTextToolStripButton.Enabled = false;
+            this.optimizeTextToolStripButton.Name = "optimizeTextToolStripButton";
+            this.optimizeTextToolStripButton.Size = new System.Drawing.Size(107, 23);
+            this.optimizeTextToolStripButton.Text = "Optimize Text";
+            this.optimizeTextToolStripButton.ToolTipText = "Optimize contrast for photographed text";
+            this.optimizeTextToolStripButton.Click += new System.EventHandler(this.optimizeTextToolStripButton_Click);
+            // 
             // arrowToolStripButton
             // 
             this.arrowToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -602,6 +614,7 @@
         private Components.Shared.ImageViewportControl pictureBox1;
         private FontAwesome.Sharp.IconToolStripButton cropToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton optimizeTextToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton censorToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton copyClipboardToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton reloadToolStripButton;

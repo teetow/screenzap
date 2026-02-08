@@ -60,6 +60,7 @@ namespace screenzap
     private readonly UndoRedo undoStack = new UndoRedo();
 
         private const string WindowTitleBase = "Screenzap Image Editor";
+        private const int OptimizeTextBlurRadius = 100;
 
         private DateTime? bufferTimestamp;
     private string? currentSavePath;
@@ -205,6 +206,7 @@ namespace screenzap
             ConfigureIconButton(saveAsToolStripButton, IconChar.FilePen);
             ConfigureIconButton(cropToolStripButton, IconChar.CropSimple);
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
+            ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
             ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
             ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
             ConfigureIconButton(textToolStripButton, IconChar.Font);
@@ -684,6 +686,225 @@ namespace screenzap
             }
         }
 
+        private bool ExecuteOptimizeForText()
+        {
+            if (!HasEditableImage)
+            {
+                return false;
+            }
+
+            var targetRegion = Selection.IsEmpty ? GetImageBounds() : ClampToImage(Selection);
+            if (targetRegion.Width <= 0 || targetRegion.Height <= 0)
+            {
+                return false;
+            }
+
+            var selectionBefore = Selection;
+            var before = CaptureRegion(targetRegion);
+            if (before == null)
+            {
+                return false;
+            }
+
+            Bitmap? after = null;
+
+            try
+            {
+                after = CreateOptimizedForTextCopy(before);
+
+                var targetImage = pictureBox1.Image;
+                if (targetImage == null)
+                {
+                    before.Dispose();
+                    after?.Dispose();
+                    return false;
+                }
+
+                using (var gImg = Graphics.FromImage(targetImage))
+                {
+                    gImg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                    gImg.DrawImage(after, targetRegion);
+                }
+
+                PushUndoStep(targetRegion, before, after, selectionBefore, Selection);
+                pictureBox1.Invalidate();
+                UpdateCommandUI();
+                return true;
+            }
+            catch
+            {
+                before.Dispose();
+                after?.Dispose();
+                throw;
+            }
+        }
+
+        private static Bitmap CreateOptimizedForTextCopy(Bitmap source)
+        {
+            using var original = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(original))
+            {
+                graphics.DrawImage(source, 0, 0, source.Width, source.Height);
+            }
+
+            var rect = new Rectangle(0, 0, original.Width, original.Height);
+            var data = original.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+
+            try
+            {
+                int stride = data.Stride;
+                int length = Math.Abs(stride) * original.Height;
+                var sourceBytes = new byte[length];
+                Marshal.Copy(data.Scan0, sourceBytes, 0, length);
+
+                var blurred = ApplyGaussianBlur(sourceBytes, original.Width, original.Height, stride, OptimizeTextBlurRadius);
+                var output = new byte[length];
+
+                for (int i = 0; i < length; i += 4)
+                {
+                    byte srcB = sourceBytes[i];
+                    byte srcG = sourceBytes[i + 1];
+                    byte srcR = sourceBytes[i + 2];
+
+                    int outB = (srcB * 255) / Math.Max(1, (int)blurred[i]);
+                    int outG = (srcG * 255) / Math.Max(1, (int)blurred[i + 1]);
+                    int outR = (srcR * 255) / Math.Max(1, (int)blurred[i + 2]);
+
+                    output[i] = (byte)Math.Min(255, outB);
+                    output[i + 1] = (byte)Math.Min(255, outG);
+                    output[i + 2] = (byte)Math.Min(255, outR);
+                    output[i + 3] = sourceBytes[i + 3];
+                }
+
+                var result = new Bitmap(original.Width, original.Height, PixelFormat.Format32bppArgb);
+                var resultData = result.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                try
+                {
+                    Marshal.Copy(output, 0, resultData.Scan0, length);
+                }
+                finally
+                {
+                    result.UnlockBits(resultData);
+                }
+
+                return result;
+            }
+            finally
+            {
+                original.UnlockBits(data);
+            }
+        }
+
+        private static byte[] ApplyGaussianBlur(byte[] source, int width, int height, int stride, int radius)
+        {
+            var kernel = BuildGaussianKernel(radius);
+            int pixelCount = width * height;
+            var tempB = new float[pixelCount];
+            var tempG = new float[pixelCount];
+            var tempR = new float[pixelCount];
+
+            for (int y = 0; y < height; y++)
+            {
+                int rowOffset = y * stride;
+                int rowIndex = y * width;
+
+                for (int x = 0; x < width; x++)
+                {
+                    float sumB = 0f;
+                    float sumG = 0f;
+                    float sumR = 0f;
+
+                    for (int k = -radius; k <= radius; k++)
+                    {
+                        int sx = Math.Clamp(x + k, 0, width - 1);
+                        int idx = rowOffset + (sx * 4);
+                        float weight = kernel[k + radius];
+                        sumB += source[idx] * weight;
+                        sumG += source[idx + 1] * weight;
+                        sumR += source[idx + 2] * weight;
+                    }
+
+                    int tempIndex = rowIndex + x;
+                    tempB[tempIndex] = sumB;
+                    tempG[tempIndex] = sumG;
+                    tempR[tempIndex] = sumR;
+                }
+            }
+
+            var blurred = new byte[source.Length];
+
+            for (int y = 0; y < height; y++)
+            {
+                int rowOffset = y * stride;
+                for (int x = 0; x < width; x++)
+                {
+                    float sumB = 0f;
+                    float sumG = 0f;
+                    float sumR = 0f;
+
+                    for (int k = -radius; k <= radius; k++)
+                    {
+                        int sy = Math.Clamp(y + k, 0, height - 1);
+                        int tempIndex = (sy * width) + x;
+                        float weight = kernel[k + radius];
+                        sumB += tempB[tempIndex] * weight;
+                        sumG += tempG[tempIndex] * weight;
+                        sumR += tempR[tempIndex] * weight;
+                    }
+
+                    int idx = rowOffset + (x * 4);
+                    blurred[idx] = ClampToByte(sumB);
+                    blurred[idx + 1] = ClampToByte(sumG);
+                    blurred[idx + 2] = ClampToByte(sumR);
+                    blurred[idx + 3] = source[idx + 3];
+                }
+            }
+
+            return blurred;
+        }
+
+        private static float[] BuildGaussianKernel(int radius)
+        {
+            int size = (radius * 2) + 1;
+            var kernel = new float[size];
+            double sigma = Math.Max(1.0, radius / 3.0);
+            double twoSigmaSquared = 2.0 * sigma * sigma;
+            double sum = 0.0;
+
+            for (int i = -radius; i <= radius; i++)
+            {
+                double value = Math.Exp(-(i * i) / twoSigmaSquared);
+                kernel[i + radius] = (float)value;
+                sum += value;
+            }
+
+            if (sum > 0.0)
+            {
+                for (int i = 0; i < size; i++)
+                {
+                    kernel[i] = (float)(kernel[i] / sum);
+                }
+            }
+
+            return kernel;
+        }
+
+        private static byte ClampToByte(float value)
+        {
+            if (value <= 0f)
+            {
+                return 0;
+            }
+
+            if (value >= 255f)
+            {
+                return 255;
+            }
+
+            return (byte)(value + 0.5f);
+        }
+
         private bool ExecuteCrop()
         {
             if (!HasEditableImage || Selection.IsEmpty)
@@ -763,6 +984,10 @@ namespace screenzap
             if (replaceToolStripButton != null)
             {
                 replaceToolStripButton.Enabled = enable && !Selection.IsEmpty;
+            }
+            if (optimizeTextToolStripButton != null)
+            {
+                optimizeTextToolStripButton.Enabled = enable;
             }
             if (censorToolStripButton != null)
             {
@@ -1244,6 +1469,14 @@ namespace screenzap
         private void replaceToolStripButton_Click(object sender, EventArgs e)
         {
             ExecuteReplaceWithBackground();
+        }
+
+        private void optimizeTextToolStripButton_Click(object sender, EventArgs e)
+        {
+            if (ExecuteOptimizeForText())
+            {
+                pictureBox1?.Focus();
+            }
         }
 
         private void censorToolStripButton_Click(object sender, EventArgs e)
