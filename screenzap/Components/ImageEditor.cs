@@ -488,6 +488,27 @@ namespace screenzap
             pictureBox1?.ClampPan();
         }
 
+        private void RecenterViewportAfterImageChange(bool resizeWindow)
+        {
+            if (pictureBox1 == null)
+            {
+                return;
+            }
+
+            if (resizeWindow)
+            {
+                ResizeWindowToImage(pictureBox1.GetImagePixelSize());
+            }
+
+            HandleResize();
+            pictureBox1.CenterImage();
+
+            if (Visible)
+            {
+                BeginInvoke(new Action(() => pictureBox1?.CenterImage()));
+            }
+        }
+
         private Rectangle GetImageBounds()
         {
             var imageSize = pictureBox1.GetImagePixelSize();
@@ -786,6 +807,8 @@ namespace screenzap
 
                     PushUndoStep(Rectangle.Empty, beforeFullImage, new Bitmap(after), selectionBefore, Rectangle.Empty, true);
 
+                    RecenterViewportAfterImageChange(resizeWindow: true);
+
                     before.Dispose();  // Not used in full-image undo step
                     after.Dispose();   // Copies were made for pictureBox and undo step
                 }
@@ -1044,9 +1067,7 @@ namespace screenzap
             ZoomLevel = currentZoom;
             pictureBox1.ClampPan();
 
-            ResizeWindowToImage(pictureBox1.GetImagePixelSize());
-
-            HandleResize();
+            RecenterViewportAfterImageChange(resizeWindow: true);
 
             Selection = selectionAfter;
             isPlaceholderImage = false;
