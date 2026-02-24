@@ -74,6 +74,10 @@
             this.censorToolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.applyCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.cancelCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.straightenToolStrip = new System.Windows.Forms.ToolStrip();
+            this.straightenHintLabel = new System.Windows.Forms.ToolStripLabel();
+            this.straightenApplyButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.straightenCancelButton = new FontAwesome.Sharp.IconToolStripButton();
             this.canvasPanel = new System.Windows.Forms.Panel();
             this.pictureBox1 = new screenzap.Components.Shared.ImageViewportControl();
             this.statusStrip = new System.Windows.Forms.StatusStrip();
@@ -82,6 +86,7 @@
             this.selectionStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.mainToolStrip.SuspendLayout();
             this.censorToolStrip.SuspendLayout();
+            this.straightenToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
             this.statusStrip.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).BeginInit();
@@ -319,6 +324,45 @@
             this.cancelCensorToolStripButton.Size = new System.Drawing.Size(53, 23);
             this.cancelCensorToolStripButton.Text = "Cancel";
             this.cancelCensorToolStripButton.Click += new System.EventHandler(this.cancelCensorToolStripButton_Click);
+            // 
+            // straightenToolStrip
+            // 
+            this.straightenToolStrip.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
+            this.straightenToolStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.straightenToolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.straightenHintLabel,
+            this.straightenApplyButton,
+            this.straightenCancelButton});
+            this.straightenToolStrip.Location = new System.Drawing.Point(0, 27);
+            this.straightenToolStrip.Name = "straightenToolStrip";
+            this.straightenToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
+            this.straightenToolStrip.Size = new System.Drawing.Size(413, 27);
+            this.straightenToolStrip.TabIndex = 5;
+            this.straightenToolStrip.Text = "straightenToolStrip";
+            this.straightenToolStrip.Visible = false;
+            // 
+            // straightenHintLabel
+            // 
+            this.straightenHintLabel.Name = "straightenHintLabel";
+            this.straightenHintLabel.Size = new System.Drawing.Size(300, 23);
+            this.straightenHintLabel.Text = "Draw a reference line that should be horizontal or vertical, then Apply";
+            // 
+            // straightenApplyButton
+            // 
+            this.straightenApplyButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.straightenApplyButton.Enabled = false;
+            this.straightenApplyButton.Name = "straightenApplyButton";
+            this.straightenApplyButton.Size = new System.Drawing.Size(44, 23);
+            this.straightenApplyButton.Text = "Apply";
+            this.straightenApplyButton.Click += new System.EventHandler(this.straightenApplyButton_Click);
+            // 
+            // straightenCancelButton
+            // 
+            this.straightenCancelButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.straightenCancelButton.Name = "straightenCancelButton";
+            this.straightenCancelButton.Size = new System.Drawing.Size(53, 23);
+            this.straightenCancelButton.Text = "Cancel";
+            this.straightenCancelButton.Click += new System.EventHandler(this.straightenCancelButton_Click);
             // 
             // saveToolStripButton
             // 
@@ -592,6 +636,7 @@
             this.Controls.Add(this.canvasPanel);
             this.Controls.Add(this.statusStrip);
             this.Controls.Add(this.censorToolStrip);
+            this.Controls.Add(this.straightenToolStrip);
             this.Controls.Add(this.mainToolStrip);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MinimumSize = new System.Drawing.Size(320, 200);
@@ -609,6 +654,8 @@
             this.statusStrip.PerformLayout();
             this.censorToolStrip.ResumeLayout(false);
             this.censorToolStrip.PerformLayout();
+            this.straightenToolStrip.ResumeLayout(false);
+            this.straightenToolStrip.PerformLayout();
             this.mainToolStrip.ResumeLayout(false);
             this.mainToolStrip.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).EndInit();
@@ -657,6 +704,10 @@
         private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator2;
         private FontAwesome.Sharp.IconToolStripButton applyCensorToolStripButton;
         private FontAwesome.Sharp.IconToolStripButton cancelCensorToolStripButton;
+        private System.Windows.Forms.ToolStrip straightenToolStrip;
+        private System.Windows.Forms.ToolStripLabel straightenHintLabel;
+        private FontAwesome.Sharp.IconToolStripButton straightenApplyButton;
+        private FontAwesome.Sharp.IconToolStripButton straightenCancelButton;
         private System.Windows.Forms.ToolStripComboBox fontComboBox;
         private System.Windows.Forms.ToolStripComboBox fontVariantComboBox;
         private System.Windows.Forms.ToolStripComboBox fontSizeComboBox;

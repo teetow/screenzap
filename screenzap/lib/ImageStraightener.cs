@@ -239,24 +239,46 @@ namespace screenzap.lib
 
             if (Math.Abs(medianAngle) < MinSkewAngleDegrees) return null;
 
-            // Rotate to correct the skew
-            var center = new Point2f(src.Cols / 2f, src.Rows / 2f);
-            using var rotM = Cv2.GetRotationMatrix2D(center, medianAngle, 1.0);
+            return ApplyRotationMat(src, medianAngle);
+        }
 
-            // Compute new bounding box to avoid clipping
-            double absAngle = Math.Abs(medianAngle * Math.PI / 180.0);
+        /// <summary>
+        /// Applies an explicit rotation angle to produce a new rotated Mat, expanding the canvas
+        /// so no content is clipped. The angle convention matches atan2(dy, dx) in image coords.
+        /// </summary>
+        private static Mat ApplyRotationMat(Mat src, double angleDegrees)
+        {
+            var center = new Point2f(src.Cols / 2f, src.Rows / 2f);
+            using var rotM = Cv2.GetRotationMatrix2D(center, angleDegrees, 1.0);
+
+            double absAngle = Math.Abs(angleDegrees * Math.PI / 180.0);
             int newWidth = (int)(src.Cols * Math.Cos(absAngle) + src.Rows * Math.Sin(absAngle));
             int newHeight = (int)(src.Cols * Math.Sin(absAngle) + src.Rows * Math.Cos(absAngle));
 
-            // Adjust the rotation matrix to account for the new center
             rotM.Set<double>(0, 2, rotM.Get<double>(0, 2) + (newWidth - src.Cols) / 2.0);
             rotM.Set<double>(1, 2, rotM.Get<double>(1, 2) + (newHeight - src.Rows) / 2.0);
 
             var result = new Mat();
             Cv2.WarpAffine(src, result, rotM, new OpenCvSharp.Size(newWidth, newHeight),
                 InterpolationFlags.Linear, BorderTypes.Constant, Scalar.White);
-
             return result;
+        }
+
+        /// <summary>
+        /// Rotates a bitmap by the given angle (in degrees), expanding the canvas to avoid clipping,
+        /// and filling the new border area with white. The angle convention matches atan2(dy, dx)
+        /// in image coordinates: positive angles rotate the image to align tilted-CW lines to horizontal.
+        /// </summary>
+        public static Bitmap RotateImage(Bitmap input, double angleDegrees)
+        {
+            if (Math.Abs(angleDegrees) < 0.001)
+            {
+                return (Bitmap)input.Clone();
+            }
+
+            using var src = BitmapConverter.ToMat(input);
+            using var rotated = ApplyRotationMat(src, angleDegrees);
+            return BitmapConverter.ToBitmap(rotated);
         }
 
         /// <summary>

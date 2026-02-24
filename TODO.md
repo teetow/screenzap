@@ -1,5 +1,19 @@
 # Image Editor Backlog
 
+## Tasks
+
+[ ] Selection rect is drawn outside of image bounds
+[ ] After an action that alters the image dimensions, the viewport is visually corrupted and has to be restored by resizing the window.
+
+## Test Automation Backlog
+
+[x] Replace BG edge-source exclusion unit tests
+[x] Undo/Redo stack behavior unit tests
+[x] Crop workflow automation (selection + image resize + undo/redo)
+[x] Save/Save As automation (file output + naming assertions)
+[x] Image clipboard reload automation (pending badge + dirty-state confirmation)
+[x] Clipboard text editor automation (load, find/replace, reload, save, copy-back)
+
 ## NOTES
 
 Unless specified otherwise, all actions are destructive, but undoable.
@@ -24,6 +38,7 @@ When pasting content, a floating Paste toolbar appears. It shows inputs for X an
 Variable fonts (OpenType 1.8+) support multiple design axes like weight, width, slant, etc. in a single font file.
 
 ### Implementation notes:
+
 - WinForms `System.Drawing.Font` has limited variable font support
 - Need to detect if selected font is a variable font (check for `fvar` table)
 - Options for implementation:
@@ -34,6 +49,7 @@ Variable fonts (OpenType 1.8+) support multiple design axes like weight, width, 
 - Common axes: `wght` (weight), `wdth` (width), `slnt` (slant), `ital` (italic), `opsz` (optical size)
 
 ### Basic Bold/Italic first:
+
 - Add `FontStyle` property to `TextAnnotation` (Bold, Italic, Underline)
 - Add B/I/U toggle buttons to text toolbar
 - This works with standard fonts and is a prerequisite for variable font support

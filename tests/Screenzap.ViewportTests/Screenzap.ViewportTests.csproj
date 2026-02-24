@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\screenzap\Screenzap.csproj" />
     <ProjectReference Include="..\..\shared\Screenzap.Components.Shared\Screenzap.Components.Shared.csproj" />
   </ItemGroup>
 

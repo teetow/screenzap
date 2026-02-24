@@ -69,6 +69,9 @@ namespace screenzap
     private bool clipboardHasPendingReload;
     private bool ignoreNextClipboardUpdate;
         private ClipboardReloadTarget pendingReloadTarget = ClipboardReloadTarget.None;
+        internal Func<bool>? ConfirmReloadWhenDirtyOverrideForDiagnostics { get; set; }
+        internal Func<Image?>? ClipboardImageProviderForDiagnostics { get; set; }
+        internal Func<string?>? ClipboardTextProviderForDiagnostics { get; set; }
 
         private bool HasEditableImage => pictureBox1.Image != null && !isPlaceholderImage;
         internal ViewportMetrics ViewportDiagnostics => pictureBox1?.Metrics ?? default;
@@ -88,6 +91,10 @@ namespace screenzap
                 {
                     height += censorToolStrip.Height;
                 }
+                if (straightenToolStrip != null && straightenToolStrip.Visible)
+                {
+                    height += straightenToolStrip.Height;
+                }
 
                 return height;
             }
@@ -98,7 +105,9 @@ namespace screenzap
             var toolbarHeight = ToolbarHeight;
             var toolbarPreferredWidth = Math.Max(
                     mainToolStrip?.PreferredSize.Width ?? 0,
-                    censorToolStrip?.PreferredSize.Width ?? 0);
+                    Math.Max(
+                        censorToolStrip?.PreferredSize.Width ?? 0,
+                        straightenToolStrip?.PreferredSize.Width ?? 0));
 
             var targetWidth = Math.Max(Math.Max(imageSize.Width, MinimumSize.Width), toolbarPreferredWidth);
             var targetHeight = Math.Max(imageSize.Height + toolbarHeight, MinimumSize.Height);
@@ -178,6 +187,11 @@ namespace screenzap
             if (censorToolStrip != null)
             {
                 censorToolStrip.Visible = false;
+            }
+
+            if (straightenToolStrip != null)
+            {
+                straightenToolStrip.Visible = false;
             }
 
             UpdateCensorToolbarState();
@@ -332,6 +346,7 @@ namespace screenzap
             pendingReloadTarget = ClipboardReloadTarget.None;
 
             DeactivateCensorTool(false);
+            DeactivateStraightenTool(false);
             ClearSelection();
             LogViewportDebug($"LoadImage: About to call ResetZoom");
             ResetZoom();
@@ -537,8 +552,20 @@ namespace screenzap
                 return false;
             }
 
+            var imageSize = pictureBox1.GetImagePixelSize();
+            if (imageSize.IsEmpty)
+            {
+                return false;
+            }
+
             var clampedSelection = ClampToImage(Selection);
             if (clampedSelection.Width <= 0 || clampedSelection.Height <= 0)
+            {
+                return false;
+            }
+
+            var sourceEdges = ReplaceBackgroundInterpolation.DetermineSourceEdges(clampedSelection, imageSize);
+            if (!sourceEdges.HasAnySource)
             {
                 return false;
             }
@@ -582,7 +609,11 @@ namespace screenzap
                         for (int x = 0; x < width; x++)
                         {
                             int idx = y * stridePixels + x;
-                            bool isBorder = x == 0 || y == 0 || x == width - 1 || y == height - 1;
+                            bool isBorder =
+                                (x == 0 && sourceEdges.UseLeft) ||
+                                (y == 0 && sourceEdges.UseTop) ||
+                                (x == width - 1 && sourceEdges.UseRight) ||
+                                (y == height - 1 && sourceEdges.UseBottom);
                             filled[idx] = isBorder;
                             if (isBorder)
                             {
@@ -763,101 +794,7 @@ namespace screenzap
 
         private bool ExecuteStraighten()
         {
-            if (!HasEditableImage)
-            {
-                return false;
-            }
-
-            var targetRegion = Selection.IsEmpty ? GetImageBounds() : ClampToImage(Selection);
-            if (targetRegion.Width <= 0 || targetRegion.Height <= 0)
-            {
-                return false;
-            }
-
-            var selectionBefore = Selection;
-            var before = CaptureRegion(targetRegion);
-            if (before == null)
-            {
-                return false;
-            }
-
-            lib.StraightenResult? result = null;
-
-            try
-            {
-                result = lib.ImageStraightener.Straighten(before);
-
-                if (!result.WasCorrected)
-                {
-                    before.Dispose();
-                    result.Image.Dispose();
-                    return false;
-                }
-
-                var after = result.Image;
-                bool dimensionsChanged = after.Width != targetRegion.Width || after.Height != targetRegion.Height;
-                bool replacesImage = dimensionsChanged && Selection.IsEmpty;
-
-                if (replacesImage)
-                {
-                    // The straightened image has different dimensions — replace the entire image
-                    var beforeFullImage = pictureBox1.Image != null ? new Bitmap(pictureBox1.Image) : null;
-                    pictureBox1.Image?.Dispose();
-                    pictureBox1.Image = new Bitmap(after);
-
-                    PushUndoStep(Rectangle.Empty, beforeFullImage, new Bitmap(after), selectionBefore, Rectangle.Empty, true);
-
-                    RecenterViewportAfterImageChange(resizeWindow: true);
-
-                    before.Dispose();  // Not used in full-image undo step
-                    after.Dispose();   // Copies were made for pictureBox and undo step
-                }
-                else
-                {
-                    // Same dimensions or working on a selection — blit onto existing image
-                    var targetImage = pictureBox1.Image;
-                    if (targetImage == null)
-                    {
-                        before.Dispose();
-                        after.Dispose();
-                        return false;
-                    }
-
-                    // If dimensions changed within a selection, scale to fit the selection region
-                    Bitmap blitSource = after;
-                    if (dimensionsChanged)
-                    {
-                        blitSource = new Bitmap(targetRegion.Width, targetRegion.Height);
-                        using (var g = Graphics.FromImage(blitSource))
-                        {
-                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                            g.DrawImage(after, 0, 0, targetRegion.Width, targetRegion.Height);
-                        }
-                        after.Dispose();  // Scaled copy created; original no longer needed
-                    }
-
-                    using (var gImg = Graphics.FromImage(targetImage))
-                    {
-                        gImg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                        gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-                        gImg.DrawImage(blitSource, targetRegion);
-                    }
-
-                    // before and blitSource ownership transfers to undo step
-                    PushUndoStep(targetRegion, before, blitSource, selectionBefore, Selection);
-                }
-
-                pictureBox1.Invalidate();
-                UpdateCommandUI();
-                UpdateStatusBar();
-                return true;
-            }
-            catch
-            {
-                before.Dispose();
-                result?.Image.Dispose();
-                throw;
-            }
+            return ActivateStraightenTool();
         }
 
         private static Bitmap CreateOptimizedForTextCopy(Bitmap source)
@@ -1082,6 +1019,11 @@ namespace screenzap
             UpdateStatusBar();
             pictureBox1.Invalidate();
             return true;
+        }
+
+        internal bool ExecuteCropForDiagnostics()
+        {
+            return ExecuteCrop();
         }
 
         private void UpdateCommandUI()
@@ -1327,6 +1269,11 @@ namespace screenzap
             return false;
         }
 
+        internal bool ExecuteSaveForDiagnostics()
+        {
+            return ExecuteSave();
+        }
+
         private bool ExecuteSaveAs()
         {
             if (!HasEditableImage)
@@ -1360,6 +1307,47 @@ namespace screenzap
             return false;
         }
 
+        internal bool ExecuteSaveAsForDiagnostics(string targetPath)
+        {
+            if (!HasEditableImage || string.IsNullOrWhiteSpace(targetPath))
+            {
+                return false;
+            }
+
+            if (!PersistImage(targetPath))
+            {
+                return false;
+            }
+
+            currentSavePath = targetPath;
+            UpdateCommandUI();
+            UpdateWindowTitle();
+            hasUnsavedChanges = false;
+            return true;
+        }
+
+        internal bool ClipboardHasPendingReloadForDiagnostics => clipboardHasPendingReload;
+
+        internal void SetPendingReloadForDiagnostics(bool hasPendingReload, bool useTextTarget)
+        {
+            clipboardHasPendingReload = hasPendingReload;
+            pendingReloadTarget = hasPendingReload
+                ? (useTextTarget ? ClipboardReloadTarget.Text : ClipboardReloadTarget.Image)
+                : ClipboardReloadTarget.None;
+            UpdateReloadIndicator();
+        }
+
+        internal void SetHasUnsavedChangesForDiagnostics(bool hasUnsavedChangesValue)
+        {
+            hasUnsavedChanges = hasUnsavedChangesValue;
+            UpdateWindowTitle();
+        }
+
+        internal void ReloadFromClipboardForDiagnostics()
+        {
+            ReloadFromClipboard();
+        }
+
         private void ImageEditor_KeyDown(object sender, KeyEventArgs e)
         {
             //Console.WriteLine(e.Modifiers);
@@ -1367,6 +1355,27 @@ namespace screenzap
             // Handle text tool keyboard input first
             if (HandleTextToolKeyDown(e))
             {
+                return;
+            }
+
+            if (isStraightenToolActive)
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    DeactivateStraightenTool(false);
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                if (e.KeyCode == Keys.Enter)
+                {
+                    DeactivateStraightenTool(true);
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
                 return;
             }
 
@@ -1676,6 +1685,11 @@ namespace screenzap
 
         private bool ConfirmReloadWhenDirty()
         {
+            if (ConfirmReloadWhenDirtyOverrideForDiagnostics != null)
+            {
+                return ConfirmReloadWhenDirtyOverrideForDiagnostics();
+            }
+
             if (!hasUnsavedChanges)
             {
                 return true;
@@ -1700,17 +1714,25 @@ namespace screenzap
         private bool TryReloadImageFromClipboard()
         {
             Image? clipboardImage = null;
-            try
+
+            if (ClipboardImageProviderForDiagnostics != null)
             {
-                if (Clipboard.ContainsImage())
-                {
-                    clipboardImage = Clipboard.GetImage();
-                }
+                clipboardImage = ClipboardImageProviderForDiagnostics();
             }
-            catch (ExternalException ex)
+            else
             {
-                MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return true;
+                try
+                {
+                    if (Clipboard.ContainsImage())
+                    {
+                        clipboardImage = Clipboard.GetImage();
+                    }
+                }
+                catch (ExternalException ex)
+                {
+                    MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return true;
+                }
             }
 
             if (clipboardImage == null)
@@ -1734,18 +1756,26 @@ namespace screenzap
                 return false;
             }
 
-            string? clipboardText = null;
-            try
+            string? clipboardText;
+            if (ClipboardTextProviderForDiagnostics != null)
             {
-                if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
-                {
-                    clipboardText = Clipboard.GetText(TextDataFormat.UnicodeText);
-                }
+                clipboardText = ClipboardTextProviderForDiagnostics();
             }
-            catch (ExternalException ex)
+            else
             {
-                MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return true;
+                clipboardText = null;
+                try
+                {
+                    if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
+                    {
+                        clipboardText = Clipboard.GetText(TextDataFormat.UnicodeText);
+                    }
+                }
+                catch (ExternalException ex)
+                {
+                    MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return true;
+                }
             }
 
             if (clipboardText == null)

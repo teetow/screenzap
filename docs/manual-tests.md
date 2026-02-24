@@ -19,6 +19,7 @@
 1. Capture or paste an image, draw a selection around an object, and press `Ctrl+B`, tap `Backspace`, or click **Replace BG**.
 2. Confirm the selection fills with surrounding colors that bleed inward, softening the object.
 3. Press `Ctrl+Z` and `Ctrl+Shift+Z` to verify the operation integrates with undo/redo.
+4. Edge-source exclusion check: place an object that touches one image edge (for example, a vertical line touching the left edge), select it, and run **Replace BG**. Confirm the touched edge is not used as a source (the line is fully removed instead of being reintroduced from edge pixels), while interpolation still uses the remaining edges.
 
 ## Save / Save As (regression spot check)
 

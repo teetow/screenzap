@@ -203,6 +203,21 @@ namespace screenzap
 
         private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
         {
+            if (isStraightenToolActive)
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    straightenLineStartPixel = FormCoordToPixel(e.Location);
+                    straightenLineEndPixel = straightenLineStartPixel;
+                    isStraightenLineDragging = true;
+                    UpdateStraightenToolbarState();
+                    pictureBox1.Invalidate();
+                }
+
+                base.OnMouseDown(e);
+                return;
+            }
+
             if (isCensorToolActive)
             {
                 if (e.Button == MouseButtons.Left)
@@ -267,6 +282,20 @@ namespace screenzap
 
         private void pictureBox1_MouseMove(object sender, MouseEventArgs e)
         {
+            if (isStraightenToolActive)
+            {
+                Cursor = Cursors.Cross;
+                if (isStraightenLineDragging && e.Button == MouseButtons.Left)
+                {
+                    straightenLineEndPixel = FormCoordToPixel(e.Location);
+                    UpdateStraightenToolbarState();
+                    pictureBox1.Invalidate();
+                }
+
+                base.OnMouseMove(e);
+                return;
+            }
+
             if (isCensorToolActive)
             {
                 if (e.Button != MouseButtons.Left)
@@ -361,6 +390,20 @@ namespace screenzap
 
         private void pictureBox1_MouseUp(object sender, MouseEventArgs e)
         {
+            if (isStraightenToolActive)
+            {
+                if (e.Button == MouseButtons.Left && isStraightenLineDragging)
+                {
+                    isStraightenLineDragging = false;
+                    straightenLineEndPixel = FormCoordToPixel(e.Location);
+                    UpdateStraightenToolbarState();
+                    pictureBox1.Invalidate();
+                }
+
+                base.OnMouseUp(e);
+                return;
+            }
+
             Cursor = Cursors.Default;
 
             if (isCensorToolActive)
@@ -411,6 +454,7 @@ namespace screenzap
 
             DrawAnnotations(e.Graphics, AnnotationSurface.Screen);
             DrawTextAnnotations(e.Graphics, AnnotationSurface.Screen);
+            DrawStraightenOverlay(e.Graphics);
 
             if (isCensorToolActive && censorRegions.Count > 0)
             {

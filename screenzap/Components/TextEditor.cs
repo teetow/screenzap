@@ -58,6 +58,9 @@ namespace screenzap
         private bool clipboardHasPendingReload;
         private bool ignoreNextClipboardUpdate;
         private string? pendingClipboardText;
+        internal Func<bool>? ConfirmReloadWhenDirtyOverrideForDiagnostics { get; set; }
+        internal Func<string, bool>? ClipboardTextWriterForDiagnostics { get; set; }
+        internal string? LastCopiedTextForDiagnostics { get; private set; }
 
         private static class CppStyles
         {
@@ -428,6 +431,11 @@ namespace screenzap
 
         private bool ConfirmReloadWhenDirty()
         {
+            if (ConfirmReloadWhenDirtyOverrideForDiagnostics != null)
+            {
+                return ConfirmReloadWhenDirtyOverrideForDiagnostics();
+            }
+
             if (!isDirty)
             {
                 return true;
@@ -1008,6 +1016,21 @@ namespace screenzap
             }
 
             var text = editor.Text ?? string.Empty;
+            LastCopiedTextForDiagnostics = text;
+
+            if (ClipboardTextWriterForDiagnostics != null)
+            {
+                if (!ClipboardTextWriterForDiagnostics(text))
+                {
+                    return;
+                }
+
+                ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
+                pendingClipboardText = text;
+                ClearClipboardNotification(clearSnapshot: false);
+                return;
+            }
+
             try
             {
                 ignoreNextClipboardUpdate = true;
@@ -1378,6 +1401,91 @@ namespace screenzap
             {
                 MessageBox.Show(this, $"Failed to save file.\n{ex.Message}", "Save Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        internal bool ClipboardHasPendingReloadForDiagnostics => clipboardHasPendingReload;
+
+        internal bool IsDirtyForDiagnostics => isDirty;
+
+        internal string CurrentTextForDiagnostics => editor?.Text ?? string.Empty;
+
+        internal string? CurrentSavePathForDiagnostics => currentSavePath;
+
+        internal void SetPendingClipboardTextForDiagnostics(string? text, bool hasPendingReload)
+        {
+            pendingClipboardText = text;
+            clipboardHasPendingReload = hasPendingReload;
+            UpdateReloadIndicator();
+        }
+
+        internal void SetTextForDiagnostics(string text)
+        {
+            suppressTextChanged = true;
+            editor.Text = text ?? string.Empty;
+            suppressTextChanged = false;
+            isDirty = true;
+            UpdateWindowTitle();
+            UpdateCommandStates();
+            UpdateStatusLabels();
+        }
+
+        internal bool SaveDocumentForDiagnostics(string targetPath)
+        {
+            if (editor == null || string.IsNullOrWhiteSpace(targetPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                File.WriteAllText(targetPath, editor.Text, utf8NoBom);
+                currentSavePath = targetPath;
+                isDirty = false;
+                editor.SetSavePoint();
+                ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
+                UpdateWindowTitle();
+                UpdateCommandStates();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal void ReloadFromClipboardForDiagnostics()
+        {
+            ReloadFromClipboard();
+        }
+
+        internal void CopyToClipboardForDiagnostics()
+        {
+            CopyToClipboard();
+        }
+
+        internal void ConfigureSearchForDiagnostics(string findText, string replaceText, bool regex, bool matchCase, bool wholeWord)
+        {
+            findTextBox.Text = findText ?? string.Empty;
+            replaceTextBox.Text = replaceText ?? string.Empty;
+            regexCheckBox.Checked = regex;
+            matchCaseCheckBox.Checked = matchCase;
+            wholeWordCheckBox.Checked = wholeWord;
+        }
+
+        internal bool TryFindForDiagnostics(bool backwards, out int start, out int length)
+        {
+            return TryFind(backwards, out start, out length, reportErrors: false);
+        }
+
+        internal void ReplaceSelectionForDiagnostics()
+        {
+            ReplaceSelection();
+        }
+
+        internal void ReplaceAllForDiagnostics()
+        {
+            ReplaceAll();
         }
 
         private void TextEditor_FormClosing(object? sender, FormClosingEventArgs e)
