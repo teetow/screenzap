@@ -14,6 +14,12 @@ namespace screenzap
         private bool isDrawingRubberBand;
         private bool isMovingSelection;
         private Point MoveInPixel;
+        private bool isCtrlStampingSelection;
+        private bool selectionStampApplied;
+        private Bitmap? selectionStampSource;
+        private Bitmap? selectionStampBeforeImage;
+        private Point selectionStampLastLocation;
+        private Rectangle selectionStampSelectionBefore;
 
         private Rectangle _selection;
         private SelectionMetrics _selectionMetrics = SelectionMetrics.Empty;
@@ -150,6 +156,152 @@ namespace screenzap
                 var Delta = MouseInPixel.Subtract(pixel);
                 var newLocation = new Point(SelectionGrabOrigin.X - Delta.X, SelectionGrabOrigin.Y - Delta.Y);
                 Selection = new Rectangle(newLocation, Selection.Size);
+            }
+        }
+
+        private bool IsCtrlModifierDown() => (ModifierKeys & Keys.Control) == Keys.Control;
+
+        private void BeginSelectionStampGesture()
+        {
+            if (isCtrlStampingSelection || !HasEditableImage || Selection.IsEmpty || pictureBox1.Image == null)
+            {
+                return;
+            }
+
+            var sourceRegion = ClampToImage(Selection);
+            if (sourceRegion.Width <= 0 || sourceRegion.Height <= 0)
+            {
+                return;
+            }
+
+            selectionStampSource = CaptureRegion(sourceRegion);
+            if (selectionStampSource == null)
+            {
+                return;
+            }
+
+            selectionStampBeforeImage = new Bitmap(pictureBox1.Image);
+            selectionStampSelectionBefore = Selection;
+            selectionStampLastLocation = Selection.Location;
+            selectionStampApplied = false;
+            isCtrlStampingSelection = true;
+        }
+
+        private void EndSelectionStampGesture()
+        {
+            if (!isCtrlStampingSelection)
+            {
+                selectionStampSource?.Dispose();
+                selectionStampSource = null;
+                selectionStampBeforeImage?.Dispose();
+                selectionStampBeforeImage = null;
+                selectionStampApplied = false;
+                return;
+            }
+
+            if (selectionStampApplied && selectionStampBeforeImage != null && pictureBox1.Image != null)
+            {
+                var afterSnapshot = new Bitmap(pictureBox1.Image);
+                PushUndoStep(Rectangle.Empty, selectionStampBeforeImage, afterSnapshot, selectionStampSelectionBefore, Selection, true);
+                selectionStampBeforeImage = null;
+            }
+            else
+            {
+                selectionStampBeforeImage?.Dispose();
+                selectionStampBeforeImage = null;
+            }
+
+            selectionStampSource?.Dispose();
+            selectionStampSource = null;
+            selectionStampApplied = false;
+            isCtrlStampingSelection = false;
+            UpdateCommandUI();
+        }
+
+        private void ApplySelectionStampAlongPath(Point from, Point to)
+        {
+            if (!isCtrlStampingSelection || selectionStampSource == null || pictureBox1.Image == null)
+            {
+                return;
+            }
+
+            var canvas = pictureBox1.Image;
+            using (var g = Graphics.FromImage(canvas))
+            {
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+
+                foreach (var point in EnumerateLinePoints(from, to))
+                {
+                    if (point == from)
+                    {
+                        continue;
+                    }
+
+                    StampSelectionAt(g, point);
+                }
+            }
+        }
+
+        private void StampSelectionAt(Graphics g, Point location)
+        {
+            if (selectionStampSource == null)
+            {
+                return;
+            }
+
+            var destination = new Rectangle(location, selectionStampSource.Size);
+            var clampedDestination = ClampToImage(destination);
+            if (clampedDestination.Width <= 0 || clampedDestination.Height <= 0)
+            {
+                return;
+            }
+
+            var sourceRect = new Rectangle(
+                clampedDestination.X - destination.X,
+                clampedDestination.Y - destination.Y,
+                clampedDestination.Width,
+                clampedDestination.Height
+            );
+
+            g.DrawImage(selectionStampSource, clampedDestination, sourceRect, GraphicsUnit.Pixel);
+            selectionStampApplied = true;
+        }
+
+        private IEnumerable<Point> EnumerateLinePoints(Point from, Point to)
+        {
+            int x0 = from.X;
+            int y0 = from.Y;
+            int x1 = to.X;
+            int y1 = to.Y;
+
+            int dx = Math.Abs(x1 - x0);
+            int dy = Math.Abs(y1 - y0);
+            int sx = x0 < x1 ? 1 : -1;
+            int sy = y0 < y1 ? 1 : -1;
+            int err = dx - dy;
+
+            while (true)
+            {
+                yield return new Point(x0, y0);
+                if (x0 == x1 && y0 == y1)
+                {
+                    break;
+                }
+
+                int e2 = err * 2;
+                if (e2 > -dy)
+                {
+                    err -= dy;
+                    x0 += sx;
+                }
+
+                if (e2 < dx)
+                {
+                    err += dx;
+                    y0 += sy;
+                }
             }
         }
 
@@ -325,7 +477,29 @@ namespace screenzap
             {
                 if (rzMode != ResizeMode.None)
                 {
+                    if (rzMode == ResizeMode.Move && IsCtrlModifierDown() && !isCtrlStampingSelection)
+                    {
+                        BeginSelectionStampGesture();
+                    }
+
                     SetSelectionEdge(cursorPixel);
+
+                    if (rzMode == ResizeMode.Move)
+                    {
+                        if (IsCtrlModifierDown())
+                        {
+                            if (isCtrlStampingSelection)
+                            {
+                                ApplySelectionStampAlongPath(selectionStampLastLocation, Selection.Location);
+                                selectionStampLastLocation = Selection.Location;
+                            }
+                        }
+                        else if (isCtrlStampingSelection)
+                        {
+                            selectionStampLastLocation = Selection.Location;
+                        }
+                    }
+
                     pictureBox1.Invalidate();
                 }
 
@@ -430,6 +604,10 @@ namespace screenzap
                 isDrawingRubberBand = false;
                 pictureBox1.Invalidate();
                 UpdateCommandUI();
+            }
+            if (e.Button == MouseButtons.Left)
+            {
+                EndSelectionStampGesture();
             }
             else if (e.Button == MouseButtons.Middle)
             {

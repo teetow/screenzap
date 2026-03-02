@@ -3,8 +3,12 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
+using System.Globalization;
 using System.Linq;
+using System.Text;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using SkiaSharp;
 using screenzap.lib;
 
 namespace screenzap
@@ -44,14 +48,300 @@ namespace screenzap
                 return new Rectangle(Position, new Size(100, (int)(FontSize * 1.5f)));
             }
 
-            using var font = new Font(FontFamily, FontSize, FontStyle, GraphicsUnit.Pixel);
-            var size = graphics.MeasureString(Text, font);
+            var size = EmojiTextRenderer.MeasureText(graphics, Text, FontFamily, FontSize, FontStyle);
             return new Rectangle(Position, new Size((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height)));
         }
 
         public bool IsValid()
         {
             return !string.IsNullOrWhiteSpace(Text);
+        }
+    }
+
+    internal static class EmojiTextRenderer
+    {
+        private const string EmojiFontFamily = "Segoe UI Emoji";
+
+        private readonly struct TextRun
+        {
+            public string Text { get; }
+            public bool UseEmojiFont { get; }
+
+            public TextRun(string text, bool useEmojiFont)
+            {
+                Text = text;
+                UseEmojiFont = useEmojiFont;
+            }
+        }
+
+        public static SizeF MeasureText(Graphics graphics, string text, string baseFontFamily, float fontSize, FontStyle fontStyle)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return new SizeF(0f, Math.Max(1f, fontSize));
+            }
+
+            if (TryMeasureWithSkia(text, baseFontFamily, fontSize, fontStyle, out var skiaSize))
+            {
+                return skiaSize;
+            }
+
+            using var fallbackFont = CreateGdiFont(baseFontFamily, fontSize, fontStyle);
+            return graphics.MeasureString(text, fallbackFont, PointF.Empty, StringFormat.GenericTypographic);
+        }
+
+        public static void DrawText(Graphics graphics, string text, PointF position, Color color, string baseFontFamily, float fontSize, FontStyle fontStyle)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+
+            if (TryDrawWithSkia(graphics, text, position, color, baseFontFamily, fontSize, fontStyle))
+            {
+                return;
+            }
+
+            using var brush = new SolidBrush(color);
+            using var fallbackFont = CreateGdiFont(baseFontFamily, fontSize, fontStyle);
+            graphics.DrawString(text, fallbackFont, brush, position, StringFormat.GenericTypographic);
+        }
+
+        private static bool TryMeasureWithSkia(string text, string baseFontFamily, float fontSize, FontStyle fontStyle, out SizeF size)
+        {
+            try
+            {
+                using var baseTypeface = CreateSkTypeface(baseFontFamily, fontStyle);
+                using var emojiTypeface = CreateSkTypeface(EmojiFontFamily, FontStyle.Regular);
+
+                if (baseTypeface == null && emojiTypeface == null)
+                {
+                    size = SizeF.Empty;
+                    return false;
+                }
+
+                float maxWidth = 0f;
+                float totalHeight = 0f;
+
+                foreach (var line in SplitLines(text))
+                {
+                    float lineWidth = 0f;
+                    float lineHeight = Math.Max(fontSize, 1f);
+
+                    foreach (var run in BuildRuns(line))
+                    {
+                        using var paint = CreateSkPaint(run.UseEmojiFont ? emojiTypeface ?? baseTypeface! : baseTypeface ?? emojiTypeface!, fontSize, SKColors.White);
+                        var metrics = paint.FontMetrics;
+                        var runHeight = Math.Max(1f, metrics.Descent - metrics.Ascent + metrics.Leading);
+                        lineHeight = Math.Max(lineHeight, runHeight);
+                        lineWidth += paint.MeasureText(run.Text);
+                    }
+
+                    maxWidth = Math.Max(maxWidth, lineWidth);
+                    totalHeight += lineHeight;
+                }
+
+                size = new SizeF((float)Math.Ceiling(maxWidth), (float)Math.Ceiling(totalHeight));
+                return true;
+            }
+            catch
+            {
+                size = SizeF.Empty;
+                return false;
+            }
+        }
+
+        private static bool TryDrawWithSkia(Graphics graphics, string text, PointF position, Color color, string baseFontFamily, float fontSize, FontStyle fontStyle)
+        {
+            try
+            {
+                using var baseTypeface = CreateSkTypeface(baseFontFamily, fontStyle);
+                using var emojiTypeface = CreateSkTypeface(EmojiFontFamily, FontStyle.Regular);
+
+                if (baseTypeface == null && emojiTypeface == null)
+                {
+                    return false;
+                }
+
+                if (!TryMeasureWithSkia(text, baseFontFamily, fontSize, fontStyle, out var measuredSize))
+                {
+                    return false;
+                }
+
+                int width = Math.Max(1, (int)measuredSize.Width);
+                int height = Math.Max(1, (int)measuredSize.Height);
+
+                using var bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+                using (var canvas = new SKCanvas(bitmap))
+                {
+                    canvas.Clear(SKColors.Transparent);
+
+                    float y = 0f;
+                    var skColor = new SKColor(color.R, color.G, color.B, color.A);
+
+                    foreach (var line in SplitLines(text))
+                    {
+                        float x = 0f;
+                        float lineHeight = Math.Max(fontSize, 1f);
+                        float baseline = y + fontSize;
+
+                        foreach (var run in BuildRuns(line))
+                        {
+                            using var paint = CreateSkPaint(run.UseEmojiFont ? emojiTypeface ?? baseTypeface! : baseTypeface ?? emojiTypeface!, fontSize, skColor);
+                            var metrics = paint.FontMetrics;
+                            var runHeight = Math.Max(1f, metrics.Descent - metrics.Ascent + metrics.Leading);
+                            lineHeight = Math.Max(lineHeight, runHeight);
+                            baseline = y - metrics.Ascent;
+
+                            canvas.DrawText(run.Text, x, baseline, paint);
+
+                            if (fontStyle.HasFlag(FontStyle.Underline) && !run.UseEmojiFont)
+                            {
+                                float underlineY = baseline + Math.Max(1f, fontSize * 0.08f);
+                                canvas.DrawLine(x, underlineY, x + paint.MeasureText(run.Text), underlineY, paint);
+                            }
+
+                            x += paint.MeasureText(run.Text);
+                        }
+
+                        y += lineHeight;
+                    }
+                }
+
+                using var output = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                var lockRect = new Rectangle(0, 0, width, height);
+                var bitmapData = output.LockBits(lockRect, System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                try
+                {
+                    var bytes = new byte[bitmap.ByteCount];
+                    Marshal.Copy(bitmap.GetPixels(), bytes, 0, bytes.Length);
+                    Marshal.Copy(bytes, 0, bitmapData.Scan0, bytes.Length);
+                }
+                finally
+                {
+                    output.UnlockBits(bitmapData);
+                }
+
+                graphics.DrawImage(output, position.X, position.Y, width, height);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static IEnumerable<string> SplitLines(string text)
+        {
+            var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+            return normalized.Split('\n');
+        }
+
+        private static IEnumerable<TextRun> BuildRuns(string line)
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                yield break;
+            }
+
+            var current = new StringBuilder();
+            bool? currentEmoji = null;
+
+            foreach (var element in EnumerateTextElements(line))
+            {
+                bool isEmoji = IsEmojiTextElement(element);
+                if (currentEmoji.HasValue && currentEmoji.Value != isEmoji)
+                {
+                    yield return new TextRun(current.ToString(), currentEmoji.Value);
+                    current.Clear();
+                }
+
+                current.Append(element);
+                currentEmoji = isEmoji;
+            }
+
+            if (current.Length > 0 && currentEmoji.HasValue)
+            {
+                yield return new TextRun(current.ToString(), currentEmoji.Value);
+            }
+        }
+
+        private static IEnumerable<string> EnumerateTextElements(string text)
+        {
+            var enumerator = StringInfo.GetTextElementEnumerator(text);
+            while (enumerator.MoveNext())
+            {
+                if (enumerator.GetTextElement() is string element)
+                {
+                    yield return element;
+                }
+            }
+        }
+
+        private static bool IsEmojiTextElement(string textElement)
+        {
+            if (string.IsNullOrEmpty(textElement))
+            {
+                return false;
+            }
+
+            foreach (var rune in textElement.EnumerateRunes())
+            {
+                if (rune.Value == 0xFE0F || rune.Value == 0x200D || rune.Value == 0x20E3)
+                {
+                    return true;
+                }
+
+                if ((rune.Value >= 0x1F1E6 && rune.Value <= 0x1F1FF) ||
+                    (rune.Value >= 0x1F300 && rune.Value <= 0x1FAFF) ||
+                    (rune.Value >= 0x2600 && rune.Value <= 0x27BF))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static SKTypeface? CreateSkTypeface(string familyName, FontStyle style)
+        {
+            var weight = style.HasFlag(FontStyle.Bold) ? SKFontStyleWeight.Bold : SKFontStyleWeight.Normal;
+            var slant = style.HasFlag(FontStyle.Italic) ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
+            var fontStyle = new SKFontStyle(weight, SKFontStyleWidth.Normal, slant);
+            return SKTypeface.FromFamilyName(familyName, fontStyle) ?? SKTypeface.FromFamilyName(familyName);
+        }
+
+        private static SKPaint CreateSkPaint(SKTypeface typeface, float fontSize, SKColor color)
+        {
+            return new SKPaint
+            {
+                Typeface = typeface,
+                TextSize = fontSize,
+                Color = color,
+                IsAntialias = true,
+                LcdRenderText = true,
+                SubpixelText = true,
+                IsStroke = false
+            };
+        }
+
+        private static Font CreateGdiFont(string familyName, float fontSize, FontStyle requestedStyle)
+        {
+            try
+            {
+                var family = new FontFamily(familyName);
+                var style = family.IsStyleAvailable(requestedStyle)
+                    ? requestedStyle
+                    : family.IsStyleAvailable(FontStyle.Regular)
+                        ? FontStyle.Regular
+                        : FontStyle.Bold;
+
+                return new Font(family, fontSize, style, GraphicsUnit.Pixel);
+            }
+            catch
+            {
+                return new Font(SystemFonts.DefaultFont.FontFamily, fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
+            }
         }
     }
 
@@ -273,8 +563,6 @@ namespace screenzap
             }
 
             float fontSize = surface == AnnotationSurface.Screen ? annotation.FontSize * scale : annotation.FontSize;
-            using var font = new Font(annotation.FontFamily, fontSize, annotation.FontStyle, GraphicsUnit.Pixel);
-            using var brush = new SolidBrush(annotation.TextColor);
 
             PointF position;
             if (surface == AnnotationSurface.Screen)
@@ -290,27 +578,38 @@ namespace screenzap
             if (surface == AnnotationSurface.Screen || true)
             {
                 float outlineOffset = surface == AnnotationSurface.Screen ? 1f * scale : 1f;
-                using var outlineBrush = new SolidBrush(GetContrastColor(annotation.TextColor));
                 for (int dx = -1; dx <= 1; dx++)
                 {
                     for (int dy = -1; dy <= 1; dy++)
                     {
                         if (dx != 0 || dy != 0)
                         {
-                            graphics.DrawString(text, font, outlineBrush,
-                                position.X + dx * outlineOffset,
-                                position.Y + dy * outlineOffset);
+                            EmojiTextRenderer.DrawText(
+                                graphics,
+                                text,
+                                new PointF(position.X + dx * outlineOffset, position.Y + dy * outlineOffset),
+                                GetContrastColor(annotation.TextColor),
+                                annotation.FontFamily,
+                                fontSize,
+                                annotation.FontStyle);
                         }
                     }
                 }
             }
 
-            graphics.DrawString(text, font, brush, position);
+            EmojiTextRenderer.DrawText(
+                graphics,
+                text,
+                position,
+                annotation.TextColor,
+                annotation.FontFamily,
+                fontSize,
+                annotation.FontStyle);
 
             // Draw editing cursor
             if (annotation.IsEditing && surface == AnnotationSurface.Screen)
             {
-                var textSize = graphics.MeasureString(annotation.Text, font);
+                var textSize = EmojiTextRenderer.MeasureText(graphics, annotation.Text, annotation.FontFamily, fontSize, annotation.FontStyle);
                 using var cursorPen = new Pen(annotation.TextColor, 2f);
                 float cursorX = position.X + textSize.Width;
                 float cursorHeight = fontSize;
@@ -579,6 +878,24 @@ namespace screenzap
                     textAnnotationChangedDuringDrag = true;
                     pictureBox1?.Invalidate();
                 }
+                e.Handled = true;
+                return true;
+            }
+
+            if (e.Control && e.KeyCode == Keys.V)
+            {
+                if (Clipboard.ContainsText())
+                {
+                    var pasted = Clipboard.GetText();
+                    if (!string.IsNullOrEmpty(pasted))
+                    {
+                        activeTextAnnotation.Text += pasted;
+                        textAnnotationChangedDuringDrag = true;
+                        pictureBox1?.Invalidate();
+                    }
+                }
+
+                e.SuppressKeyPress = true;
                 e.Handled = true;
                 return true;
             }
