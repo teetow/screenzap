@@ -114,7 +114,10 @@ namespace screenzap
 
         private readonly decimal[] ZoomLevels =
         {
-            0.25m, 0.5m, 0.75m, 1m, 1.25m, 1.5m, 2m, 3m, 4m, 5m, 6m, 7m, 8m
+            0.025m, 0.05m, 0.1m,
+            0.2m, 0.3m, 0.4m, 0.5m,
+            0.75m, 1m, 1.25m, 1.5m,
+            2m, 3m, 4m, 5m, 6m, 7m, 8m
         };
 
         private decimal FindZoomIn(decimal level)

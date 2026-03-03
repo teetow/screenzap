@@ -62,7 +62,7 @@ namespace screenzap.Components.Shared
             get => zoomLevel;
             set
             {
-                var clamped = Math.Max(0.25m, Math.Min(8m, value));
+                var clamped = Math.Max(0.025m, Math.Min(8m, value));
                 if (clamped == zoomLevel)
                 {
                     return;
