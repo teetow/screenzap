@@ -1578,7 +1578,15 @@ namespace screenzap
                 else if (isDrawingRubberBand)
                 {
                     isMovingSelection = true;
-                    MoveInPixel = MouseOutPixel;
+                    if (pictureBox1 != null)
+                    {
+                        var cursorInViewport = pictureBox1.PointToClient(Cursor.Position);
+                        MoveInPixel = FormCoordToPixel(cursorInViewport);
+                    }
+                    else
+                    {
+                        MoveInPixel = MouseOutPixel;
+                    }
                 }
 
                 return;
