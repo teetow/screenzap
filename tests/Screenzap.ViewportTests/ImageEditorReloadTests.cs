@@ -9,6 +9,31 @@ namespace Screenzap.ViewportTests
     public class ImageEditorReloadTests
     {
         [Fact]
+        public void SelectionCopy_PreservesSelection_ForInEditorPasteWorkflow()
+        {
+            using var imageEditor = new screenzap.ImageEditor();
+            using var image = new Bitmap(48, 32);
+            using (var graphics = Graphics.FromImage(image))
+            {
+                graphics.Clear(Color.AliceBlue);
+            }
+
+            imageEditor.LoadImage(image);
+            var sourceSelection = new Rectangle(6, 4, 14, 10);
+            imageEditor.SetSelectionForDiagnostics(sourceSelection);
+            Assert.True(imageEditor.CopySelectionToClipboardForDiagnostics());
+
+            var pasteTarget = new Rectangle(24, 12, 1, 1);
+            imageEditor.SetSelectionForDiagnostics(pasteTarget);
+            Assert.True(imageEditor.PasteFromClipboardForDiagnostics());
+
+            var pastedSelection = imageEditor.SelectionDiagnostics.Selection;
+            Assert.Equal(new Point(pasteTarget.X, pasteTarget.Y), pastedSelection.Location);
+            Assert.Equal(new Size(sourceSelection.Width, sourceSelection.Height), pastedSelection.Size);
+            Assert.False(imageEditor.ClipboardHasPendingReloadForDiagnostics);
+        }
+
+        [Fact]
         public void Reload_UpdatesHostIndicator_AndRespectsDirtyConfirmation()
         {
             using var imageEditor = new screenzap.ImageEditor();

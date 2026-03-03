@@ -7,6 +7,52 @@ namespace Screenzap.ViewportTests
     public class TextEditorWorkflowTests
     {
         [Fact]
+        public void TextEditor_SelectionCopyAndPaste_UsesInternalClipboard()
+        {
+            using var editor = new screenzap.TextEditor();
+            editor.LoadText("alpha beta gamma");
+
+            string? copied = null;
+            editor.ClipboardTextWriterForDiagnostics = text =>
+            {
+                copied = text;
+                return true;
+            };
+
+            editor.CopySelectionToClipboardForDiagnostics(6, 10);
+            Assert.Equal("beta", copied);
+            editor.CopySelectionToClipboardForDiagnostics(0, 0);
+            Assert.True(editor.PasteInternalClipboardForDiagnostics());
+
+            Assert.Equal("betaalpha beta gamma", editor.CurrentTextForDiagnostics);
+            Assert.True(editor.IsDirtyForDiagnostics);
+        }
+
+        [Fact]
+        public void TextEditor_InternalCopyClipboardUpdate_DoesNotReloadOrSetPending()
+        {
+            using var editor = new screenzap.TextEditor();
+            editor.LoadText("clipboard baseline");
+            editor.SetTextForDiagnostics("local edit");
+
+            string? copied = null;
+            editor.ClipboardTextWriterForDiagnostics = text =>
+            {
+                copied = text;
+                return true;
+            };
+
+            editor.CopyToClipboardForDiagnostics();
+            Assert.Equal("local edit", copied);
+
+            editor.SimulateClipboardTextUpdateForDiagnostics("local edit\r\n");
+
+            Assert.Equal("local edit", editor.CurrentTextForDiagnostics);
+            Assert.True(editor.IsDirtyForDiagnostics);
+            Assert.False(editor.ClipboardHasPendingReloadForDiagnostics);
+        }
+
+        [Fact]
         public void TextEditor_AutomatesLoadFindReplaceReloadSaveAndCopyBack()
         {
             using var editor = new screenzap.TextEditor();

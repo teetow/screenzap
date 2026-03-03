@@ -55,9 +55,12 @@ namespace screenzap
         private FileSystemWatcher? themeWatcher;
         private int themeReloadScheduled;
         private ClipboardMonitor? clipboardMonitor;
+        private const int InternalClipboardSuppressionMilliseconds = 1500;
         private bool clipboardHasPendingReload;
-        private bool ignoreNextClipboardUpdate;
+        private string? expectedInternalClipboardText;
+        private DateTime? suppressClipboardAutoReloadUntilUtc;
         private string? pendingClipboardText;
+        private string? internalClipboardText;
         internal Func<bool>? ConfirmReloadWhenDirtyOverrideForDiagnostics { get; set; }
         internal Func<string, bool>? ClipboardTextWriterForDiagnostics { get; set; }
         internal string? LastCopiedTextForDiagnostics { get; private set; }
@@ -272,13 +275,35 @@ namespace screenzap
                 return;
             }
 
-            if (ignoreNextClipboardUpdate)
+            if (suppressClipboardAutoReloadUntilUtc.HasValue && DateTime.UtcNow > suppressClipboardAutoReloadUntilUtc.Value)
             {
-                ignoreNextClipboardUpdate = false;
+                suppressClipboardAutoReloadUntilUtc = null;
+                expectedInternalClipboardText = null;
+            }
+
+            if (expectedInternalClipboardText != null && string.Equals(text, expectedInternalClipboardText, StringComparison.Ordinal))
+            {
+                expectedInternalClipboardText = null;
+                pendingClipboardText = text;
+                ClearClipboardNotification(clearSnapshot: false);
+                return;
+            }
+
+            if (suppressClipboardAutoReloadUntilUtc.HasValue && DateTime.UtcNow <= suppressClipboardAutoReloadUntilUtc.Value)
+            {
+                pendingClipboardText = text;
+                ClearClipboardNotification(clearSnapshot: false);
                 return;
             }
 
             pendingClipboardText = text;
+
+            if (!isDirty)
+            {
+                LoadText(text);
+                return;
+            }
+
             clipboardHasPendingReload = true;
             UpdateReloadIndicator();
         }
@@ -287,9 +312,23 @@ namespace screenzap
         {
             void HandleUpdate()
             {
-                if (ignoreNextClipboardUpdate)
+                if (suppressClipboardAutoReloadUntilUtc.HasValue && DateTime.UtcNow > suppressClipboardAutoReloadUntilUtc.Value)
                 {
-                    ignoreNextClipboardUpdate = false;
+                    suppressClipboardAutoReloadUntilUtc = null;
+                    expectedInternalClipboardText = null;
+                }
+
+                if (suppressClipboardAutoReloadUntilUtc.HasValue && DateTime.UtcNow <= suppressClipboardAutoReloadUntilUtc.Value)
+                {
+                    pendingClipboardText = null;
+                    ClearClipboardNotification(clearSnapshot: false);
+                    image.Dispose();
+                    return;
+                }
+
+                if (!isDirty)
+                {
+                    TrySwitchToImageEditorFromClipboard();
                     image.Dispose();
                     return;
                 }
@@ -999,6 +1038,20 @@ namespace screenzap
                 return true;
             }
 
+            if (keyData == (Keys.Control | Keys.C))
+            {
+                CopySelectionToClipboard();
+                return true;
+            }
+
+            if (keyData == (Keys.Control | Keys.V))
+            {
+                if (PasteInternalClipboardText())
+                {
+                    return true;
+                }
+            }
+
             if (keyData == (Keys.Control | Keys.R))
             {
                 ReloadFromClipboard();
@@ -1020,8 +1073,12 @@ namespace screenzap
 
             if (ClipboardTextWriterForDiagnostics != null)
             {
+                expectedInternalClipboardText = text;
+                suppressClipboardAutoReloadUntilUtc = DateTime.UtcNow.AddMilliseconds(InternalClipboardSuppressionMilliseconds);
                 if (!ClipboardTextWriterForDiagnostics(text))
                 {
+                    expectedInternalClipboardText = null;
+                    suppressClipboardAutoReloadUntilUtc = null;
                     return;
                 }
 
@@ -1033,7 +1090,8 @@ namespace screenzap
 
             try
             {
-                ignoreNextClipboardUpdate = true;
+                expectedInternalClipboardText = text;
+                suppressClipboardAutoReloadUntilUtc = DateTime.UtcNow.AddMilliseconds(InternalClipboardSuppressionMilliseconds);
                 Clipboard.SetText(text);
                 ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
                 pendingClipboardText = text;
@@ -1041,9 +1099,89 @@ namespace screenzap
             }
             catch (ExternalException ex)
             {
-                ignoreNextClipboardUpdate = false;
+                expectedInternalClipboardText = null;
+                suppressClipboardAutoReloadUntilUtc = null;
                 MessageBox.Show(this, $"Failed to copy text to the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void CopySelectionToClipboard()
+        {
+            if (editor == null)
+            {
+                return;
+            }
+
+            var selectionStart = Math.Max(0, Math.Min(editor.SelectionStart, editor.TextLength));
+            var selectionEnd = Math.Max(0, Math.Min(editor.SelectionEnd, editor.TextLength));
+            if (selectionStart == selectionEnd)
+            {
+                return;
+            }
+
+            var start = Math.Min(selectionStart, selectionEnd);
+            var length = Math.Abs(selectionEnd - selectionStart);
+            var text = editor.Text?.Substring(start, length) ?? string.Empty;
+            LastCopiedTextForDiagnostics = text;
+            internalClipboardText = text;
+
+            expectedInternalClipboardText = text;
+            suppressClipboardAutoReloadUntilUtc = DateTime.UtcNow.AddMilliseconds(InternalClipboardSuppressionMilliseconds);
+
+            if (ClipboardTextWriterForDiagnostics != null)
+            {
+                if (!ClipboardTextWriterForDiagnostics(text))
+                {
+                    expectedInternalClipboardText = null;
+                    suppressClipboardAutoReloadUntilUtc = null;
+                    return;
+                }
+
+                ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
+                pendingClipboardText = text;
+                ClearClipboardNotification(clearSnapshot: false);
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(text);
+                ClipboardMetadata.LastTextCaptureTimestamp = DateTime.Now;
+                pendingClipboardText = text;
+                ClearClipboardNotification(clearSnapshot: false);
+            }
+            catch (ExternalException ex)
+            {
+                expectedInternalClipboardText = null;
+                suppressClipboardAutoReloadUntilUtc = null;
+                MessageBox.Show(this, $"Failed to copy text to the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private bool PasteInternalClipboardText()
+        {
+            if (editor == null || string.IsNullOrEmpty(internalClipboardText))
+            {
+                return false;
+            }
+
+            var selectionStart = Math.Max(0, Math.Min(editor.SelectionStart, editor.TextLength));
+            var selectionEnd = Math.Max(0, Math.Min(editor.SelectionEnd, editor.TextLength));
+            var start = Math.Min(selectionStart, selectionEnd);
+            var end = Math.Max(selectionStart, selectionEnd);
+
+            editor.TargetStart = start;
+            editor.TargetEnd = end;
+            editor.ReplaceTarget(internalClipboardText);
+
+            var caret = start + internalClipboardText.Length;
+            editor.SetSelection(caret, caret);
+
+            isDirty = true;
+            UpdateWindowTitle();
+            UpdateCommandStates();
+            UpdateStatusLabels();
+            return true;
         }
 
         private void ToggleSearchPanel(bool show, bool focusReplace = false)
@@ -1462,6 +1600,30 @@ namespace screenzap
         internal void CopyToClipboardForDiagnostics()
         {
             CopyToClipboard();
+        }
+
+        internal void CopySelectionToClipboardForDiagnostics(int selectionStart, int selectionEnd)
+        {
+            if (editor == null)
+            {
+                return;
+            }
+
+            var start = Math.Max(0, Math.Min(selectionStart, editor.TextLength));
+            var end = Math.Max(0, Math.Min(selectionEnd, editor.TextLength));
+            editor.SelectionStart = start;
+            editor.SelectionEnd = end;
+            CopySelectionToClipboard();
+        }
+
+        internal bool PasteInternalClipboardForDiagnostics()
+        {
+            return PasteInternalClipboardText();
+        }
+
+        internal void SimulateClipboardTextUpdateForDiagnostics(string text)
+        {
+            ClipboardMonitor_OnUpdateText(this, text ?? string.Empty);
         }
 
         internal void ConfigureSearchForDiagnostics(string findText, string replaceText, bool regex, bool matchCase, bool wholeWord)

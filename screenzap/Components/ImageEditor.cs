@@ -62,17 +62,21 @@ namespace screenzap
         private const string WindowTitleBase = "Screenzap Image Editor";
         private const int OptimizeTextBlurRadius = 100;
         private const int ExpandCanvasPaddingPixels = 8;
+        private const int InternalClipboardSuppressionMilliseconds = 1500;
 
         private DateTime? bufferTimestamp;
     private string? currentSavePath;
         private bool isPlaceholderImage;
     private bool hasUnsavedChanges;
     private bool clipboardHasPendingReload;
-    private bool ignoreNextClipboardUpdate;
+        private string? expectedInternalClipboardSignature;
+            private DateTime? suppressClipboardAutoReloadUntilUtc;
+        private Bitmap? internalClipboardImage;
         private ClipboardReloadTarget pendingReloadTarget = ClipboardReloadTarget.None;
         internal Func<bool>? ConfirmReloadWhenDirtyOverrideForDiagnostics { get; set; }
         internal Func<Image?>? ClipboardImageProviderForDiagnostics { get; set; }
         internal Func<string?>? ClipboardTextProviderForDiagnostics { get; set; }
+    internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
 
         private bool HasEditableImage => pictureBox1.Image != null && !isPlaceholderImage;
         internal ViewportMetrics ViewportDiagnostics => pictureBox1?.Metrics ?? default;
@@ -281,14 +285,138 @@ namespace screenzap
             UpdateReloadIndicator();
         }
 
-        private void HandleClipboardUpdated()
+        private static string BuildTextClipboardSignature(string text)
         {
-            if (ignoreNextClipboardUpdate)
+            return $"text:{text.Length}:{StringComparer.Ordinal.GetHashCode(text)}";
+        }
+
+        private static string BuildImageClipboardSignature(Image image)
+        {
+            Bitmap? ownedBitmap = null;
+            var bitmap = image as Bitmap;
+            if (bitmap == null)
             {
-                ignoreNextClipboardUpdate = false;
-                return;
+                ownedBitmap = new Bitmap(image);
+                bitmap = ownedBitmap;
             }
 
+            unchecked
+            {
+                ulong hash = 1469598103934665603UL;
+                hash ^= (uint)bitmap.Width;
+                hash *= 1099511628211UL;
+                hash ^= (uint)bitmap.Height;
+                hash *= 1099511628211UL;
+
+                int stepX = Math.Max(1, bitmap.Width / 8);
+                int stepY = Math.Max(1, bitmap.Height / 8);
+
+                for (int y = 0; y < bitmap.Height; y += stepY)
+                {
+                    for (int x = 0; x < bitmap.Width; x += stepX)
+                    {
+                        var pixel = bitmap.GetPixel(x, y);
+                        hash ^= (uint)pixel.ToArgb();
+                        hash *= 1099511628211UL;
+                    }
+                }
+
+                var signature = $"image:{bitmap.Width}x{bitmap.Height}:{hash:X16}";
+                ownedBitmap?.Dispose();
+                return signature;
+            }
+        }
+
+        private string? TryBuildClipboardSignature(ClipboardReloadTarget target)
+        {
+            try
+            {
+                if (target == ClipboardReloadTarget.Image)
+                {
+                    if (!Clipboard.ContainsImage())
+                    {
+                        return null;
+                    }
+
+                    using var image = Clipboard.GetImage();
+                    if (image == null)
+                    {
+                        return null;
+                    }
+
+                    return BuildImageClipboardSignature(image);
+                }
+
+                if (target == ClipboardReloadTarget.Text)
+                {
+                    if (!Clipboard.ContainsText(TextDataFormat.UnicodeText))
+                    {
+                        return null;
+                    }
+
+                    var text = Clipboard.GetText(TextDataFormat.UnicodeText);
+                    return BuildTextClipboardSignature(text ?? string.Empty);
+                }
+            }
+            catch (ExternalException)
+            {
+            }
+
+            return null;
+        }
+
+        private void TrackInternalClipboardImageWrite(Image image)
+        {
+            BeginInternalClipboardWriteSuppression(BuildImageClipboardSignature(image));
+        }
+
+        private void TrackInternalClipboardTextWrite(string text)
+        {
+            BeginInternalClipboardWriteSuppression(BuildTextClipboardSignature(text));
+        }
+
+        private void BeginInternalClipboardWriteSuppression(string signature)
+        {
+            expectedInternalClipboardSignature = signature;
+            suppressClipboardAutoReloadUntilUtc = DateTime.UtcNow.AddMilliseconds(InternalClipboardSuppressionMilliseconds);
+        }
+
+        private bool IsInternalClipboardSuppressionActive()
+        {
+            if (suppressClipboardAutoReloadUntilUtc.HasValue && DateTime.UtcNow > suppressClipboardAutoReloadUntilUtc.Value)
+            {
+                suppressClipboardAutoReloadUntilUtc = null;
+                expectedInternalClipboardSignature = null;
+                return false;
+            }
+
+            return suppressClipboardAutoReloadUntilUtc.HasValue && DateTime.UtcNow <= suppressClipboardAutoReloadUntilUtc.Value;
+        }
+
+        private bool IsExpectedInternalClipboardUpdate(ClipboardReloadTarget target)
+        {
+            if (string.IsNullOrEmpty(expectedInternalClipboardSignature))
+            {
+                return false;
+            }
+
+            var signature = TryBuildClipboardSignature(target);
+            if (signature == null)
+            {
+                return false;
+            }
+
+            if (!string.Equals(signature, expectedInternalClipboardSignature, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            expectedInternalClipboardSignature = null;
+            return true;
+        }
+
+        private void HandleClipboardUpdated()
+        {
             ClipboardReloadTarget detectedTarget = ClipboardReloadTarget.None;
             try
             {
@@ -311,7 +439,26 @@ namespace screenzap
                 return;
             }
 
+            if (IsExpectedInternalClipboardUpdate(detectedTarget))
+            {
+                ClearClipboardNotification();
+                return;
+            }
+
+            if (IsInternalClipboardSuppressionActive())
+            {
+                ClearClipboardNotification();
+                return;
+            }
+
             pendingReloadTarget = detectedTarget;
+
+            if (!hasUnsavedChanges)
+            {
+                ReloadFromClipboard(showEmptyClipboardMessage: false);
+                return;
+            }
+
             clipboardHasPendingReload = true;
             UpdateReloadIndicator();
         }
@@ -1465,6 +1612,16 @@ namespace screenzap
             ReloadFromClipboard();
         }
 
+        internal bool CopySelectionToClipboardForDiagnostics()
+        {
+            return CopySelectionToClipboard();
+        }
+
+        internal bool PasteFromClipboardForDiagnostics()
+        {
+            return TryPasteImageFromClipboard();
+        }
+
         private void ImageEditor_KeyDown(object sender, KeyEventArgs e)
         {
             //Console.WriteLine(e.Modifiers);
@@ -1594,18 +1751,14 @@ namespace screenzap
 
             else if (e.KeyCode == Keys.C && e.Control == true)
             {
-                if (!Selection.IsEmpty && HasEditableImage && pictureBox1.Image != null)
+                CopySelectionToClipboard();
+            }
+            else if (e.KeyCode == Keys.V && e.Control == true)
+            {
+                if (TryPasteImageFromClipboard())
                 {
-                    using var composite = BuildCompositeImage();
-                    var bmp = new Bitmap(Selection.Width, Selection.Height);
-                    using (var gr = Graphics.FromImage(bmp))
-                    {
-                        gr.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                        gr.DrawImage(composite, new Rectangle(Point.Empty, bmp.Size), Selection, GraphicsUnit.Pixel);
-                    }
-
-                    Clipboard.SetImage(bmp);
-                    ClearSelection();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
                 }
             }
             else if (e.KeyCode == Keys.E && e.Modifiers == (Keys.Control | Keys.Shift))
@@ -1788,23 +1941,154 @@ namespace screenzap
                 return false;
             }
 
-            try
+            using var snapshot = BuildCompositeImage();
+            return WriteImageToClipboard(snapshot, "Failed to copy the image to the clipboard.");
+        }
+
+        private bool CopySelectionToClipboard()
+        {
+            if (Selection.IsEmpty || !HasEditableImage || pictureBox1.Image == null)
             {
-                using var snapshot = BuildCompositeImage();
-                ignoreNextClipboardUpdate = true;
-                Clipboard.SetImage(snapshot);
+                return false;
+            }
+
+            using var composite = BuildCompositeImage();
+            using var selectionBitmap = new Bitmap(Selection.Width, Selection.Height);
+            using (var graphics = Graphics.FromImage(selectionBitmap))
+            {
+                graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                graphics.DrawImage(composite, new Rectangle(Point.Empty, selectionBitmap.Size), Selection, GraphicsUnit.Pixel);
+            }
+
+            internalClipboardImage?.Dispose();
+            internalClipboardImage = new Bitmap(selectionBitmap);
+            return true;
+        }
+
+        private bool WriteImageToClipboard(Image image, string failurePrefix)
+        {
+            if (ClipboardImageWriterForDiagnostics != null)
+            {
+                using var diagnosticsImage = new Bitmap(image);
+                TrackInternalClipboardImageWrite(diagnosticsImage);
+                if (!ClipboardImageWriterForDiagnostics(diagnosticsImage))
+                {
+                    expectedInternalClipboardSignature = null;
+                    suppressClipboardAutoReloadUntilUtc = null;
+                    return false;
+                }
+
                 ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
                 ClearClipboardNotification();
                 return true;
             }
-            catch (Exception ex)
+
+            try
             {
-                MessageBox.Show(this, $"Failed to copy the image to the clipboard.\n{ex.Message}", "Clipboard Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                TrackInternalClipboardImageWrite(image);
+                Clipboard.SetImage(image);
+                ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
+                ClearClipboardNotification();
+                return true;
+            }
+            catch (ExternalException ex)
+            {
+                expectedInternalClipboardSignature = null;
+                suppressClipboardAutoReloadUntilUtc = null;
+                MessageBox.Show(this, $"{failurePrefix}\n{ex.Message}", "Clipboard Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
         }
 
-        private void ReloadFromClipboard()
+        private bool TryPasteImageFromClipboard()
+        {
+            Image? clipboardImage = null;
+
+            if (internalClipboardImage != null)
+            {
+                clipboardImage = new Bitmap(internalClipboardImage);
+            }
+
+            try
+            {
+                if (clipboardImage == null && !Clipboard.ContainsImage())
+                {
+                    return false;
+                }
+
+                if (clipboardImage == null)
+                {
+                    clipboardImage = Clipboard.GetImage();
+                }
+            }
+            catch (ExternalException ex)
+            {
+                MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return true;
+            }
+
+            if (clipboardImage == null)
+            {
+                return false;
+            }
+
+            using (clipboardImage)
+            {
+                if (!HasEditableImage || pictureBox1.Image == null)
+                {
+                    LoadImage(clipboardImage);
+                    return true;
+                }
+
+                var beforeImage = new Bitmap(pictureBox1.Image);
+                var afterImage = new Bitmap(pictureBox1.Image);
+                var selectionBefore = Selection;
+
+                var destination = !Selection.IsEmpty
+                    ? new Rectangle(Selection.Location, clipboardImage.Size)
+                    : new Rectangle(
+                        (afterImage.Width - clipboardImage.Width) / 2,
+                        (afterImage.Height - clipboardImage.Height) / 2,
+                        clipboardImage.Width,
+                        clipboardImage.Height);
+
+                var imageBounds = new Rectangle(Point.Empty, afterImage.Size);
+                var clampedDestination = Rectangle.Intersect(imageBounds, destination);
+                if (clampedDestination.Width <= 0 || clampedDestination.Height <= 0)
+                {
+                    beforeImage.Dispose();
+                    afterImage.Dispose();
+                    return false;
+                }
+
+                var sourceRect = new Rectangle(
+                    clampedDestination.X - destination.X,
+                    clampedDestination.Y - destination.Y,
+                    clampedDestination.Width,
+                    clampedDestination.Height);
+
+                using (var graphics = Graphics.FromImage(afterImage))
+                {
+                    graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    graphics.DrawImage(clipboardImage, clampedDestination, sourceRect, GraphicsUnit.Pixel);
+                }
+
+                var appliedImage = new Bitmap(afterImage);
+                pictureBox1.Image.Dispose();
+                pictureBox1.Image = appliedImage;
+                Selection = clampedDestination;
+
+                PushUndoStep(Rectangle.Empty, beforeImage, afterImage, selectionBefore, Selection, true);
+
+                isPlaceholderImage = false;
+                UpdateCommandUI();
+                UpdateStatusBar();
+                pictureBox1.Invalidate();
+                return true;
+            }
+        }
+
+        private void ReloadFromClipboard(bool showEmptyClipboardMessage = true)
         {
             if (!ConfirmReloadWhenDirty())
             {
@@ -1821,7 +2105,10 @@ namespace screenzap
                 return;
             }
 
-            MessageBox.Show(this, "Clipboard does not contain image or text data to reload.", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (showEmptyClipboardMessage)
+            {
+                MessageBox.Show(this, "Clipboard does not contain image or text data to reload.", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
 
         private bool ConfirmReloadWhenDirty()
@@ -2034,12 +2321,14 @@ namespace screenzap
 
                 if (!string.IsNullOrEmpty(svg))
                 {
+                    TrackInternalClipboardTextWrite(svg);
                     Clipboard.SetText(svg);
-                    ignoreNextClipboardUpdate = true;
                 }
             }
             catch (Exception ex)
             {
+                expectedInternalClipboardSignature = null;
+                suppressClipboardAutoReloadUntilUtc = null;
                 MessageBox.Show(
                     $"Failed to trace image:\n{ex.Message}",
                     "Trace Error",
