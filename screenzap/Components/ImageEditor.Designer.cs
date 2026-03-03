@@ -37,6 +37,7 @@
             this.reloadToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.reloadNotificationLabel = new System.Windows.Forms.ToolStripLabel();
             this.cropToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.expandCanvasToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.optimizeTextToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.straightenToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -103,6 +104,7 @@
             this.reloadToolStripButton,
             this.reloadNotificationLabel,
             this.cropToolStripButton,
+            this.expandCanvasToolStripButton,
             this.replaceToolStripButton,
             this.optimizeTextToolStripButton,
             this.straightenToolStripButton,
@@ -394,6 +396,16 @@
             this.cropToolStripButton.ToolTipText = "Crop Selection (Ctrl+T)";
             this.cropToolStripButton.Click += new System.EventHandler(this.cropToolStripButton_Click);
             // 
+            // expandCanvasToolStripButton
+            // 
+            this.expandCanvasToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.expandCanvasToolStripButton.Enabled = false;
+            this.expandCanvasToolStripButton.Name = "expandCanvasToolStripButton";
+            this.expandCanvasToolStripButton.Size = new System.Drawing.Size(96, 23);
+            this.expandCanvasToolStripButton.Text = "Expand Canvas";
+            this.expandCanvasToolStripButton.ToolTipText = "Expand canvas by 8px, repeating edge pixels (Ctrl+Shift+E)";
+            this.expandCanvasToolStripButton.Click += new System.EventHandler(this.expandCanvasToolStripButton_Click);
+            // 
             // replaceToolStripButton
             // 
             this.replaceToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -672,6 +684,7 @@
         private System.Windows.Forms.Panel canvasPanel;
         private Components.Shared.ImageViewportControl pictureBox1;
         private FontAwesome.Sharp.IconToolStripButton cropToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton expandCanvasToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton optimizeTextToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton straightenToolStripButton;

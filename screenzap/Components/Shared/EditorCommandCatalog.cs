@@ -11,6 +11,7 @@ namespace screenzap.Components.Shared
             { EditorCommandId.SaveAs, new EditorCommandDescriptor { Id = EditorCommandId.SaveAs, Label = "Save As", ToolTip = "Save As (Ctrl+Shift+S)", Icon = IconChar.FilePen } },
             { EditorCommandId.Copy, new EditorCommandDescriptor { Id = EditorCommandId.Copy, Label = "Copy", ToolTip = "Copy to Clipboard", Icon = IconChar.Clipboard } },
             { EditorCommandId.Reload, new EditorCommandDescriptor { Id = EditorCommandId.Reload, Label = "Reload", ToolTip = "Reload from Clipboard (Ctrl+R)", Icon = IconChar.Rotate } },
+            { EditorCommandId.ExpandCanvas, new EditorCommandDescriptor { Id = EditorCommandId.ExpandCanvas, Label = "Expand Canvas", ToolTip = "Expand canvas by 8px with edge padding", Icon = IconChar.Expand } },
             { EditorCommandId.Undo, new EditorCommandDescriptor { Id = EditorCommandId.Undo, Label = "Undo", ToolTip = "Undo (Ctrl+Z)", Icon = IconChar.RotateLeft } },
             { EditorCommandId.Redo, new EditorCommandDescriptor { Id = EditorCommandId.Redo, Label = "Redo", ToolTip = "Redo (Ctrl+Y)", Icon = IconChar.RotateRight } },
             { EditorCommandId.Find, new EditorCommandDescriptor { Id = EditorCommandId.Find, Label = "Find", ToolTip = "Find (Ctrl+F)", Icon = IconChar.MagnifyingGlass } }

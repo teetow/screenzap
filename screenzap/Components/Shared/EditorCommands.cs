@@ -8,6 +8,7 @@ namespace screenzap.Components.Shared
         SaveAs,
         Copy,
         Reload,
+        ExpandCanvas,
         Undo,
         Redo,
         Find

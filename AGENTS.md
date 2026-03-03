@@ -1,0 +1,1 @@
+- after task is complete, check for running instances, build and relaunch.

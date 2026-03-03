@@ -61,6 +61,7 @@ namespace screenzap
 
         private const string WindowTitleBase = "Screenzap Image Editor";
         private const int OptimizeTextBlurRadius = 100;
+        private const int ExpandCanvasPaddingPixels = 8;
 
         private DateTime? bufferTimestamp;
     private string? currentSavePath;
@@ -219,6 +220,7 @@ namespace screenzap
             ConfigureIconButton(saveToolStripButton, IconChar.FloppyDisk);
             ConfigureIconButton(saveAsToolStripButton, IconChar.FilePen);
             ConfigureIconButton(cropToolStripButton, IconChar.CropSimple);
+            ConfigureIconButton(expandCanvasToolStripButton, IconChar.Expand);
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
             ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
             ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
@@ -797,6 +799,89 @@ namespace screenzap
             return ActivateStraightenTool();
         }
 
+        private bool ExecuteExpandCanvas()
+        {
+            if (!HasEditableImage || pictureBox1.Image == null)
+            {
+                return false;
+            }
+
+            var sourceImage = pictureBox1.Image;
+            if (sourceImage.Width <= 0 || sourceImage.Height <= 0)
+            {
+                return false;
+            }
+
+            var padding = ExpandCanvasPaddingPixels;
+            var beforeImage = new Bitmap(sourceImage);
+            var selectionBefore = Selection;
+            var annotationStateBefore = CloneAnnotations();
+
+            var expandedWidth = sourceImage.Width + (padding * 2);
+            var expandedHeight = sourceImage.Height + (padding * 2);
+            var afterSnapshot = new Bitmap(expandedWidth, expandedHeight, PixelFormat.Format32bppArgb);
+
+            using (var g = Graphics.FromImage(afterSnapshot))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+
+                g.DrawImage(sourceImage, new Rectangle(padding, padding, sourceImage.Width, sourceImage.Height), new Rectangle(0, 0, sourceImage.Width, sourceImage.Height), GraphicsUnit.Pixel);
+
+                g.DrawImage(sourceImage, new Rectangle(0, padding, padding, sourceImage.Height), new Rectangle(0, 0, 1, sourceImage.Height), GraphicsUnit.Pixel);
+                g.DrawImage(sourceImage, new Rectangle(padding + sourceImage.Width, padding, padding, sourceImage.Height), new Rectangle(sourceImage.Width - 1, 0, 1, sourceImage.Height), GraphicsUnit.Pixel);
+
+                g.DrawImage(sourceImage, new Rectangle(padding, 0, sourceImage.Width, padding), new Rectangle(0, 0, sourceImage.Width, 1), GraphicsUnit.Pixel);
+                g.DrawImage(sourceImage, new Rectangle(padding, padding + sourceImage.Height, sourceImage.Width, padding), new Rectangle(0, sourceImage.Height - 1, sourceImage.Width, 1), GraphicsUnit.Pixel);
+
+                g.DrawImage(sourceImage, new Rectangle(0, 0, padding, padding), new Rectangle(0, 0, 1, 1), GraphicsUnit.Pixel);
+                g.DrawImage(sourceImage, new Rectangle(padding + sourceImage.Width, 0, padding, padding), new Rectangle(sourceImage.Width - 1, 0, 1, 1), GraphicsUnit.Pixel);
+                g.DrawImage(sourceImage, new Rectangle(0, padding + sourceImage.Height, padding, padding), new Rectangle(0, sourceImage.Height - 1, 1, 1), GraphicsUnit.Pixel);
+                g.DrawImage(sourceImage, new Rectangle(padding + sourceImage.Width, padding + sourceImage.Height, padding, padding), new Rectangle(sourceImage.Width - 1, sourceImage.Height - 1, 1, 1), GraphicsUnit.Pixel);
+            }
+
+            var newImage = new Bitmap(afterSnapshot);
+            var currentZoom = ZoomLevel;
+            pictureBox1.Image?.Dispose();
+            pictureBox1.Image = newImage;
+            ZoomLevel = currentZoom;
+            pictureBox1.ClampPan();
+
+            RecenterViewportAfterImageChange(resizeWindow: true);
+
+            var offset = new Point(padding, padding);
+            if (!Selection.IsEmpty)
+            {
+                Selection = new Rectangle(Selection.Location.Add(offset), Selection.Size);
+            }
+
+            for (int index = 0; index < annotationShapes.Count; index++)
+            {
+                var shape = annotationShapes[index];
+                shape.Start = shape.Start.Add(offset);
+                shape.End = shape.End.Add(offset);
+            }
+
+            for (int index = 0; index < textAnnotations.Count; index++)
+            {
+                var annotation = textAnnotations[index];
+                annotation.Position = annotation.Position.Add(offset);
+            }
+
+            SyncSelectedAnnotation();
+            SyncSelectedTextAnnotation();
+
+            var selectionAfter = Selection;
+            var annotationStateAfter = CloneAnnotations();
+            PushUndoStep(Rectangle.Empty, beforeImage, afterSnapshot, selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
+
+            UpdateCommandUI();
+            UpdateStatusBar();
+            pictureBox1.Invalidate();
+            return true;
+        }
+
         private static Bitmap CreateOptimizedForTextCopy(Bitmap source)
         {
             using var original = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
@@ -1040,6 +1125,10 @@ namespace screenzap
             if (cropToolStripButton != null)
             {
                 cropToolStripButton.Enabled = enable && !Selection.IsEmpty;
+            }
+            if (expandCanvasToolStripButton != null)
+            {
+                expandCanvasToolStripButton.Enabled = enable;
             }
             if (replaceToolStripButton != null)
             {
@@ -1483,6 +1572,14 @@ namespace screenzap
                     ClearSelection();
                 }
             }
+            else if (e.KeyCode == Keys.E && e.Modifiers == (Keys.Control | Keys.Shift))
+            {
+                if (ExecuteExpandCanvas())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
+            }
             else if (e.KeyCode == Keys.E && e.Control == true)
             {
                 if (ActivateCensorTool())
@@ -1603,6 +1700,14 @@ namespace screenzap
         private void cropToolStripButton_Click(object sender, EventArgs e)
         {
             ExecuteCrop();
+        }
+
+        private void expandCanvasToolStripButton_Click(object sender, EventArgs e)
+        {
+            if (ExecuteExpandCanvas())
+            {
+                pictureBox1?.Focus();
+            }
         }
 
         private void replaceToolStripButton_Click(object sender, EventArgs e)
@@ -1956,6 +2061,7 @@ namespace screenzap
                 EditorCommandId.SaveAs => saveAsToolStripButton?.Enabled == true,
                 EditorCommandId.Copy => copyClipboardToolStripButton?.Enabled == true,
                 EditorCommandId.Reload => true,
+                EditorCommandId.ExpandCanvas => expandCanvasToolStripButton?.Enabled == true,
                 EditorCommandId.Undo => undoStack.CanUndo,
                 EditorCommandId.Redo => undoStack.CanRedo,
                 EditorCommandId.Find => false,
@@ -1976,6 +2082,8 @@ namespace screenzap
                 case EditorCommandId.Reload:
                     ReloadFromClipboard();
                     return true;
+                case EditorCommandId.ExpandCanvas:
+                    return ExecuteExpandCanvas();
                 case EditorCommandId.Undo:
                     {
                         var step = undoStack.Undo();

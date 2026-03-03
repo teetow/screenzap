@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -112,10 +113,25 @@ namespace screenzap
         private void drawRect(PaintEventArgs e, Brush brush, Rectangle drawArea)
         {
             e.Graphics.FillRectangle(brush, drawArea.Left, drawArea.Top, drawArea.Width, drawArea.Height);
-            e.Graphics.DrawRectangle(Pens.White, drawArea.Left - 1, drawArea.Top - 1, drawArea.Width + 2, drawArea.Height + 2);
+
+            using (var whitePen = new Pen(Color.White, 1f))
+            using (var blackPen = new Pen(Color.Black, 1f))
+            {
+                whitePen.DashStyle = DashStyle.Custom;
+                blackPen.DashStyle = DashStyle.Custom;
+                whitePen.DashPattern = new[] { 2f, 2f };
+                blackPen.DashPattern = new[] { 2f, 2f };
+                whitePen.DashOffset = 0f;
+                blackPen.DashOffset = 2f;
+
+                e.Graphics.DrawRectangle(whitePen, drawArea.Left - 1, drawArea.Top - 1, drawArea.Width + 2, drawArea.Height + 2);
+                e.Graphics.DrawRectangle(blackPen, drawArea.Left - 1, drawArea.Top - 1, drawArea.Width + 2, drawArea.Height + 2);
+            }
+
             var coords = $"{drawArea.Width} x {drawArea.Height}";
             var textSize = e.Graphics.MeasureString(coords, captionFont);
             var textPos = new PointF(drawArea.Right - textSize.Width, drawArea.Bottom + 4);
+            e.Graphics.DrawString(coords, captionFont, Brushes.Black, textPos.X + 1, textPos.Y + 1);
             e.Graphics.DrawString(coords, captionFont, Brushes.White, textPos);
         }
 

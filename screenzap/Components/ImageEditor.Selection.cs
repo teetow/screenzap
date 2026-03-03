@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using screenzap.Components.Shared;
 using screenzap.lib;
@@ -15,11 +16,16 @@ namespace screenzap
         private bool isMovingSelection;
         private Point MoveInPixel;
         private bool isCtrlStampingSelection;
+        private bool isAltCloningSelection;
         private bool selectionStampApplied;
         private Bitmap? selectionStampSource;
         private Bitmap? selectionStampBeforeImage;
         private Point selectionStampLastLocation;
         private Rectangle selectionStampSelectionBefore;
+        private Bitmap? selectionCloneSource;
+        private Bitmap? selectionCloneBeforeImage;
+        private Rectangle selectionCloneSelectionBefore;
+        private bool selectionCloneApplied;
 
         private Rectangle _selection;
         private SelectionMetrics _selectionMetrics = SelectionMetrics.Empty;
@@ -50,6 +56,28 @@ namespace screenzap
 
         private ResizeMode rzMode;
         private bool isPanning;
+
+        private void DrawMarchingAntsRectangle(Graphics graphics, Rectangle rect, float lineWidth)
+        {
+            if (rect.Width <= 0 || rect.Height <= 0)
+            {
+                return;
+            }
+
+            using (var whitePen = new Pen(Color.White, lineWidth))
+            using (var blackPen = new Pen(Color.Black, lineWidth))
+            {
+                whitePen.DashStyle = DashStyle.Custom;
+                blackPen.DashStyle = DashStyle.Custom;
+                whitePen.DashPattern = new[] { 2f, 2f };
+                blackPen.DashPattern = new[] { 2f, 2f };
+                whitePen.DashOffset = 0f;
+                blackPen.DashOffset = 2f;
+
+                graphics.DrawRectangle(whitePen, rect);
+                graphics.DrawRectangle(blackPen, rect);
+            }
+        }
 
         private static readonly Dictionary<ResizeMode, Cursor> ResizeCursors = new Dictionary<ResizeMode, Cursor>
         {
@@ -160,6 +188,7 @@ namespace screenzap
         }
 
         private bool IsCtrlModifierDown() => (ModifierKeys & Keys.Control) == Keys.Control;
+        private bool IsAltModifierDown() => (ModifierKeys & Keys.Alt) == Keys.Alt;
 
         private void BeginSelectionStampGesture()
         {
@@ -216,6 +245,97 @@ namespace screenzap
             selectionStampApplied = false;
             isCtrlStampingSelection = false;
             UpdateCommandUI();
+        }
+
+        private void BeginSelectionCloneGesture()
+        {
+            if (isAltCloningSelection || !HasEditableImage || Selection.IsEmpty || pictureBox1.Image == null)
+            {
+                return;
+            }
+
+            var sourceRegion = ClampToImage(Selection);
+            if (sourceRegion.Width <= 0 || sourceRegion.Height <= 0)
+            {
+                return;
+            }
+
+            selectionCloneSource = CaptureRegion(sourceRegion);
+            if (selectionCloneSource == null)
+            {
+                return;
+            }
+
+            selectionCloneBeforeImage = new Bitmap(pictureBox1.Image);
+            selectionCloneSelectionBefore = Selection;
+            selectionCloneApplied = false;
+            isAltCloningSelection = true;
+        }
+
+        private void EndSelectionCloneGesture()
+        {
+            if (!isAltCloningSelection)
+            {
+                selectionCloneSource?.Dispose();
+                selectionCloneSource = null;
+                selectionCloneBeforeImage?.Dispose();
+                selectionCloneBeforeImage = null;
+                selectionCloneApplied = false;
+                return;
+            }
+
+            if (selectionCloneSource != null && pictureBox1.Image != null && Selection.Location != selectionCloneSelectionBefore.Location)
+            {
+                using (var g = Graphics.FromImage(pictureBox1.Image))
+                {
+                    g.CompositingMode = CompositingMode.SourceCopy;
+                    StampClonedSelectionAt(g, Selection.Location);
+                }
+            }
+
+            if (selectionCloneApplied && selectionCloneBeforeImage != null && pictureBox1.Image != null)
+            {
+                var afterSnapshot = new Bitmap(pictureBox1.Image);
+                PushUndoStep(Rectangle.Empty, selectionCloneBeforeImage, afterSnapshot, selectionCloneSelectionBefore, Selection, true);
+                selectionCloneBeforeImage = null;
+            }
+            else
+            {
+                selectionCloneBeforeImage?.Dispose();
+                selectionCloneBeforeImage = null;
+            }
+
+            selectionCloneSource?.Dispose();
+            selectionCloneSource = null;
+            selectionCloneApplied = false;
+            isAltCloningSelection = false;
+            pictureBox1.Invalidate();
+            UpdateCommandUI();
+        }
+
+        private void StampClonedSelectionAt(Graphics g, Point location)
+        {
+            if (selectionCloneSource == null)
+            {
+                return;
+            }
+
+            var destination = new Rectangle(location, selectionCloneSource.Size);
+            var clampedDestination = ClampToImage(destination);
+            if (clampedDestination.Width <= 0 || clampedDestination.Height <= 0)
+            {
+                return;
+            }
+
+            var sourceRect = new Rectangle(
+                clampedDestination.X - destination.X,
+                clampedDestination.Y - destination.Y,
+                clampedDestination.Width,
+                clampedDestination.Height
+            );
+
+            g.DrawImage(selectionCloneSource, clampedDestination, sourceRect, GraphicsUnit.Pixel);
+            selectionCloneApplied = true;
         }
 
         private void ApplySelectionStampAlongPath(Point from, Point to)
@@ -477,9 +597,14 @@ namespace screenzap
             {
                 if (rzMode != ResizeMode.None)
                 {
-                    if (rzMode == ResizeMode.Move && IsCtrlModifierDown() && !isCtrlStampingSelection)
+                    if (rzMode == ResizeMode.Move && IsCtrlModifierDown() && !isCtrlStampingSelection && !isAltCloningSelection)
                     {
                         BeginSelectionStampGesture();
+                    }
+
+                    if (rzMode == ResizeMode.Move && !IsCtrlModifierDown() && IsAltModifierDown() && !isAltCloningSelection)
+                    {
+                        BeginSelectionCloneGesture();
                     }
 
                     SetSelectionEdge(cursorPixel);
@@ -608,6 +733,7 @@ namespace screenzap
             if (e.Button == MouseButtons.Left)
             {
                 EndSelectionStampGesture();
+                EndSelectionCloneGesture();
             }
             else if (e.Button == MouseButtons.Middle)
             {
@@ -621,13 +747,27 @@ namespace screenzap
         {
             if (isDrawingRubberBand)
             {
-                var pen = new Pen(Pens.White.Brush, 2);
-                e.Graphics.DrawRectangle(pen, PixelToFormCoord(RectangleExt.fromPoints(MouseInPixel, MouseOutPixel)));
+                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(RectangleExt.fromPoints(MouseInPixel, MouseOutPixel)), 2f);
             }
             else if (!Selection.IsEmpty)
             {
-                var pen = new Pen(Pens.Cyan.Brush, 2);
-                e.Graphics.DrawRectangle(pen, PixelToFormCoord(Selection));
+                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(Selection), 2f);
+            }
+
+            if (isAltCloningSelection && selectionCloneSource != null)
+            {
+                var destination = ClampToImage(new Rectangle(Selection.Location, selectionCloneSource.Size));
+                if (destination.Width > 0 && destination.Height > 0)
+                {
+                    var sourceRect = new Rectangle(
+                        destination.X - Selection.X,
+                        destination.Y - Selection.Y,
+                        destination.Width,
+                        destination.Height
+                    );
+
+                    e.Graphics.DrawImage(selectionCloneSource, PixelToFormCoord(destination), sourceRect, GraphicsUnit.Pixel);
+                }
             }
 
             DrawAnnotations(e.Graphics, AnnotationSurface.Screen);
