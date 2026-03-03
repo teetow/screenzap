@@ -627,8 +627,7 @@ namespace screenzap
                     pictureBox1.Image = replacement;
                     ZoomLevel = currentZoom;
                     pictureBox1.ClampPan();
-                    ResizeWindowToImage(pictureBox1.GetImagePixelSize());
-                    HandleResize();
+                    RecenterViewportAfterImageChange(resizeWindow: true);
                     UpdateStatusBar();
                 }
                 else

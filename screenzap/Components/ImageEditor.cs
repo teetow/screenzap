@@ -103,6 +103,11 @@ namespace screenzap
 
         private void ResizeWindowToImage(Size imageSize)
         {
+            if (isHostedView)
+            {
+                return;
+            }
+
             var toolbarHeight = ToolbarHeight;
             var toolbarPreferredWidth = Math.Max(
                     mainToolStrip?.PreferredSize.Width ?? 0,
@@ -517,13 +522,36 @@ namespace screenzap
                 ResizeWindowToImage(pictureBox1.GetImagePixelSize());
             }
 
+            RealignViewportAfterCanvasMutation();
+        }
+
+        private void RealignViewportAfterCanvasMutation()
+        {
+            if (pictureBox1 == null)
+            {
+                return;
+            }
+
             HandleResize();
             pictureBox1.CenterImage();
 
-            if (Visible)
+            if (!IsHandleCreated)
             {
-                BeginInvoke(new Action(() => pictureBox1?.CenterImage()));
+                pictureBox1.Invalidate();
+                return;
             }
+
+            BeginInvoke(new Action(() =>
+            {
+                if (IsDisposed || pictureBox1 == null || pictureBox1.IsDisposed)
+                {
+                    return;
+                }
+
+                HandleResize();
+                pictureBox1.CenterImage();
+                pictureBox1.Invalidate();
+            }));
         }
 
         private Rectangle GetImageBounds()
