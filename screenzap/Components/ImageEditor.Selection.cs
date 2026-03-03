@@ -639,9 +639,16 @@ namespace screenzap
                     }
                     else if (ModifierKeys.HasFlag(Keys.Shift))
                     {
-                        Rectangle currentRubberBand = RectangleExt.fromPoints(MouseInPixel, cursorPixel);
-                        var square = Math.Max(currentRubberBand.Width, currentRubberBand.Height);
-                        MouseOutPixel = MouseInPixel.Add(square);
+                        var dx = cursorPixel.X - MouseInPixel.X;
+                        var dy = cursorPixel.Y - MouseInPixel.Y;
+                        var square = Math.Max(Math.Abs(dx), Math.Abs(dy));
+
+                        var dirX = dx == 0 ? (dy < 0 ? -1 : 1) : Math.Sign(dx);
+                        var dirY = dy == 0 ? (dx < 0 ? -1 : 1) : Math.Sign(dy);
+
+                        MouseOutPixel = new Point(
+                            MouseInPixel.X + (dirX * square),
+                            MouseInPixel.Y + (dirY * square));
                     }
                     else
                     {
