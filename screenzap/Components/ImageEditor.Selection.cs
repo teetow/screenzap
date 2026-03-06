@@ -192,6 +192,26 @@ namespace screenzap
 
         private bool IsCtrlModifierDown() => (ModifierKeys & Keys.Control) == Keys.Control;
         private bool IsAltModifierDown() => (ModifierKeys & Keys.Alt) == Keys.Alt;
+        private bool IsShiftModifierDown() => (ModifierKeys & Keys.Shift) == Keys.Shift;
+
+        private Point ApplyCloneStampAxisLock(Point cursorPixel)
+        {
+            if (rzMode != ResizeMode.Move || !IsShiftModifierDown() || (!isCtrlStampingSelection && !isAltCloningSelection))
+            {
+                return cursorPixel;
+            }
+
+            var dx = cursorPixel.X - MouseInPixel.X;
+            var dy = cursorPixel.Y - MouseInPixel.Y;
+            if (dx == 0 && dy == 0)
+            {
+                return cursorPixel;
+            }
+
+            return Math.Abs(dx) >= Math.Abs(dy)
+                ? new Point(cursorPixel.X, MouseInPixel.Y)
+                : new Point(MouseInPixel.X, cursorPixel.Y);
+        }
 
         private void BeginSelectionStampGesture()
         {
@@ -610,7 +630,7 @@ namespace screenzap
                         BeginSelectionCloneGesture();
                     }
 
-                    SetSelectionEdge(cursorPixel);
+                    SetSelectionEdge(ApplyCloneStampAxisLock(cursorPixel));
 
                     if (rzMode == ResizeMode.Move)
                     {
