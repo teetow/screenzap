@@ -186,8 +186,26 @@ namespace screenzap
             {
                 var Delta = MouseInPixel.Subtract(pixel);
                 var newLocation = new Point(SelectionGrabOrigin.X - Delta.X, SelectionGrabOrigin.Y - Delta.Y);
-                Selection = new Rectangle(newLocation, Selection.Size);
+                Selection = new Rectangle(ClampSelectionLocationToImage(newLocation, Selection.Size), Selection.Size);
+                return;
             }
+
+            Selection = ClampToImage(Selection);
+        }
+
+        private Point ClampSelectionLocationToImage(Point location, Size selectionSize)
+        {
+            var bounds = GetImageBounds();
+            if (bounds.IsEmpty)
+            {
+                return location;
+            }
+
+            var maxX = Math.Max(bounds.Left, bounds.Right - selectionSize.Width);
+            var maxY = Math.Max(bounds.Top, bounds.Bottom - selectionSize.Height);
+            int clampedX = Math.Clamp(location.X, bounds.Left, maxX);
+            int clampedY = Math.Clamp(location.Y, bounds.Top, maxY);
+            return new Point(clampedX, clampedY);
         }
 
         private bool IsCtrlModifierDown() => (ModifierKeys & Keys.Control) == Keys.Control;
@@ -755,7 +773,7 @@ namespace screenzap
 
             if (e.Button == MouseButtons.Left && isDrawingRubberBand)
             {
-                Selection = GetNormalizedRect(MouseInPixel, MouseOutPixel);
+                Selection = ClampToImage(GetNormalizedRect(MouseInPixel, MouseOutPixel));
                 isDrawingRubberBand = false;
                 pictureBox1.Invalidate();
                 UpdateCommandUI();
@@ -777,11 +795,12 @@ namespace screenzap
         {
             if (isDrawingRubberBand)
             {
-                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(RectangleExt.fromPoints(MouseInPixel, MouseOutPixel)), 2f);
+                var rubberBand = ClampToImage(GetNormalizedRect(MouseInPixel, MouseOutPixel));
+                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(rubberBand), 2f);
             }
             else if (!Selection.IsEmpty)
             {
-                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(Selection), 2f);
+                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(ClampToImage(Selection)), 2f);
             }
 
             if (isAltCloningSelection && selectionCloneSource != null)

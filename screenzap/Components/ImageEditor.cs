@@ -1397,7 +1397,7 @@ namespace screenzap
                 return;
             }
 
-            var rubberBand = GetNormalizedRect(MouseInPixel, MouseOutPixel);
+            var rubberBand = ClampToImage(GetNormalizedRect(MouseInPixel, MouseOutPixel));
             if (rubberBand.Width > 0 || rubberBand.Height > 0)
             {
                 selectionStatusLabel.Text = $"Sel: {rubberBand.X}, {rubberBand.Y}  {rubberBand.Width} × {rubberBand.Height}";
