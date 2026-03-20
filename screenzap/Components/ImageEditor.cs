@@ -246,6 +246,7 @@ namespace screenzap
             UpdateTraceButtonState();
             InitializeTextToolbar();
             InitializeAnnotationToolbar();
+            InitColorCorrector();
         }
 
         private static void ConfigureIconButton(IconToolStripButton? button, IconChar icon)
