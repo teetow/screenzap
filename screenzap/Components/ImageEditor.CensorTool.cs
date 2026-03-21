@@ -259,6 +259,7 @@ namespace screenzap
             if (censorToolStrip != null)
             {
                 censorToolStrip.Visible = true;
+                PositionOverlayToolStrips();
             }
 
             UpdateCensorToolbarState();
@@ -294,6 +295,7 @@ namespace screenzap
             if (censorToolStrip != null)
             {
                 censorToolStrip.Visible = false;
+                PositionOverlayToolStrips();
             }
 
             UpdateCensorToolbarState();

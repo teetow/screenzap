@@ -168,6 +168,12 @@ namespace screenzap
             {
                 arrowSizeComboBox.Visible = isArrowTool;
             }
+
+            if (annotationOptionsToolStrip != null)
+            {
+                annotationOptionsToolStrip.Visible = isAnnotationToolActive;
+                PositionOverlayToolStrips();
+            }
         }
 
         private void ToggleDrawingTool(DrawingTool tool)

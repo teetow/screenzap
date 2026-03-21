@@ -72,6 +72,9 @@ namespace screenzap
         private string? expectedInternalClipboardSignature;
             private DateTime? suppressClipboardAutoReloadUntilUtc;
         private Bitmap? internalClipboardImage;
+        private ToolStrip? toolsToolStrip;
+        private ToolStrip? textOptionsToolStrip;
+        private ToolStrip? annotationOptionsToolStrip;
         private ClipboardReloadTarget pendingReloadTarget = ClipboardReloadTarget.None;
         internal Func<bool>? ConfirmReloadWhenDirtyOverrideForDiagnostics { get; set; }
         internal Func<Image?>? ClipboardImageProviderForDiagnostics { get; set; }
@@ -113,13 +116,12 @@ namespace screenzap
             }
 
             var toolbarHeight = ToolbarHeight;
-            var toolbarPreferredWidth = Math.Max(
-                    mainToolStrip?.PreferredSize.Width ?? 0,
-                    Math.Max(
-                        censorToolStrip?.PreferredSize.Width ?? 0,
-                        straightenToolStrip?.PreferredSize.Width ?? 0));
+            var toolsWidth = toolsToolStrip?.Width ?? 0;
+            var secondaryToolbarPreferredWidth = Math.Max(censorToolStrip?.PreferredSize.Width ?? 0, straightenToolStrip?.PreferredSize.Width ?? 0);
+            var toolbarPreferredWidth = Math.Max(mainToolStrip?.PreferredSize.Width ?? 0, secondaryToolbarPreferredWidth);
+            toolbarPreferredWidth = Math.Max(toolbarPreferredWidth, toolsWidth + 200);
 
-            var targetWidth = Math.Max(Math.Max(imageSize.Width, MinimumSize.Width), toolbarPreferredWidth);
+            var targetWidth = Math.Max(Math.Max(imageSize.Width + toolsWidth, MinimumSize.Width), toolbarPreferredWidth);
             var targetHeight = Math.Max(imageSize.Height + toolbarHeight, MinimumSize.Height);
             ClientSize = new Size(targetWidth, targetHeight);
         }
@@ -186,6 +188,7 @@ namespace screenzap
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, true);
 
             InitializeComponent();
+            InitializeToolbarLayout();
             ConfigureToolbarIcons();
 
             MouseWheel += ImageEditor_MouseWheel;
@@ -204,9 +207,20 @@ namespace screenzap
                 straightenToolStrip.Visible = false;
             }
 
+            if (textOptionsToolStrip != null)
+            {
+                textOptionsToolStrip.Visible = false;
+            }
+
+            if (annotationOptionsToolStrip != null)
+            {
+                annotationOptionsToolStrip.Visible = false;
+            }
+
             UpdateCensorToolbarState();
             UpdateDrawingToolButtons();
             UpdateTextToolButtons();
+            PositionOverlayToolStrips();
         }
         
         private void canvasPanel_SizeChanged(object? sender, EventArgs e)
@@ -232,6 +246,7 @@ namespace screenzap
             ConfigureIconButton(expandCanvasToolStripButton, IconChar.Expand);
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
             ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
+            ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
             ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
             ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
             ConfigureIconButton(textToolStripButton, IconChar.Font);
@@ -242,11 +257,38 @@ namespace screenzap
             ConfigureIconButton(selectNoneToolStripButton, IconChar.SquareXmark);
             ConfigureIconButton(applyCensorToolStripButton, IconChar.Check);
             ConfigureIconButton(cancelCensorToolStripButton, IconChar.Xmark);
+            ConfigureIconButton(straightenApplyButton, IconChar.Check);
+            ConfigureIconButton(straightenCancelButton, IconChar.Xmark);
             UpdateReloadIndicator();
             UpdateTraceButtonState();
             InitializeTextToolbar();
             InitializeAnnotationToolbar();
+            ConfigureToolRailButtons();
             InitColorCorrector();
+        }
+
+        private void ConfigureToolRailButtons()
+        {
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            {
+                if (button == null)
+                {
+                    continue;
+                }
+
+                button.DisplayStyle = ToolStripItemDisplayStyle.Image;
+                button.AutoSize = false;
+                button.Size = new Size(32, 32);
+                button.Margin = new Padding(2);
+                button.Padding = Padding.Empty;
+                button.ImageScaling = ToolStripItemImageScaling.None;
+            }
+
+            if (toolsToolStrip != null)
+            {
+                toolsToolStrip.AutoSize = false;
+                toolsToolStrip.Width = 40;
+            }
         }
 
         private static void ConfigureIconButton(IconToolStripButton? button, IconChar icon)
@@ -650,7 +692,150 @@ namespace screenzap
         internal void HandleResize()
         {
             ClampImageLocationWithinCanvas();
+            PositionOverlayToolStrips();
             Invalidate();
+        }
+
+        private void InitializeToolbarLayout()
+        {
+            if (mainToolStrip == null)
+            {
+                return;
+            }
+
+            toolsToolStrip = new ToolStrip
+            {
+                Name = "toolsToolStrip",
+                Dock = DockStyle.Left,
+                GripStyle = ToolStripGripStyle.Hidden,
+                AutoSize = false,
+                Width = 40,
+                ImageScalingSize = mainToolStrip.ImageScalingSize,
+                LayoutStyle = ToolStripLayoutStyle.VerticalStackWithOverflow,
+                Padding = new Padding(2),
+                CanOverflow = false
+            };
+
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, arrowToolStripButton);
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, rectangleToolStripButton);
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, textToolStripButton);
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, censorToolStripButton);
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, straightenToolStripButton);
+
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            {
+                if (button != null)
+                {
+                    button.DisplayStyle = ToolStripItemDisplayStyle.Image;
+                    button.TextImageRelation = TextImageRelation.ImageBeforeText;
+                    button.AutoToolTip = true;
+                }
+            }
+
+            textOptionsToolStrip = new ToolStrip
+            {
+                Name = "textOptionsToolStrip",
+                Dock = DockStyle.None,
+                GripStyle = ToolStripGripStyle.Hidden,
+                AutoSize = true,
+                ImageScalingSize = mainToolStrip.ImageScalingSize,
+                Padding = new Padding(4, 2, 0, 2),
+                Visible = false,
+                CanOverflow = false
+            };
+
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, textToolSeparator);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, fontComboBox);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, fontVariantComboBox);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, fontSizeComboBox);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, boldButton);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, italicButton);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, underlineButton);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, textColorButton);
+            NormalizeToolStripItemAlignment(textOptionsToolStrip);
+
+            annotationOptionsToolStrip = new ToolStrip
+            {
+                Name = "annotationOptionsToolStrip",
+                Dock = DockStyle.None,
+                GripStyle = ToolStripGripStyle.Hidden,
+                AutoSize = true,
+                ImageScalingSize = mainToolStrip.ImageScalingSize,
+                Padding = new Padding(4, 2, 0, 2),
+                Visible = false,
+                CanOverflow = false
+            };
+
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, annotationToolSeparator);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, lineThicknessLabel);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, lineThicknessComboBox);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeLabel);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeComboBox);
+            NormalizeToolStripItemAlignment(annotationOptionsToolStrip);
+
+            Controls.Add(toolsToolStrip);
+            Controls.Add(textOptionsToolStrip);
+            Controls.Add(annotationOptionsToolStrip);
+            toolsToolStrip.BringToFront();
+            mainToolStrip.BringToFront();
+        }
+
+        private static void MoveToolStripItem(ToolStrip? source, ToolStrip? destination, ToolStripItem? item)
+        {
+            if (source == null || destination == null || item == null)
+            {
+                return;
+            }
+
+            if (source.Items.Contains(item))
+            {
+                source.Items.Remove(item);
+            }
+
+            destination.Items.Add(item);
+        }
+
+        private static void NormalizeToolStripItemAlignment(ToolStrip? strip)
+        {
+            if (strip == null)
+            {
+                return;
+            }
+
+            foreach (ToolStripItem item in strip.Items)
+            {
+                item.Alignment = ToolStripItemAlignment.Left;
+            }
+        }
+
+        private void PositionOverlayToolStrips()
+        {
+            int leftInset = (toolsToolStrip?.Visible == true ? toolsToolStrip.Width : 0) + 6;
+            int topInset = (mainToolStrip?.Bottom ?? 0) + 4;
+
+            if (annotationOptionsToolStrip != null)
+            {
+                annotationOptionsToolStrip.Location = new Point(leftInset, topInset);
+                annotationOptionsToolStrip.BringToFront();
+            }
+
+            if (textOptionsToolStrip != null)
+            {
+                textOptionsToolStrip.Location = new Point(leftInset, topInset);
+                textOptionsToolStrip.BringToFront();
+            }
+
+            if (censorToolStrip != null)
+            {
+                censorToolStrip.Location = new Point(leftInset, topInset);
+                censorToolStrip.BringToFront();
+            }
+
+            if (straightenToolStrip != null)
+            {
+                straightenToolStrip.Location = new Point(leftInset, topInset);
+                straightenToolStrip.BringToFront();
+            }
         }
 
         private void ClampImageLocationWithinCanvas()

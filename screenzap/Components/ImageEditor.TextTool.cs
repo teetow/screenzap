@@ -470,6 +470,12 @@ namespace screenzap
             {
                 textColorButton.Visible = isTextToolActive;
             }
+
+            if (textOptionsToolStrip != null)
+            {
+                textOptionsToolStrip.Visible = isTextToolActive;
+                PositionOverlayToolStrips();
+            }
         }
 
         private void CancelTextEditing()

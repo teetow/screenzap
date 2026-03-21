@@ -28,6 +28,7 @@ namespace screenzap
             if (straightenToolStrip != null)
             {
                 straightenToolStrip.Visible = true;
+                PositionOverlayToolStrips();
             }
 
             ClearSelection();
@@ -58,6 +59,7 @@ namespace screenzap
             if (straightenToolStrip != null)
             {
                 straightenToolStrip.Visible = false;
+                PositionOverlayToolStrips();
             }
 
             UpdateCommandUI();
