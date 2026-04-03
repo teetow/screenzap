@@ -71,5 +71,61 @@ namespace screenzap.Properties {
                 this["seqCaptureCombo"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("Segoe UI")]
+        public string textToolFontFamily {
+            get { return ((string)(this["textToolFontFamily"])); }
+            set { this["textToolFontFamily"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string textToolFontVariant {
+            get { return ((string)(this["textToolFontVariant"])); }
+            set { this["textToolFontVariant"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("24")]
+        public float textToolFontSize {
+            get { return ((float)(this["textToolFontSize"])); }
+            set { this["textToolFontSize"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0")]
+        public int textToolFontStyle {
+            get { return ((int)(this["textToolFontStyle"])); }
+            set { this["textToolFontStyle"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("-65536")]
+        public int textToolColorArgb {
+            get { return ((int)(this["textToolColorArgb"])); }
+            set { this["textToolColorArgb"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("1")]
+        public float textToolOutlineThickness {
+            get { return ((float)(this["textToolOutlineThickness"])); }
+            set { this["textToolOutlineThickness"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("-16777216")]
+        public int textToolOutlineColorArgb {
+            get { return ((int)(this["textToolOutlineColorArgb"])); }
+            set { this["textToolOutlineColorArgb"] = value; }
+        }
     }
 }

@@ -383,14 +383,15 @@ namespace screenzap
         private List<TextAnnotation>? textAnnotationSnapshotBeforeEdit;
         private bool textAnnotationChangedDuringDrag;
 
-        // Text tool settings
-        private string textToolFontFamily = "Segoe UI";
-        private string? textToolFontVariant = null; // null means use base family
-        private float textToolFontSize = 24f;
-        private FontStyle textToolFontStyle = FontStyle.Regular;
-        private Color textToolColor = Color.Red;
-        private float textToolOutlineThickness = 1f;  // 0 = none
-        private Color textToolOutlineColor = Color.Black;
+        // Text tool settings — initialised from persisted settings in InitializeTextToolbar
+        private string textToolFontFamily = Properties.Settings.Default.textToolFontFamily;
+        private string? textToolFontVariant = string.IsNullOrEmpty(Properties.Settings.Default.textToolFontVariant)
+            ? null : Properties.Settings.Default.textToolFontVariant;
+        private float textToolFontSize = Properties.Settings.Default.textToolFontSize;
+        private FontStyle textToolFontStyle = (FontStyle)Properties.Settings.Default.textToolFontStyle;
+        private Color textToolColor = Color.FromArgb(Properties.Settings.Default.textToolColorArgb);
+        private float textToolOutlineThickness = Properties.Settings.Default.textToolOutlineThickness;
+        private Color textToolOutlineColor = Color.FromArgb(Properties.Settings.Default.textToolOutlineColorArgb);
 
         // Font variant mapping: base name -> list of (display name, full font name)
         private Dictionary<string, List<(string DisplayName, string FullName)>>? fontVariantMap;
@@ -1474,6 +1475,7 @@ namespace screenzap
                 activeTextAnnotation.FontFamily = effectiveFont;
                 pictureBox1?.Invalidate();
             }
+            SaveTextToolSettings();
         }
 
         private void fontVariantComboBox_SelectedIndexChanged(object? sender, EventArgs e)
@@ -1491,6 +1493,7 @@ namespace screenzap
                             activeTextAnnotation.FontFamily = match.FullName;
                             pictureBox1?.Invalidate();
                         }
+                        SaveTextToolSettings();
                     }
                 }
             }
@@ -1506,6 +1509,7 @@ namespace screenzap
                     activeTextAnnotation.FontSize = size;
                     pictureBox1?.Invalidate();
                 }
+                SaveTextToolSettings();
             }
         }
 
@@ -1524,12 +1528,26 @@ namespace screenzap
                     activeTextAnnotation.TextColor = textToolColor;
                     pictureBox1?.Invalidate();
                 }
+                SaveTextToolSettings();
             }
         }
 
         private void ReturnFocusToCanvas()
         {
             pictureBox1?.Focus();
+        }
+
+        private void SaveTextToolSettings()
+        {
+            var s = Properties.Settings.Default;
+            s.textToolFontFamily        = textToolFontFamily;
+            s.textToolFontVariant       = textToolFontVariant ?? string.Empty;
+            s.textToolFontSize          = textToolFontSize;
+            s.textToolFontStyle         = (int)textToolFontStyle;
+            s.textToolColorArgb         = textToolColor.ToArgb();
+            s.textToolOutlineThickness  = textToolOutlineThickness;
+            s.textToolOutlineColorArgb  = textToolOutlineColor.ToArgb();
+            s.Save();
         }
 
         private void UpdateTextColorButtonAppearance()
@@ -1556,6 +1574,7 @@ namespace screenzap
                     activeTextAnnotation.OutlineColor = textToolOutlineColor;
                     pictureBox1?.Invalidate();
                 }
+                SaveTextToolSettings();
             }
         }
 
@@ -1580,6 +1599,7 @@ namespace screenzap
                     activeTextAnnotation.OutlineThickness = textToolOutlineThickness;
                     pictureBox1?.Invalidate();
                 }
+                SaveTextToolSettings();
             }
         }
 
@@ -1620,6 +1640,7 @@ namespace screenzap
                 activeTextAnnotation.FontStyle = style;
                 pictureBox1?.Invalidate();
             }
+            SaveTextToolSettings();
         }
 
         private void UpdateStyleButtonsFromFontStyle(FontStyle style)

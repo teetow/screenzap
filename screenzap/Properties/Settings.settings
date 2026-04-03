@@ -14,5 +14,26 @@
     <Setting Name="seqCaptureCombo" Type="System.String" Scope="User">
       <Value Profile="(Default)">Ctrl+Shift+F12</Value>
     </Setting>
+    <Setting Name="textToolFontFamily" Type="System.String" Scope="User">
+      <Value Profile="(Default)">Segoe UI</Value>
+    </Setting>
+    <Setting Name="textToolFontVariant" Type="System.String" Scope="User">
+      <Value Profile="(Default)"></Value>
+    </Setting>
+    <Setting Name="textToolFontSize" Type="System.Single" Scope="User">
+      <Value Profile="(Default)">24</Value>
+    </Setting>
+    <Setting Name="textToolFontStyle" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="textToolColorArgb" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">-65536</Value>
+    </Setting>
+    <Setting Name="textToolOutlineThickness" Type="System.Single" Scope="User">
+      <Value Profile="(Default)">1</Value>
+    </Setting>
+    <Setting Name="textToolOutlineColorArgb" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">-16777216</Value>
+    </Setting>
   </Settings>
 </SettingsFile>
