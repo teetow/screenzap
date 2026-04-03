@@ -22,6 +22,9 @@ namespace screenzap
         public float FontSize { get; set; } = 16f;
         public FontStyle FontStyle { get; set; } = FontStyle.Regular;
         public Color TextColor { get; set; } = Color.Red;
+        // OutlineThickness == 0 means no outline
+        public float OutlineThickness { get; set; } = 1f;
+        public Color OutlineColor { get; set; } = Color.Black;
         public bool Selected { get; set; }
         public bool IsEditing { get; set; }
         public int CaretPosition { get; set; }
@@ -55,6 +58,8 @@ namespace screenzap
                 FontSize = FontSize,
                 FontStyle = FontStyle,
                 TextColor = TextColor,
+                OutlineThickness = OutlineThickness,
+                OutlineColor = OutlineColor,
                 Selected = Selected,
                 IsEditing = false,
                 CaretPosition = CaretPosition,
@@ -384,6 +389,8 @@ namespace screenzap
         private float textToolFontSize = 24f;
         private FontStyle textToolFontStyle = FontStyle.Regular;
         private Color textToolColor = Color.Red;
+        private float textToolOutlineThickness = 1f;  // 0 = none
+        private Color textToolOutlineColor = Color.Black;
 
         // Font variant mapping: base name -> list of (display name, full font name)
         private Dictionary<string, List<(string DisplayName, string FullName)>>? fontVariantMap;
@@ -490,6 +497,14 @@ namespace screenzap
             if (textColorButton != null)
             {
                 textColorButton.Visible = isTextToolActive;
+            }
+            if (outlineColorButton != null)
+            {
+                outlineColorButton.Visible = isTextToolActive;
+            }
+            if (outlineThicknessComboBox != null)
+            {
+                outlineThicknessComboBox.Visible = isTextToolActive;
             }
 
             if (textOptionsToolStrip != null)
@@ -648,14 +663,26 @@ namespace screenzap
             // ── draw text with outline ────────────────────────────────────────
             if (!isEmpty)
             {
-                float outlineOffset = surface == AnnotationSurface.Screen ? 1f * scale : 1f;
-                for (int dx = -1; dx <= 1; dx++)
-                    for (int dy = -1; dy <= 1; dy++)
-                        if (dx != 0 || dy != 0)
+                float baseOutline = annotation.OutlineThickness;
+                if (baseOutline > 0f)
+                {
+                    // Render a filled disc of echoes so every pixel within the outline
+                    // radius is covered, regardless of thickness.
+                    float radius = surface == AnnotationSurface.Screen ? baseOutline * scale : baseOutline;
+                    int steps = (int)Math.Ceiling(radius);
+                    for (int dx = -steps; dx <= steps; dx++)
+                    {
+                        for (int dy = -steps; dy <= steps; dy++)
+                        {
+                            if (dx == 0 && dy == 0) continue;
+                            if (MathF.Sqrt(dx * dx + dy * dy) > radius) continue;
                             EmojiTextRenderer.DrawText(graphics, text,
-                                new PointF(position.X + dx * outlineOffset, position.Y + dy * outlineOffset),
-                                GetContrastColor(annotation.TextColor),
+                                new PointF(position.X + dx, position.Y + dy),
+                                annotation.OutlineColor,
                                 annotation.FontFamily, fontSize, annotation.FontStyle);
+                        }
+                    }
+                }
 
                 EmojiTextRenderer.DrawText(graphics, text, position,
                     annotation.TextColor, annotation.FontFamily, fontSize, annotation.FontStyle);
@@ -867,6 +894,8 @@ namespace screenzap
                 FontSize = textToolFontSize,
                 FontStyle = textToolFontStyle,
                 TextColor = textToolColor,
+                OutlineThickness = textToolOutlineThickness,
+                OutlineColor = textToolOutlineColor,
                 Text = string.Empty,
                 Selected = true,
                 IsEditing = true,
@@ -992,8 +1021,22 @@ namespace screenzap
             annotation.CaretPosition = annotation.Text.Length;
             annotation.SelectionAnchor = null;
             UpdateStyleButtonsFromFontStyle(annotation.FontStyle);
+            SyncOutlineToolbarFromAnnotation(annotation);
             textAnnotationChangedDuringDrag = false;
             pictureBox1?.Invalidate();
+        }
+
+        private void SyncOutlineToolbarFromAnnotation(TextAnnotation annotation)
+        {
+            textToolOutlineThickness = annotation.OutlineThickness;
+            textToolOutlineColor = annotation.OutlineColor;
+            UpdateOutlineColorButtonAppearance();
+            if (outlineThicknessComboBox != null)
+            {
+                var target = annotation.OutlineThickness <= 0f ? "None" : ((int)annotation.OutlineThickness).ToString();
+                int idx = outlineThicknessComboBox.Items.IndexOf(target);
+                if (idx >= 0) outlineThicknessComboBox.SelectedIndex = idx;
+            }
         }
 
         // Returns the caret index at the left edge of grapheme cluster that contains charIndex.
@@ -1395,16 +1438,41 @@ namespace screenzap
         {
             if (fontComboBox?.SelectedItem is string fontName)
             {
-                textToolFontFamily = fontName;
-                textToolFontVariant = null; // Reset variant when base family changes
-                UpdateFontVariantDropdown();
-                
-                var effectiveFont = GetEffectiveFontFamily();
-                if (activeTextAnnotation != null)
+                ApplyFontFamily(fontName);
+            }
+        }
+
+        private void fontComboBox_Leave(object? sender, EventArgs e)
+        {
+            // Validate free-typed text: accept only if it matches a known item
+            if (fontComboBox != null)
+            {
+                var typed = fontComboBox.Text;
+                int idx = fontComboBox.Items.IndexOf(typed);
+                if (idx >= 0)
                 {
-                    activeTextAnnotation.FontFamily = effectiveFont;
-                    pictureBox1?.Invalidate();
+                    ApplyFontFamily(typed);
                 }
+                else
+                {
+                    // Revert to last valid family
+                    fontComboBox.Text = textToolFontFamily;
+                }
+            }
+            ReturnFocusToCanvas();
+        }
+
+        private void ApplyFontFamily(string fontName)
+        {
+            textToolFontFamily = fontName;
+            textToolFontVariant = null;
+            UpdateFontVariantDropdown();
+
+            var effectiveFont = GetEffectiveFontFamily();
+            if (activeTextAnnotation != null)
+            {
+                activeTextAnnotation.FontFamily = effectiveFont;
+                pictureBox1?.Invalidate();
             }
         }
 
@@ -1459,12 +1527,59 @@ namespace screenzap
             }
         }
 
+        private void ReturnFocusToCanvas()
+        {
+            pictureBox1?.Focus();
+        }
+
         private void UpdateTextColorButtonAppearance()
         {
             if (textColorButton != null)
             {
                 textColorButton.BackColor = textToolColor;
                 textColorButton.ForeColor = GetContrastColor(textToolColor);
+            }
+        }
+
+        private void outlineColorButton_Click(object? sender, EventArgs e)
+        {
+            using var dialog = new ColorDialog();
+            dialog.Color = textToolOutlineColor;
+            dialog.FullOpen = true;
+
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+            {
+                textToolOutlineColor = dialog.Color;
+                UpdateOutlineColorButtonAppearance();
+                if (activeTextAnnotation != null)
+                {
+                    activeTextAnnotation.OutlineColor = textToolOutlineColor;
+                    pictureBox1?.Invalidate();
+                }
+            }
+        }
+
+        private void UpdateOutlineColorButtonAppearance()
+        {
+            if (outlineColorButton != null)
+            {
+                outlineColorButton.BackColor = textToolOutlineColor;
+                outlineColorButton.ForeColor = GetContrastColor(textToolOutlineColor);
+            }
+        }
+
+        private void outlineThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (outlineThicknessComboBox?.SelectedItem is string selected)
+            {
+                textToolOutlineThickness = selected == "None" ? 0f
+                    : float.TryParse(selected, out float t) ? t : 1f;
+
+                if (activeTextAnnotation != null)
+                {
+                    activeTextAnnotation.OutlineThickness = textToolOutlineThickness;
+                    pictureBox1?.Invalidate();
+                }
             }
         }
 
@@ -1554,16 +1669,41 @@ namespace screenzap
                     fontComboBox.SelectedIndex = 0;
                     textToolFontFamily = fontComboBox.Items[0]?.ToString() ?? "Segoe UI";
                 }
+
+                // Wire Leave so free-typed names are validated and focus returns to canvas
+                var innerCombo = fontComboBox.Control as ComboBox;
+                if (innerCombo != null)
+                {
+                    innerCombo.Leave += (s, e) => fontComboBox_Leave(s, e);
+                    innerCombo.AutoCompleteMode   = AutoCompleteMode.SuggestAppend;
+                    innerCombo.AutoCompleteSource = AutoCompleteSource.ListItems;
+                }
             }
 
             if (fontSizeComboBox != null)
             {
                 fontSizeComboBox.Items.AddRange(new object[] { "8", "10", "12", "14", "16", "18", "20", "24", "28", "32", "36", "48", "72" });
                 fontSizeComboBox.Text = textToolFontSize.ToString();
+                var sizeInner = fontSizeComboBox.Control as ComboBox;
+                if (sizeInner != null)
+                    sizeInner.Leave += (s, e) => ReturnFocusToCanvas();
+            }
+
+            if (outlineThicknessComboBox != null)
+            {
+                outlineThicknessComboBox.Items.AddRange(new object[] { "None", "1", "2", "3", "4", "6", "8" });
+                // Select the item matching current default thickness
+                var defaultItem = textToolOutlineThickness <= 0f ? "None" : ((int)textToolOutlineThickness).ToString();
+                int idx = outlineThicknessComboBox.Items.IndexOf(defaultItem);
+                outlineThicknessComboBox.SelectedIndex = idx >= 0 ? idx : 0;
+                var thickInner = outlineThicknessComboBox.Control as ComboBox;
+                if (thickInner != null)
+                    thickInner.Leave += (s, e) => ReturnFocusToCanvas();
             }
 
             UpdateFontVariantDropdown();
             UpdateTextColorButtonAppearance();
+            UpdateOutlineColorButtonAppearance();
         }
 
         private Dictionary<string, List<(string DisplayName, string FullName)>> BuildFontVariantMap()

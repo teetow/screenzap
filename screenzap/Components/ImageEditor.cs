@@ -753,6 +753,8 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, textOptionsToolStrip, italicButton);
             MoveToolStripItem(mainToolStrip, textOptionsToolStrip, underlineButton);
             MoveToolStripItem(mainToolStrip, textOptionsToolStrip, textColorButton);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, outlineColorButton);
+            MoveToolStripItem(mainToolStrip, textOptionsToolStrip, outlineThicknessComboBox);
             NormalizeToolStripItemAlignment(textOptionsToolStrip);
 
             annotationOptionsToolStrip = new ToolStrip
@@ -1813,18 +1815,41 @@ namespace screenzap
         {
             // Intercept arrow/navigation keys for text edit mode before WinForms
             // converts them into focus-movement commands (they never reach KeyDown otherwise).
+            // Do NOT steal keys when a toolbar control (font picker, size box, etc.) has focus —
+            // those controls need arrows/typing for their own purposes.
             if (isTextToolActive && activeTextAnnotation?.IsEditing == true)
             {
-                var code = keyData & Keys.KeyCode;
-                if (code == Keys.Left  || code == Keys.Right ||
-                    code == Keys.Home  || code == Keys.End)
+                var focused = this.ActiveControl ?? this.FindFocusedControl();
+                bool toolbarHasFocus = focused is ToolStrip
+                    || (focused != null && focused.Parent is ToolStrip)
+                    || (focused is ComboBox cb && cb.Parent?.Parent is ToolStrip);
+
+                if (!toolbarHasFocus)
                 {
-                    var ea = new KeyEventArgs(keyData);
-                    HandleTextToolKeyDown(ea);
-                    if (ea.Handled) return true;
+                    var code = keyData & Keys.KeyCode;
+                    if (code == Keys.Left  || code == Keys.Right ||
+                        code == Keys.Home  || code == Keys.End)
+                    {
+                        var ea = new KeyEventArgs(keyData);
+                        HandleTextToolKeyDown(ea);
+                        if (ea.Handled) return true;
+                    }
                 }
             }
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private Control? FindFocusedControl()
+        {
+            // Walk the WinForms control tree to find whichever child actually has focus.
+            var c = this as Control;
+            while (c != null)
+            {
+                var next = c.GetContainerControl()?.ActiveControl;
+                if (next == null || next == c) break;
+                c = next;
+            }
+            return c;
         }
 
         private void ImageEditor_KeyDown(object sender, KeyEventArgs e)

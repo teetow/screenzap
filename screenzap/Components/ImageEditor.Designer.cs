@@ -59,6 +59,8 @@
             this.italicButton = new System.Windows.Forms.ToolStripButton();
             this.underlineButton = new System.Windows.Forms.ToolStripButton();
             this.textColorButton = new System.Windows.Forms.ToolStripButton();
+            this.outlineColorButton = new System.Windows.Forms.ToolStripButton();
+            this.outlineThicknessComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.traceToolStripDropDown = new System.Windows.Forms.ToolStripDropDownButton();
             this.tracePosterMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.tracePhotoMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -114,6 +116,8 @@
             this.traceToolStripDropDown,
             this.censorToolStripButton,
             this.textColorButton,
+            this.outlineColorButton,
+            this.outlineThicknessComboBox,
             this.underlineButton,
             this.italicButton,
             this.boldButton,
@@ -143,7 +147,7 @@
             // fontComboBox
             // 
             this.fontComboBox.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
-            this.fontComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.fontComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDown;
             this.fontComboBox.Name = "fontComboBox";
             this.fontComboBox.Size = new System.Drawing.Size(160, 23);
             this.fontComboBox.ToolTipText = "Font Family";
@@ -218,6 +222,27 @@
             this.textColorButton.ToolTipText = "Text Color";
             this.textColorButton.Visible = false;
             this.textColorButton.Click += new System.EventHandler(this.textColorButton_Click);
+            // 
+            // outlineColorButton
+            // 
+            this.outlineColorButton.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.outlineColorButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.outlineColorButton.Name = "outlineColorButton";
+            this.outlineColorButton.Size = new System.Drawing.Size(57, 20);
+            this.outlineColorButton.Text = "Outline";
+            this.outlineColorButton.ToolTipText = "Outline Color";
+            this.outlineColorButton.Visible = false;
+            this.outlineColorButton.Click += new System.EventHandler(this.outlineColorButton_Click);
+            // 
+            // outlineThicknessComboBox
+            // 
+            this.outlineThicknessComboBox.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.outlineThicknessComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.outlineThicknessComboBox.Name = "outlineThicknessComboBox";
+            this.outlineThicknessComboBox.Size = new System.Drawing.Size(75, 23);
+            this.outlineThicknessComboBox.ToolTipText = "Outline Thickness";
+            this.outlineThicknessComboBox.Visible = false;
+            this.outlineThicknessComboBox.SelectedIndexChanged += new System.EventHandler(this.outlineThicknessComboBox_SelectedIndexChanged);
             // 
             // censorToolStrip
             // 
@@ -728,6 +753,8 @@
         private System.Windows.Forms.ToolStripButton italicButton;
         private System.Windows.Forms.ToolStripButton underlineButton;
         private System.Windows.Forms.ToolStripButton textColorButton;
+        private System.Windows.Forms.ToolStripButton outlineColorButton;
+        private System.Windows.Forms.ToolStripComboBox outlineThicknessComboBox;
         private System.Windows.Forms.StatusStrip statusStrip;
         private System.Windows.Forms.ToolStripStatusLabel resolutionStatusLabel;
         private System.Windows.Forms.ToolStripStatusLabel zoomStatusLabel;
