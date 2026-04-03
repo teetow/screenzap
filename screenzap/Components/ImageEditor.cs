@@ -194,6 +194,7 @@ namespace screenzap
             MouseWheel += ImageEditor_MouseWheel;
             pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
             pictureBox1.ZoomChanged += pictureBox1_ZoomChanged;
+            pictureBox1.MouseDoubleClick += pictureBox1_MouseDoubleClick;
 
             ClearSelection();
 
@@ -1806,6 +1807,24 @@ namespace screenzap
         internal bool PasteFromClipboardForDiagnostics()
         {
             return TryPasteImageFromClipboard();
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            // Intercept arrow/navigation keys for text edit mode before WinForms
+            // converts them into focus-movement commands (they never reach KeyDown otherwise).
+            if (isTextToolActive && activeTextAnnotation?.IsEditing == true)
+            {
+                var code = keyData & Keys.KeyCode;
+                if (code == Keys.Left  || code == Keys.Right ||
+                    code == Keys.Home  || code == Keys.End)
+                {
+                    var ea = new KeyEventArgs(keyData);
+                    HandleTextToolKeyDown(ea);
+                    if (ea.Handled) return true;
+                }
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
         }
 
         private void ImageEditor_KeyDown(object sender, KeyEventArgs e)

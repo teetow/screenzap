@@ -24,6 +24,25 @@ namespace screenzap
         public Color TextColor { get; set; } = Color.Red;
         public bool Selected { get; set; }
         public bool IsEditing { get; set; }
+        public int CaretPosition { get; set; }
+        public int? SelectionAnchor { get; set; }
+
+        // Returns (start, end) of the selected character range.
+        // start == end means no selection (caret only).
+        public (int start, int end) GetSelectionRange()
+        {
+            if (!SelectionAnchor.HasValue) return (CaretPosition, CaretPosition);
+            int a = Math.Min(CaretPosition, SelectionAnchor.Value);
+            int b = Math.Max(CaretPosition, SelectionAnchor.Value);
+            return (a, b);
+        }
+
+        public void ClampCaret()
+        {
+            CaretPosition = Math.Clamp(CaretPosition, 0, Text.Length);
+            if (SelectionAnchor.HasValue)
+                SelectionAnchor = Math.Clamp(SelectionAnchor.Value, 0, Text.Length);
+        }
 
         public TextAnnotation Clone()
         {
@@ -37,7 +56,9 @@ namespace screenzap
                 FontStyle = FontStyle,
                 TextColor = TextColor,
                 Selected = Selected,
-                IsEditing = false
+                IsEditing = false,
+                CaretPosition = CaretPosition,
+                SelectionAnchor = null
             };
         }
 
@@ -555,71 +576,164 @@ namespace screenzap
             }
         }
 
+        // Measure the width of text[0..charIndex] on a single line.
+        private SizeF MeasureTextPrefix(Graphics graphics, string text, int charIndex, string fontFamily, float fontSize, FontStyle fontStyle)
+        {
+            if (charIndex <= 0) return SizeF.Empty;
+            var prefix = text.Substring(0, charIndex);
+            return EmojiTextRenderer.MeasureText(graphics, prefix, fontFamily, fontSize, fontStyle);
+        }
+
+        // For a flat (single-line) caret position, return (lineIndex, column) and the
+        // pixel (x, lineTop) offset from the annotation origin.
+        private (float x, float y, float lineH) CaretPixelOffset(
+            Graphics graphics, string text, int caretPos,
+            string fontFamily, float fontSize, FontStyle fontStyle)
+        {
+            // Normalize line endings
+            var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+            int lineStart = 0;
+            float lineTop = 0f;
+            string[] lines = normalized.Split('\n');
+
+            for (int li = 0; li < lines.Length; li++)
+            {
+                string line = lines[li];
+                int lineEnd = lineStart + line.Length;
+                bool lastLine = li == lines.Length - 1;
+
+                // caretPos is inside this line or at its end
+                if (caretPos <= lineEnd || lastLine)
+                {
+                    int col = Math.Min(caretPos - lineStart, line.Length);
+                    col = Math.Max(col, 0);
+                    float x = MeasureTextPrefix(graphics, line, col, fontFamily, fontSize, fontStyle).Width;
+                    float lineH = Math.Max(fontSize, 1f);
+                    if (line.Length > 0)
+                    {
+                        var lsz = EmojiTextRenderer.MeasureText(graphics, line, fontFamily, fontSize, fontStyle);
+                        lineH = Math.Max(lineH, lsz.Height);
+                    }
+                    else
+                    {
+                        var refSz = EmojiTextRenderer.MeasureText(graphics, "M", fontFamily, fontSize, fontStyle);
+                        lineH = Math.Max(lineH, refSz.Height);
+                    }
+                    return (x, lineTop, lineH);
+                }
+
+                // advance past this line + newline character
+                lineStart = lineEnd + 1;
+                var sz = EmojiTextRenderer.MeasureText(graphics, line.Length > 0 ? line : "M", fontFamily, fontSize, fontStyle);
+                lineTop += Math.Max(fontSize, sz.Height);
+            }
+
+            return (0f, lineTop, fontSize);
+        }
+
         private void DrawTextAnnotation(Graphics graphics, TextAnnotation annotation, AnnotationSurface surface, float scale)
         {
             var text = annotation.Text;
-            if (string.IsNullOrEmpty(text) && annotation.IsEditing)
-            {
-                text = "|"; // Show cursor
-            }
+            bool isEmpty = string.IsNullOrEmpty(text);
 
-            if (string.IsNullOrEmpty(text))
-            {
+            if (isEmpty && !annotation.IsEditing)
                 return;
-            }
 
             float fontSize = surface == AnnotationSurface.Screen ? annotation.FontSize * scale : annotation.FontSize;
 
-            PointF position;
-            if (surface == AnnotationSurface.Screen)
-            {
-                position = PixelToFormCoordF(annotation.Position);
-            }
-            else
-            {
-                position = new PointF(annotation.Position.X, annotation.Position.Y);
-            }
+            PointF position = surface == AnnotationSurface.Screen
+                ? PixelToFormCoordF(annotation.Position)
+                : new PointF(annotation.Position.X, annotation.Position.Y);
 
-            // Draw outline for visibility
-            if (surface == AnnotationSurface.Screen || true)
+            // ── draw text with outline ────────────────────────────────────────
+            if (!isEmpty)
             {
                 float outlineOffset = surface == AnnotationSurface.Screen ? 1f * scale : 1f;
                 for (int dx = -1; dx <= 1; dx++)
-                {
                     for (int dy = -1; dy <= 1; dy++)
-                    {
                         if (dx != 0 || dy != 0)
-                        {
-                            EmojiTextRenderer.DrawText(
-                                graphics,
-                                text,
+                            EmojiTextRenderer.DrawText(graphics, text,
                                 new PointF(position.X + dx * outlineOffset, position.Y + dy * outlineOffset),
                                 GetContrastColor(annotation.TextColor),
-                                annotation.FontFamily,
-                                fontSize,
-                                annotation.FontStyle);
-                        }
-                    }
-                }
+                                annotation.FontFamily, fontSize, annotation.FontStyle);
+
+                EmojiTextRenderer.DrawText(graphics, text, position,
+                    annotation.TextColor, annotation.FontFamily, fontSize, annotation.FontStyle);
             }
 
-            EmojiTextRenderer.DrawText(
-                graphics,
-                text,
-                position,
-                annotation.TextColor,
-                annotation.FontFamily,
-                fontSize,
-                annotation.FontStyle);
-
-            // Draw editing cursor
+            // ── caret + selection (screen only, editing mode) ─────────────────
             if (annotation.IsEditing && surface == AnnotationSurface.Screen)
             {
-                var textSize = EmojiTextRenderer.MeasureText(graphics, annotation.Text, annotation.FontFamily, fontSize, annotation.FontStyle);
-                using var cursorPen = new Pen(annotation.TextColor, 2f);
-                float cursorX = position.X + textSize.Width;
-                float cursorHeight = fontSize;
-                graphics.DrawLine(cursorPen, cursorX, position.Y, cursorX, position.Y + cursorHeight);
+                annotation.ClampCaret();
+                var (selStart, selEnd) = annotation.GetSelectionRange();
+
+                // Draw selection highlight
+                if (selStart < selEnd)
+                {
+                    DrawTextSelectionHighlight(graphics, annotation, position, fontSize, selStart, selEnd);
+                }
+
+                // Draw caret
+                var (cx, cy, ch) = CaretPixelOffset(graphics, annotation.Text,
+                    annotation.CaretPosition, annotation.FontFamily, fontSize, annotation.FontStyle);
+                using var caretPen = new Pen(annotation.TextColor, 2f);
+                graphics.DrawLine(caretPen,
+                    position.X + cx, position.Y + cy,
+                    position.X + cx, position.Y + cy + ch);
+            }
+            else if (annotation.IsEditing && isEmpty)
+            {
+                // brand-new annotation with no text yet – draw a placeholder bar
+                float lineH = Math.Max(fontSize, 4f);
+                using var caretPen = new Pen(annotation.TextColor, 2f);
+                graphics.DrawLine(caretPen, position.X, position.Y, position.X, position.Y + lineH);
+            }
+        }
+
+        private void DrawTextSelectionHighlight(
+            Graphics graphics, TextAnnotation annotation,
+            PointF origin, float fontSize, int selStart, int selEnd)
+        {
+            // Handle multi-line selections by iterating line by line
+            var normalized = annotation.Text.Replace("\r\n", "\n").Replace('\r', '\n');
+            string[] lines = normalized.Split('\n');
+            int lineCharStart = 0;
+            float lineTop = 0f;
+
+            using var hlBrush = new SolidBrush(Color.FromArgb(120, 51, 153, 255));
+
+            foreach (var line in lines)
+            {
+                int lineEnd = lineCharStart + line.Length;
+
+                int overlapStart = Math.Max(selStart, lineCharStart);
+                int overlapEnd   = Math.Min(selEnd,   lineEnd);
+
+                if (overlapStart < overlapEnd)
+                {
+                    float x0 = MeasureTextPrefix(graphics, line,
+                        overlapStart - lineCharStart, annotation.FontFamily, fontSize, annotation.FontStyle).Width;
+                    float x1 = MeasureTextPrefix(graphics, line,
+                        overlapEnd   - lineCharStart, annotation.FontFamily, fontSize, annotation.FontStyle).Width;
+
+                    float lineH = line.Length > 0
+                        ? EmojiTextRenderer.MeasureText(graphics, line, annotation.FontFamily, fontSize, annotation.FontStyle).Height
+                        : EmojiTextRenderer.MeasureText(graphics, "M", annotation.FontFamily, fontSize, annotation.FontStyle).Height;
+                    lineH = Math.Max(lineH, fontSize);
+
+                    graphics.FillRectangle(hlBrush,
+                        origin.X + x0, origin.Y + lineTop,
+                        Math.Max(1f, x1 - x0), lineH);
+                }
+
+                // advance: +1 for the \n character
+                float advanceH = line.Length > 0
+                    ? EmojiTextRenderer.MeasureText(graphics, line, annotation.FontFamily, fontSize, annotation.FontStyle).Height
+                    : EmojiTextRenderer.MeasureText(graphics, "M", annotation.FontFamily, fontSize, annotation.FontStyle).Height;
+                lineTop += Math.Max(fontSize, advanceH);
+                lineCharStart = lineEnd + 1;
+
+                if (lineCharStart > selEnd) break;
             }
         }
 
@@ -724,7 +838,7 @@ namespace screenzap
 
                 textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
                 SelectTextAnnotation(hit);
-                hit.IsEditing = true;
+                // Single click → selection mode only. Enter or double-click to edit.
                 activeTextAnnotation = hit;
                 UpdateStyleButtonsFromFontStyle(hit.FontStyle);
                 textDragOriginPixel = pixelPoint;
@@ -743,7 +857,7 @@ namespace screenzap
             // Finalize previous annotation
             FinalizeActiveTextAnnotation();
 
-            // Create new text annotation
+            // Create new text annotation — go straight to edit mode
             textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
             var clampedPoint = ClampPointToImage(pixelPoint);
             var newAnnotation = new TextAnnotation
@@ -755,7 +869,8 @@ namespace screenzap
                 TextColor = textToolColor,
                 Text = string.Empty,
                 Selected = true,
-                IsEditing = true
+                IsEditing = true,
+                CaretPosition = 0
             };
 
             textAnnotations.Add(newAnnotation);
@@ -764,6 +879,30 @@ namespace screenzap
             textAnnotationChangedDuringDrag = false;
             pictureBox1?.Invalidate();
             return true;
+        }
+
+        private void HandleTextToolDoubleClick(Point pixelPoint, Point formPoint)
+        {
+            if (!isTextToolActive && !textAnnotations.Any())
+            {
+                return;
+            }
+
+            var hit = HitTestTextAnnotation(pixelPoint, formPoint);
+            if (hit == null)
+            {
+                return;
+            }
+
+            // Enter edit mode for the hit annotation
+            if (activeTextAnnotation != null && activeTextAnnotation != hit)
+            {
+                FinalizeActiveTextAnnotation();
+            }
+
+            SelectTextAnnotation(hit);
+            activeTextAnnotation = hit;
+            EnterTextEditMode(hit);
         }
 
         private bool HandleTextToolMouseMove(Point pixelPoint, Point formPoint, MouseButtons buttons)
@@ -842,115 +981,341 @@ namespace screenzap
             return false;
         }
 
+        // ── caret helpers ─────────────────────────────────────────────────────
+
+        private void EnterTextEditMode(TextAnnotation annotation)
+        {
+            if (textAnnotationSnapshotBeforeEdit == null)
+                textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+
+            annotation.IsEditing = true;
+            annotation.CaretPosition = annotation.Text.Length;
+            annotation.SelectionAnchor = null;
+            UpdateStyleButtonsFromFontStyle(annotation.FontStyle);
+            textAnnotationChangedDuringDrag = false;
+            pictureBox1?.Invalidate();
+        }
+
+        // Returns the caret index at the left edge of grapheme cluster that contains charIndex.
+        // We treat text as a flat string and navigate by StringInfo elements so surrogate pairs
+        // and combining characters move as one unit.
+        private static int PrevGrapheme(string text, int pos)
+        {
+            if (pos <= 0) return 0;
+            var info = new System.Globalization.StringInfo(text);
+            int len = info.LengthInTextElements;
+            // find which element starts at or before pos
+            int elem = 0;
+            for (int i = 0; i < len; i++)
+            {
+                int next = elem + System.Globalization.StringInfo.GetNextTextElement(text, elem).Length;
+                if (next >= pos) break;
+                elem = next;
+            }
+            return elem;
+        }
+
+        private static int NextGrapheme(string text, int pos)
+        {
+            if (pos >= text.Length) return text.Length;
+            return pos + System.Globalization.StringInfo.GetNextTextElement(text, pos).Length;
+        }
+
+        // Move caret within current line. Returns new position.
+        private static int MoveCaretLineStart(string text, int pos)
+        {
+            int lineStart = pos;
+            while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--;
+            return lineStart;
+        }
+
+        private static int MoveCaretLineEnd(string text, int pos)
+        {
+            int lineEnd = pos;
+            while (lineEnd < text.Length && text[lineEnd] != '\n') lineEnd++;
+            return lineEnd;
+        }
+
+        private void MoveCaret(TextAnnotation ta, int newPos, bool extend)
+        {
+            newPos = Math.Clamp(newPos, 0, ta.Text.Length);
+            if (extend)
+            {
+                if (!ta.SelectionAnchor.HasValue) ta.SelectionAnchor = ta.CaretPosition;
+            }
+            else
+            {
+                ta.SelectionAnchor = null;
+            }
+            ta.CaretPosition = newPos;
+            pictureBox1?.Invalidate();
+        }
+
+        // Delete selected text (or nothing if no selection).  Returns true if anything deleted.
+        private bool DeleteSelectedText(TextAnnotation ta)
+        {
+            var (start, end) = ta.GetSelectionRange();
+            if (start == end) return false;
+            ta.Text = ta.Text.Remove(start, end - start);
+            ta.CaretPosition = start;
+            ta.SelectionAnchor = null;
+            textAnnotationChangedDuringDrag = true;
+            return true;
+        }
+
+        private void InsertTextAtCaret(TextAnnotation ta, string insert)
+        {
+            // Normalize line endings so caret indices always match the stored text
+            var normalized = insert.Replace("\r\n", "\n").Replace('\r', '\n');
+            DeleteSelectedText(ta); // delete selection first
+            ta.Text = ta.Text.Insert(ta.CaretPosition, normalized);
+            ta.CaretPosition += normalized.Length;
+            ta.SelectionAnchor = null;
+            textAnnotationChangedDuringDrag = true;
+            pictureBox1?.Invalidate();
+        }
+
+        // ── selection-mode (object selected, not editing) key handler ─────────
+
         private bool HandleTextToolKeyDown(KeyEventArgs e)
         {
-            if (!isTextToolActive || activeTextAnnotation == null || !activeTextAnnotation.IsEditing)
+            if (!isTextToolActive)
+                return false;
+
+            // ── object-selection mode (annotation selected but not editing text) ──
+            if (activeTextAnnotation == null || !activeTextAnnotation.IsEditing)
             {
+                if (selectedTextAnnotation == null)
+                    return false;
+
+                if (e.KeyCode == Keys.Escape)
+                {
+                    SelectTextAnnotation(null);
+                    activeTextAnnotation = null;
+                    e.Handled = true;
+                    return true;
+                }
+
+                if (e.KeyCode == Keys.Delete)
+                {
+                    var before = CloneTextAnnotations();
+                    textAnnotations.Remove(selectedTextAnnotation);
+                    selectedTextAnnotation = null;
+                    activeTextAnnotation = null;
+                    var after = CloneTextAnnotations();
+                    PushTextUndoStep(before, after);
+                    pictureBox1?.Invalidate();
+                    e.Handled = true;
+                    return true;
+                }
+
+                // Enter → enter text-edit mode
+                if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.F2)
+                {
+                    if (textAnnotationSnapshotBeforeEdit == null)
+                        textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                    activeTextAnnotation = selectedTextAnnotation;
+                    EnterTextEditMode(activeTextAnnotation);
+                    e.Handled = true;
+                    return true;
+                }
+
+                // Any printable key → enter edit mode then let KeyPress insert it
                 return false;
             }
 
-            if (e.KeyCode == Keys.Escape)
-            {
-                // Cancel text entry - remove if empty
-                if (!activeTextAnnotation.IsValid())
-                {
-                    textAnnotations.Remove(activeTextAnnotation);
-                    textAnnotationSnapshotBeforeEdit = null;
-                }
-                else
-                {
-                    CommitTextAnnotationUndo();
-                }
+            // ── text-editing mode ──────────────────────────────────────────────
+            var ta = activeTextAnnotation;
+            bool shift = e.Shift;
+            bool ctrl  = e.Control;
 
-                activeTextAnnotation.IsEditing = false;
-                activeTextAnnotation = null;
-                pictureBox1?.Invalidate();
-                e.Handled = true;
-                return true;
-            }
-
-            if (e.KeyCode == Keys.Enter && !e.Shift)
+            switch (e.KeyCode)
             {
-                FinalizeActiveTextAnnotation();
-                e.Handled = true;
-                return true;
-            }
-
-            if (e.KeyCode == Keys.Back)
-            {
-                if (activeTextAnnotation.Text.Length > 0)
+                // ── exit editing ──────────────────────────────────────────────
+                case Keys.Escape:
+                case Keys.Enter when !shift:
                 {
-                    activeTextAnnotation.Text = activeTextAnnotation.Text.Substring(0, activeTextAnnotation.Text.Length - 1);
-                    textAnnotationChangedDuringDrag = true;
-                    pictureBox1?.Invalidate();
-                }
-                e.Handled = true;
-                return true;
-            }
-
-            if (e.Control && e.KeyCode == Keys.V)
-            {
-                if (Clipboard.ContainsText())
-                {
-                    var pasted = Clipboard.GetText();
-                    if (!string.IsNullOrEmpty(pasted))
+                    // Escape → discard empty new annotations; Enter → confirm
+                    if (e.KeyCode == Keys.Escape && !ta.IsValid())
                     {
-                        activeTextAnnotation.Text += pasted;
-                        textAnnotationChangedDuringDrag = true;
-                        pictureBox1?.Invalidate();
+                        textAnnotations.Remove(ta);
+                        textAnnotationSnapshotBeforeEdit = null;
                     }
+                    else
+                    {
+                        CommitTextAnnotationUndo();
+                    }
+                    ta.IsEditing = false;
+                    ta.SelectionAnchor = null;
+                    // Keep annotation selected (object-selection mode)
+                    activeTextAnnotation = null;
+                    pictureBox1?.Invalidate();
+                    e.Handled = true;
+                    return true;
                 }
 
-                e.SuppressKeyPress = true;
-                e.Handled = true;
-                return true;
-            }
+                // ── navigation ────────────────────────────────────────────────
+                case Keys.Left:
+                {
+                    int newPos = ctrl
+                        ? MovePrevWord(ta.Text, ta.CaretPosition)
+                        : (shift || ta.SelectionAnchor == null || ta.CaretPosition == ta.SelectionAnchor.Value)
+                            ? PrevGrapheme(ta.Text, ta.CaretPosition)
+                            : ta.GetSelectionRange().start;
+                    if (!shift && ta.SelectionAnchor.HasValue)
+                        newPos = ta.GetSelectionRange().start;
+                    MoveCaret(ta, newPos, shift);
+                    e.Handled = true; return true;
+                }
+                case Keys.Right:
+                {
+                    int newPos = ctrl
+                        ? MoveNextWord(ta.Text, ta.CaretPosition)
+                        : (shift || ta.SelectionAnchor == null || ta.CaretPosition == ta.SelectionAnchor.Value)
+                            ? NextGrapheme(ta.Text, ta.CaretPosition)
+                            : ta.GetSelectionRange().end;
+                    if (!shift && ta.SelectionAnchor.HasValue)
+                        newPos = ta.GetSelectionRange().end;
+                    MoveCaret(ta, newPos, shift);
+                    e.Handled = true; return true;
+                }
+                case Keys.Home:
+                    MoveCaret(ta, ctrl ? 0 : MoveCaretLineStart(ta.Text, ta.CaretPosition), shift);
+                    e.Handled = true; return true;
+                case Keys.End:
+                    MoveCaret(ta, ctrl ? ta.Text.Length : MoveCaretLineEnd(ta.Text, ta.CaretPosition), shift);
+                    e.Handled = true; return true;
 
-            if (e.KeyCode == Keys.Delete)
-            {
-                // Delete entire text annotation
-                textAnnotations.Remove(activeTextAnnotation);
-                CommitTextAnnotationUndo();
-                activeTextAnnotation = null;
-                selectedTextAnnotation = null;
-                pictureBox1?.Invalidate();
-                e.Handled = true;
-                return true;
+                // ── deletion ──────────────────────────────────────────────────
+                case Keys.Back:
+                {
+                    if (!DeleteSelectedText(ta))
+                    {
+                        int prev = ctrl
+                            ? MovePrevWord(ta.Text, ta.CaretPosition)
+                            : PrevGrapheme(ta.Text, ta.CaretPosition);
+                        if (prev < ta.CaretPosition)
+                        {
+                            ta.Text = ta.Text.Remove(prev, ta.CaretPosition - prev);
+                            ta.CaretPosition = prev;
+                            ta.SelectionAnchor = null;
+                            textAnnotationChangedDuringDrag = true;
+                        }
+                    }
+                    pictureBox1?.Invalidate();
+                    e.Handled = true; return true;
+                }
+                case Keys.Delete:
+                {
+                    if (!DeleteSelectedText(ta))
+                    {
+                        int next = ctrl
+                            ? MoveNextWord(ta.Text, ta.CaretPosition)
+                            : NextGrapheme(ta.Text, ta.CaretPosition);
+                        if (next > ta.CaretPosition)
+                        {
+                            ta.Text = ta.Text.Remove(ta.CaretPosition, next - ta.CaretPosition);
+                            ta.SelectionAnchor = null;
+                            textAnnotationChangedDuringDrag = true;
+                        }
+                    }
+                    pictureBox1?.Invalidate();
+                    e.Handled = true; return true;
+                }
+
+                // ── clipboard ─────────────────────────────────────────────────
+                case Keys.A when ctrl:
+                    ta.SelectionAnchor = 0;
+                    ta.CaretPosition = ta.Text.Length;
+                    pictureBox1?.Invalidate();
+                    e.Handled = true; return true;
+
+                case Keys.C when ctrl:
+                case Keys.X when ctrl:
+                {
+                    var (selStart, selEnd) = ta.GetSelectionRange();
+                    if (selStart < selEnd)
+                    {
+                        Clipboard.SetText(ta.Text.Substring(selStart, selEnd - selStart));
+                        if (e.KeyCode == Keys.X)
+                        {
+                            DeleteSelectedText(ta);
+                            pictureBox1?.Invalidate();
+                        }
+                    }
+                    e.SuppressKeyPress = true;
+                    e.Handled = true; return true;
+                }
+
+                case Keys.V when ctrl:
+                {
+                    if (Clipboard.ContainsText())
+                    {
+                        var pasted = Clipboard.GetText();
+                        if (!string.IsNullOrEmpty(pasted))
+                            InsertTextAtCaret(ta, pasted);
+                    }
+                    e.SuppressKeyPress = true;
+                    e.Handled = true; return true;
+                }
             }
 
             return false;
         }
 
+        private static int MovePrevWord(string text, int pos)
+        {
+            if (pos <= 0) return 0;
+            int p = pos - 1;
+            while (p > 0 && char.IsWhiteSpace(text[p])) p--;
+            while (p > 0 && !char.IsWhiteSpace(text[p - 1])) p--;
+            return p;
+        }
+
+        private static int MoveNextWord(string text, int pos)
+        {
+            if (pos >= text.Length) return text.Length;
+            int p = pos;
+            while (p < text.Length && !char.IsWhiteSpace(text[p])) p++;
+            while (p < text.Length && char.IsWhiteSpace(text[p])) p++;
+            return p;
+        }
+
         private bool HandleTextToolKeyPress(KeyPressEventArgs e)
         {
-            if (!isTextToolActive || activeTextAnnotation == null || !activeTextAnnotation.IsEditing)
-            {
+            if (!isTextToolActive)
                 return false;
+
+            // Selection mode: any printable key enters edit mode first
+            if ((activeTextAnnotation == null || !activeTextAnnotation.IsEditing) && selectedTextAnnotation != null)
+            {
+                if (char.IsControl(e.KeyChar)) return false;
+                if (textAnnotationSnapshotBeforeEdit == null)
+                    textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                activeTextAnnotation = selectedTextAnnotation;
+                EnterTextEditMode(activeTextAnnotation);
+                // CaretPosition is now at end; the char will be inserted below
             }
 
-            // Filter control characters except for Enter/newline
+            if (activeTextAnnotation == null || !activeTextAnnotation.IsEditing)
+                return false;
+
             if (char.IsControl(e.KeyChar) && e.KeyChar != '\r' && e.KeyChar != '\n')
-            {
                 return false;
-            }
 
-            // Handle Enter for newline
+            // Shift+Enter → newline
             if (e.KeyChar == '\r' || e.KeyChar == '\n')
             {
                 if (Control.ModifierKeys.HasFlag(Keys.Shift))
                 {
-                    activeTextAnnotation.Text += Environment.NewLine;
-                    textAnnotationChangedDuringDrag = true;
-                    pictureBox1?.Invalidate();
+                    InsertTextAtCaret(activeTextAnnotation, "\n");
                     e.Handled = true;
                     return true;
                 }
-                return false;
+                return false; // plain Enter handled in KeyDown
             }
 
-            activeTextAnnotation.Text += e.KeyChar;
-            textAnnotationChangedDuringDrag = true;
-            pictureBox1?.Invalidate();
+            InsertTextAtCaret(activeTextAnnotation, e.KeyChar.ToString());
             e.Handled = true;
             return true;
         }

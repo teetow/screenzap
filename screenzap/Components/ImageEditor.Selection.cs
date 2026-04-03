@@ -514,6 +514,14 @@ namespace screenzap
             return ResizeMode.None;
         }
 
+        private void pictureBox1_MouseDoubleClick(object? sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                HandleTextToolDoubleClick(FormCoordToPixel(e.Location), e.Location);
+            }
+        }
+
         private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
         {
             if (isStraightenToolActive)
