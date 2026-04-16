@@ -38,6 +38,8 @@
             this.reloadNotificationLabel = new System.Windows.Forms.ToolStripLabel();
             this.cropToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.expandCanvasToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.flipHorizontalToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.flipVerticalToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.optimizeTextToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.straightenToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -107,6 +109,8 @@
             this.reloadNotificationLabel,
             this.cropToolStripButton,
             this.expandCanvasToolStripButton,
+            this.flipHorizontalToolStripButton,
+            this.flipVerticalToolStripButton,
             this.replaceToolStripButton,
             this.optimizeTextToolStripButton,
             this.straightenToolStripButton,
@@ -430,6 +434,26 @@
             this.expandCanvasToolStripButton.Text = "Expand Canvas";
             this.expandCanvasToolStripButton.ToolTipText = "Expand canvas by 8px, repeating edge pixels (Ctrl+Shift+E)";
             this.expandCanvasToolStripButton.Click += new System.EventHandler(this.expandCanvasToolStripButton_Click);
+            //
+            // flipHorizontalToolStripButton
+            //
+            this.flipHorizontalToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.flipHorizontalToolStripButton.Enabled = false;
+            this.flipHorizontalToolStripButton.Name = "flipHorizontalToolStripButton";
+            this.flipHorizontalToolStripButton.Size = new System.Drawing.Size(52, 23);
+            this.flipHorizontalToolStripButton.Text = "Flip H";
+            this.flipHorizontalToolStripButton.ToolTipText = "Flip Horizontal";
+            this.flipHorizontalToolStripButton.Click += new System.EventHandler(this.flipHorizontalToolStripButton_Click);
+            //
+            // flipVerticalToolStripButton
+            //
+            this.flipVerticalToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.flipVerticalToolStripButton.Enabled = false;
+            this.flipVerticalToolStripButton.Name = "flipVerticalToolStripButton";
+            this.flipVerticalToolStripButton.Size = new System.Drawing.Size(49, 23);
+            this.flipVerticalToolStripButton.Text = "Flip V";
+            this.flipVerticalToolStripButton.ToolTipText = "Flip Vertical";
+            this.flipVerticalToolStripButton.Click += new System.EventHandler(this.flipVerticalToolStripButton_Click);
             // 
             // replaceToolStripButton
             // 
@@ -710,6 +734,8 @@
         private Components.Shared.ImageViewportControl pictureBox1;
         private FontAwesome.Sharp.IconToolStripButton cropToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton expandCanvasToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton flipHorizontalToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton flipVerticalToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton optimizeTextToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton straightenToolStripButton;

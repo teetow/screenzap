@@ -245,6 +245,8 @@ namespace screenzap
             ConfigureIconButton(saveAsToolStripButton, IconChar.FilePen);
             ConfigureIconButton(cropToolStripButton, IconChar.CropSimple);
             ConfigureIconButton(expandCanvasToolStripButton, IconChar.Expand);
+            ConfigureIconButton(flipHorizontalToolStripButton, IconChar.LeftRight);
+            ConfigureIconButton(flipVerticalToolStripButton, IconChar.UpDown);
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
             ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
             ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
@@ -1494,6 +1496,14 @@ namespace screenzap
             {
                 expandCanvasToolStripButton.Enabled = enable;
             }
+            if (flipHorizontalToolStripButton != null)
+            {
+                flipHorizontalToolStripButton.Enabled = enable;
+            }
+            if (flipVerticalToolStripButton != null)
+            {
+                flipVerticalToolStripButton.Enabled = enable;
+            }
             if (replaceToolStripButton != null)
             {
                 replaceToolStripButton.Enabled = enable && !Selection.IsEmpty;
@@ -2127,6 +2137,95 @@ namespace screenzap
             {
                 pictureBox1?.Focus();
             }
+        }
+
+        private void flipHorizontalToolStripButton_Click(object sender, EventArgs e)
+        {
+            ExecuteFlip(RotateFlipType.RotateNoneFlipX);
+        }
+
+        private void flipVerticalToolStripButton_Click(object sender, EventArgs e)
+        {
+            ExecuteFlip(RotateFlipType.RotateNoneFlipY);
+        }
+
+        private bool ExecuteFlip(RotateFlipType flipType)
+        {
+            if (!HasEditableImage || pictureBox1.Image == null)
+            {
+                return false;
+            }
+
+            var beforeImage = new Bitmap(pictureBox1.Image);
+            var selectionBefore = Selection;
+            var annotationStateBefore = CloneAnnotations();
+            int width = pictureBox1.Image.Width;
+            int height = pictureBox1.Image.Height;
+
+            var flipped = new Bitmap(pictureBox1.Image);
+            flipped.RotateFlip(flipType);
+
+            pictureBox1.Image?.Dispose();
+            pictureBox1.Image = flipped;
+
+            bool horizontal = flipType == RotateFlipType.RotateNoneFlipX;
+
+            // Mirror selection
+            if (!Selection.IsEmpty)
+            {
+                if (horizontal)
+                {
+                    Selection = new Rectangle(width - Selection.Right, Selection.Y, Selection.Width, Selection.Height);
+                }
+                else
+                {
+                    Selection = new Rectangle(Selection.X, height - Selection.Bottom, Selection.Width, Selection.Height);
+                }
+            }
+
+            // Mirror annotation shapes
+            for (int i = 0; i < annotationShapes.Count; i++)
+            {
+                var shape = annotationShapes[i];
+                if (horizontal)
+                {
+                    shape.Start = new Point(width - shape.Start.X, shape.Start.Y);
+                    shape.End = new Point(width - shape.End.X, shape.End.Y);
+                }
+                else
+                {
+                    shape.Start = new Point(shape.Start.X, height - shape.Start.Y);
+                    shape.End = new Point(shape.End.X, height - shape.End.Y);
+                }
+            }
+
+            // Mirror text annotations
+            for (int i = 0; i < textAnnotations.Count; i++)
+            {
+                var annotation = textAnnotations[i];
+                if (horizontal)
+                {
+                    annotation.Position = new Point(width - annotation.Position.X, annotation.Position.Y);
+                }
+                else
+                {
+                    annotation.Position = new Point(annotation.Position.X, height - annotation.Position.Y);
+                }
+            }
+
+            SyncSelectedAnnotation();
+            SyncSelectedTextAnnotation();
+
+            var selectionAfter = Selection;
+            var annotationStateAfter = CloneAnnotations();
+            PushUndoStep(Rectangle.Empty, beforeImage, new Bitmap(flipped), selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
+
+            hasUnsavedChanges = true;
+            UpdateCommandUI();
+            UpdateStatusBar();
+            pictureBox1.Invalidate();
+
+            return true;
         }
 
         private void replaceToolStripButton_Click(object sender, EventArgs e)
