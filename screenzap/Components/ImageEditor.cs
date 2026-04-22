@@ -2869,22 +2869,35 @@ namespace screenzap
         {
             if (item?.CurrentImage == null) return;
             LoadImage(item.CurrentImage);
-            // LoadImage clears the undo stack. Restore any stashed state so the user can keep undoing.
+            // LoadImage clears the undo stack and annotations. Restore the stashed state.
             undoStack.RestoreState(item.UndoSnapshot);
+            ApplyAnnotationState(item.Annotations);
+            ApplyTextAnnotationState(item.TextAnnotations);
             hasUnsavedChanges = item.IsDirty;
             UpdateCommandUI();
+            pictureBox1?.Invalidate();
         }
 
         void IClipboardDocumentPresenter.StashHistoryItemState(ClipboardHistoryItem item)
         {
             if (item == null) return;
-            if (pictureBox1?.Image is Bitmap current)
+            // Preserve base image unflattened so annotations remain editable after round-trip.
+            if (pictureBox1?.Image is Bitmap baseImage)
             {
-                // Flatten annotations into the stored bitmap so switching back preserves the visual state.
-                using var composite = BuildCompositeImage();
-                item.UpdateCurrentImage(composite);
+                item.UpdateCurrentImageWithoutDirty(baseImage);
             }
+
+            // Clone annotations into the item.
+            item.Annotations = CloneAnnotations();
+            item.TextAnnotations = CloneTextAnnotations();
             item.UndoSnapshot = undoStack.ExtractState();
+
+            // Generate a flattened preview composite just for the thumbnail.
+            if (HasEditableImage)
+            {
+                using var composite = BuildCompositeImage();
+                item.SetPreviewComposite(composite);
+            }
         }
 
         object? IClipboardDocumentPresenter.GetCurrentContent()

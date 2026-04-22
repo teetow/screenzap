@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using FontAwesome.Sharp;
 
 namespace screenzap.Components
 {
@@ -18,13 +19,17 @@ namespace screenzap.Components
         private ClipboardHistoryStore? store;
 
         public event EventHandler<ClipboardHistoryItem>? ItemActivated;
+        public event EventHandler<ClipboardHistoryItem>? ItemSetActive;
+        public event EventHandler<ClipboardHistoryItem>? ItemDuplicate;
+        public event EventHandler<ClipboardHistoryItem>? ItemRevert;
+        public event EventHandler<ClipboardHistoryItem>? ItemDelete;
 
         public ClipboardHistoryPanel()
         {
             DoubleBuffered = true;
             BackColor = Color.FromArgb(24, 24, 28);
-            Width = 56;
-            Padding = new Padding(6, 6, 6, 6);
+            Width = 93;
+            Padding = Padding.Empty;
 
             flow = new FlowLayoutPanel
             {
@@ -34,22 +39,9 @@ namespace screenzap.Components
                 AutoScroll = true,
                 BackColor = Color.Transparent,
                 Margin = Padding.Empty,
-                Padding = Padding.Empty
+                Padding = new Padding(4, 4, 17, 4)
             };
             Controls.Add(flow);
-
-            var header = new Label
-            {
-                Text = "History",
-                Dock = DockStyle.Top,
-                ForeColor = Color.Gainsboro,
-                BackColor = Color.Transparent,
-                Height = 18,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 7.5f, FontStyle.Bold)
-            };
-            Controls.Add(header);
-            Controls.SetChildIndex(header, 0);
         }
 
         public void AttachStore(ClipboardHistoryStore store)
@@ -116,10 +108,12 @@ namespace screenzap.Components
                         btn.Click += (s, e) =>
                         {
                             if (btn.Item != null)
-                            {
                                 ItemActivated?.Invoke(this, btn.Item);
-                            }
                         };
+                        btn.OnSetActive  = i => ItemSetActive?.Invoke(this, i);
+                        btn.OnDuplicate  = i => ItemDuplicate?.Invoke(this, i);
+                        btn.OnRevert     = i => ItemRevert?.Invoke(this, i);
+                        btn.OnDelete     = i => ItemDelete?.Invoke(this, i);
                         buttons[item.Id] = btn;
                     }
 
@@ -156,22 +150,56 @@ namespace screenzap.Components
             private static readonly Color ActiveBorder = Color.DeepSkyBlue;
             private static readonly Color IdleBorder = Color.FromArgb(70, 70, 75);
             private bool isActive;
+            private readonly ContextMenuStrip menu;
+            private readonly ToolStripMenuItem setActiveItem;
+            private readonly ToolStripMenuItem duplicateItem;
+            private readonly ToolStripMenuItem revertItem;
+            private readonly ToolStripMenuItem deleteItem;
+
+            public Action<ClipboardHistoryItem>? OnSetActive;
+            public Action<ClipboardHistoryItem>? OnDuplicate;
+            public Action<ClipboardHistoryItem>? OnRevert;
+            public Action<ClipboardHistoryItem>? OnDelete;
 
             public ClipboardHistoryItem? Item { get; private set; }
 
             public ThumbnailButton()
             {
                 SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, true);
-                Size = new Size(40, 40);
+                Size = new Size(72, 72);
                 Margin = new Padding(0, 0, 0, 4);
                 Cursor = Cursors.Hand;
                 BackColor = Color.FromArgb(24, 24, 28);
+
+                setActiveItem = new ToolStripMenuItem("Set as Active") { Image = MakeIcon(IconChar.Clipboard, Color.FromArgb(180, 220, 255)) };
+                setActiveItem.Click += (s, e) => { if (Item != null) OnSetActive?.Invoke(Item); };
+
+                duplicateItem = new ToolStripMenuItem("Duplicate") { Image = MakeIcon(IconChar.Clone, SystemColors.ControlText) };
+                duplicateItem.Click += (s, e) => { if (Item != null) OnDuplicate?.Invoke(Item); };
+
+                revertItem = new ToolStripMenuItem("Revert") { Image = MakeIcon(IconChar.ArrowRotateLeft, SystemColors.ControlText) };
+                revertItem.Click += (s, e) => { if (Item != null) OnRevert?.Invoke(Item); };
+
+                deleteItem = new ToolStripMenuItem("Delete") { Image = MakeIcon(IconChar.Trash, Color.FromArgb(220, 80, 80)) };
+                deleteItem.Click += (s, e) => { if (Item != null) OnDelete?.Invoke(Item); };
+
+                menu = new ContextMenuStrip();
+                menu.Items.AddRange(new ToolStripItem[] { setActiveItem, duplicateItem, revertItem, new ToolStripSeparator(), deleteItem });
+                menu.Opening += (s, e) => { revertItem.Enabled = Item?.IsDirty == true; };
+                ContextMenuStrip = menu;
             }
+
+            private static Bitmap MakeIcon(IconChar icon, Color color)
+                => FormsIconHelper.ToBitmap(icon, color, 16, 0, FlipOrientation.Normal);
 
             public void Rebind(ClipboardHistoryItem item, bool active)
             {
                 Item = item;
                 isActive = active;
+                if (item.Thumbnail is Bitmap thumb)
+                {
+                    Size = new Size(thumb.Width + 8, thumb.Height + 8);
+                }
                 Invalidate();
             }
 
@@ -183,11 +211,10 @@ namespace screenzap.Components
 
                 if (Item?.Thumbnail is Bitmap thumb)
                 {
-                    g.DrawImage(thumb, new Rectangle(4, 4, 32, 32));
+                    g.DrawImage(thumb, new Rectangle(4, 4, thumb.Width, thumb.Height));
+                    using var borderPen = new Pen(isActive ? ActiveBorder : IdleBorder, isActive ? 2f : 1f);
+                    g.DrawRectangle(borderPen, new Rectangle(3, 3, thumb.Width + 1, thumb.Height + 1));
                 }
-
-                using var borderPen = new Pen(isActive ? ActiveBorder : IdleBorder, isActive ? 2f : 1f);
-                g.DrawRectangle(borderPen, new Rectangle(3, 3, 33, 33));
 
                 if (Item?.IsDirty == true)
                 {

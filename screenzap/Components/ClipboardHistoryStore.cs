@@ -84,6 +84,12 @@ namespace screenzap.Components
             ItemUpdated?.Invoke(this, item);
         }
 
+        /// <summary>Fire ItemUpdated for external changes that don't go through Notify*Edited.</summary>
+        public void NotifyItemUpdated(ClipboardHistoryItem item)
+        {
+            ItemUpdated?.Invoke(this, item);
+        }
+
         public void MarkClean(ClipboardHistoryItem item)
         {
             item.MarkClean();
@@ -103,6 +109,58 @@ namespace screenzap.Components
             return clone;
         }
 
+        /// <summary>Insert a clone of <paramref name="source"/> directly above it in the list.</summary>
+        public ClipboardHistoryItem DuplicateAbove(ClipboardHistoryItem source)
+        {
+            var clone = source.CloneCurrentAsNew();
+            int idx = items.IndexOf(source);
+            items.Insert(idx >= 0 ? idx : 0, clone);
+            TrimToMax();
+            Changed?.Invoke(this, EventArgs.Empty);
+            return clone;
+        }
+
+        public void Remove(ClipboardHistoryItem item)
+        {
+            if (!items.Remove(item)) return;
+            if (ReferenceEquals(activeItem, item)) activeItem = null;
+            item.Dispose();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+
         public ClipboardHistoryItem? TopItem => items.FirstOrDefault();
+
+        /// <summary>Replace the entire ordered list of items (used by the system-history sync path). Disposes items that aren't in the new list.</summary>
+        public void ReplaceAll(IEnumerable<ClipboardHistoryItem> newOrder)
+        {
+            var incoming = newOrder.ToList();
+            var incomingIds = new HashSet<Guid>(incoming.Select(i => i.Id));
+
+            // Dispose items that disappear (but weren't transferred to the new list).
+            foreach (var existing in items)
+            {
+                if (!incomingIds.Contains(existing.Id))
+                {
+                    existing.Dispose();
+                }
+            }
+
+            items.Clear();
+            items.AddRange(incoming);
+            while (items.Count > MaxItems)
+            {
+                var victim = items[items.Count - 1];
+                items.RemoveAt(items.Count - 1);
+                if (ReferenceEquals(activeItem, victim)) activeItem = null;
+                victim.Dispose();
+            }
+
+            if (activeItem != null && !items.Contains(activeItem))
+            {
+                activeItem = null;
+            }
+
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
     }
 }

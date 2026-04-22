@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -20,7 +21,8 @@ namespace screenzap.Components
     /// </summary>
     internal sealed class ClipboardHistoryItem : IDisposable
     {
-        private const int ThumbnailSize = 32;
+        private const int MaxThumbnailDim = 64;
+        private static readonly Size TextThumbnailSize = new Size(43, 64); // 2:3 portrait
 
         public ClipboardHistoryItem(ClipboardItemKind kind)
         {
@@ -32,6 +34,9 @@ namespace screenzap.Components
         public Guid Id { get; }
         public ClipboardItemKind Kind { get; }
         public DateTime CreatedUtc { get; }
+
+        /// <summary>Windows clipboard history item Id (from WinRT), if this entry originated there.</summary>
+        public string? SystemHistoryId { get; set; }
 
         // Originals (immutable after construction via setters from store).
         public Bitmap? OriginalImage { get; private set; }
@@ -48,6 +53,23 @@ namespace screenzap.Components
 
         /// <summary>Stashed undo state so re-activating this item restores its history.</summary>
         internal UndoRedo.Snapshot? UndoSnapshot { get; set; }
+
+        /// <summary>Stashed annotation state (arrow/rectangle shapes) for image items. Null if never touched.</summary>
+        internal List<AnnotationShape>? Annotations { get; set; }
+
+        /// <summary>Stashed text annotations for image items. Null if never touched.</summary>
+        internal List<TextAnnotation>? TextAnnotations { get; set; }
+
+        /// <summary>Optional composited preview (base image + annotations) used only for thumbnail rendering. Does not replace CurrentImage.</summary>
+        internal Bitmap? PreviewComposite { get; private set; }
+
+        /// <summary>Update the preview composite (takes ownership of a clone). Used when annotations change but CurrentImage stays the base.</summary>
+        internal void SetPreviewComposite(Bitmap? composite)
+        {
+            PreviewComposite?.Dispose();
+            PreviewComposite = composite == null ? null : new Bitmap(composite);
+            RebuildThumbnail();
+        }
 
         public static ClipboardHistoryItem FromImage(Bitmap source)
         {
@@ -75,6 +97,21 @@ namespace screenzap.Components
             CurrentImage = replacement;
             IsDirty = !AreImagesEqual(OriginalImage, CurrentImage);
             RebuildThumbnail();
+        }
+
+        /// <summary>Update only the base image without recomputing dirty state (caller manages dirty).</summary>
+        internal void UpdateCurrentImageWithoutDirty(Bitmap updated)
+        {
+            if (Kind != ClipboardItemKind.Image) return;
+            var replacement = new Bitmap(updated);
+            CurrentImage?.Dispose();
+            CurrentImage = replacement;
+        }
+
+        /// <summary>Mark the item as dirty from an external signal (e.g. annotation-only edit).</summary>
+        internal void MarkDirtyExternally()
+        {
+            IsDirty = true;
         }
 
         public void UpdateCurrentText(string updated)
@@ -115,6 +152,8 @@ namespace screenzap.Components
 
             IsDirty = false;
             UndoSnapshot = null;
+            Annotations = null;
+            TextAnnotations = null;
             RebuildThumbnail();
         }
 
@@ -132,37 +171,40 @@ namespace screenzap.Components
         {
             var previous = Thumbnail;
             Thumbnail = Kind == ClipboardItemKind.Image
-                ? RenderImageThumbnail(CurrentImage)
+                ? RenderImageThumbnail(PreviewComposite ?? CurrentImage)
                 : RenderTextThumbnail(CurrentText ?? string.Empty);
             previous?.Dispose();
         }
 
         private static Bitmap RenderImageThumbnail(Bitmap? source)
         {
-            var thumb = new Bitmap(ThumbnailSize, ThumbnailSize, PixelFormat.Format32bppArgb);
-            using var g = Graphics.FromImage(thumb);
-            g.Clear(Color.FromArgb(32, 32, 32));
             if (source == null || source.Width <= 0 || source.Height <= 0)
             {
-                return thumb;
+                var fallback = new Bitmap(MaxThumbnailDim, MaxThumbnailDim, PixelFormat.Format32bppArgb);
+                using var fg = Graphics.FromImage(fallback);
+                fg.Clear(Color.FromArgb(32, 32, 32));
+                return fallback;
             }
 
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-            // Fit preserving aspect ratio.
-            float scale = Math.Min((float)ThumbnailSize / source.Width, (float)ThumbnailSize / source.Height);
+            // Scale so the longest axis is exactly MaxThumbnailDim.
+            float scale = (float)MaxThumbnailDim / Math.Max(source.Width, source.Height);
             int w = Math.Max(1, (int)(source.Width * scale));
             int h = Math.Max(1, (int)(source.Height * scale));
-            int x = (ThumbnailSize - w) / 2;
-            int y = (ThumbnailSize - h) / 2;
-            g.DrawImage(source, new Rectangle(x, y, w, h));
+
+            var thumb = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+            using var g = Graphics.FromImage(thumb);
+            g.Clear(Color.FromArgb(32, 32, 32));
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.DrawImage(source, new Rectangle(0, 0, w, h));
             return thumb;
         }
 
         private static Bitmap RenderTextThumbnail(string text)
         {
-            var thumb = new Bitmap(ThumbnailSize, ThumbnailSize, PixelFormat.Format32bppArgb);
+            int w = TextThumbnailSize.Width;
+            int h = TextThumbnailSize.Height;
+            var thumb = new Bitmap(w, h, PixelFormat.Format32bppArgb);
             using var g = Graphics.FromImage(thumb);
             g.Clear(Color.FromArgb(40, 50, 65));
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
@@ -170,23 +212,23 @@ namespace screenzap.Components
             var preview = (text ?? string.Empty).Trim();
             if (preview.Length == 0)
             {
-                using var emptyFont = new Font("Segoe UI", 5.5f, FontStyle.Italic);
-                TextRenderer.DrawText(g, "(empty)", emptyFont, new Rectangle(0, 0, ThumbnailSize, ThumbnailSize),
+                using var emptyFont = new Font("Segoe UI", 7f, FontStyle.Italic);
+                TextRenderer.DrawText(g, "(empty)", emptyFont, new Rectangle(0, 0, w, h),
                     Color.Gray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return thumb;
             }
 
-            if (preview.Length > 30) preview = preview.Substring(0, 30);
-            using var font = new Font("Segoe UI", 4.5f, FontStyle.Regular);
+            if (preview.Length > 80) preview = preview.Substring(0, 80);
+            using var font = new Font("Segoe UI", 6f, FontStyle.Regular);
             TextRenderer.DrawText(
                 g, preview, font,
-                new Rectangle(1, 1, ThumbnailSize - 2, ThumbnailSize - 2),
+                new Rectangle(3, 3, w - 6, h - 6),
                 Color.White,
                 TextFormatFlags.WordBreak | TextFormatFlags.Top | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
 
             // Subtle "T" badge bottom-right so text items are recognizable at a glance.
-            using var badgeFont = new Font("Segoe UI", 5.5f, FontStyle.Bold);
-            TextRenderer.DrawText(g, "T", badgeFont, new Point(ThumbnailSize - 10, ThumbnailSize - 11),
+            using var badgeFont = new Font("Segoe UI", 7f, FontStyle.Bold);
+            TextRenderer.DrawText(g, "T", badgeFont, new Point(w - 12, h - 14),
                 Color.FromArgb(180, 220, 255), TextFormatFlags.NoPrefix);
 
             return thumb;
@@ -228,9 +270,11 @@ namespace screenzap.Components
         {
             OriginalImage?.Dispose();
             CurrentImage?.Dispose();
+            PreviewComposite?.Dispose();
             Thumbnail?.Dispose();
             OriginalImage = null;
             CurrentImage = null;
+            PreviewComposite = null;
             Thumbnail = null;
         }
     }

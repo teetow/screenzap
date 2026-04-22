@@ -33,11 +33,13 @@ jobs:
           prerelease: false
           body: ${{steps.build_changelog.outputs.changelog}}
 
-      - name: setup-msbuild
-        uses: microsoft/setup-msbuild@v1.1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
 
-      - name: Build
-        run: msbuild Screenzap.sln /property:Configuration=Release
+      - name: Publish
+        run: dotnet publish screenzap/Screenzap.csproj -c Release -o ${{ github.workspace }}\publish\Screenzap
 
       - name: upload windows artifact
         uses: actions/upload-release-asset@v1
@@ -45,6 +47,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: D:\a\screenzap\screenzap\screenzap\bin\Release\Screenzap.exe
+          asset_path: D:\a\screenzap\screenzap\publish\Screenzap\Screenzap.exe
           asset_name: Screenzap-${{ github.ref_name }}.exe
           asset_content_type: application/octet-stream

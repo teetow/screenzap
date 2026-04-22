@@ -1,15 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
     <ApplicationIcon>res\screenzap-icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- Opt-in: copy build output to a stable per-user install folder after build. -->
+    <InstallAfterBuild>false</InstallAfterBuild>
+    <StableInstallDir>$(LocalAppData)\Programs\Screenzap\</StableInstallDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -98,4 +102,21 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <Target Name="InstallStableOutput" AfterTargets="Build" Condition="'$(InstallAfterBuild)' == 'true'">
+    <ItemGroup>
+      <StableInstallFiles Include="$(TargetDir)**\*" />
+    </ItemGroup>
+
+    <MakeDir Directories="$(StableInstallDir)" />
+
+    <Copy
+      SourceFiles="@(StableInstallFiles)"
+      DestinationFiles="@(StableInstallFiles->'$(StableInstallDir)%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+      Retries="2"
+      RetryDelayMilliseconds="250" />
+
+    <Message Importance="High" Text="Installed Screenzap build output to $(StableInstallDir)" />
+  </Target>
 </Project>

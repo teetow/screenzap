@@ -8,6 +8,8 @@ Screenzap is a screenshot tool for Windows with similar behavior to the MacOS sc
 
 Just put Screenzap.exe where you want it. Run it. nbd.
 
+For a stable per-user install path on Windows, prefer publishing to `%LOCALAPPDATA%\Programs\Screenzap` and pointing shortcuts there. Build outputs under `bin\Debug` and `bin\Release` are for development and should not be used as long-lived shortcut targets.
+
 ## Usage
 
 Press the configured shortcut (default is `ctrl-alt-shift-4`), drag to select a screen region, and take your screenshot. It will go on the clipboard.
@@ -32,6 +34,8 @@ The text editor theme (fonts, caret, and the new C-like syntax colors) is driven
 ## Development
 
 Screenzap is built as a 64-bit (`x64`) Windows application. Before rebuilding, make sure any running `Screenzap.exe` process is closed so the linker can overwrite the executable. Use the .NET CLI directly (for example `dotnet build screenzap/screenzap.csproj`) rather than VS Code tasks so you see any build warnings or errors in real time and so the debugger can attach to the x64 process successfully.
+
+For a stable local install while developing, use `dotnet publish screenzap/screenzap.csproj -c Release -o %LOCALAPPDATA%\Programs\Screenzap` and launch that published copy. This keeps shortcuts and autorun targets stable even when the framework moniker or build layout changes.
 
 ### Text detection prerequisites
 

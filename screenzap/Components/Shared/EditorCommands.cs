@@ -14,7 +14,8 @@ namespace screenzap.Components.Shared
         Find,
         Duplicate,
         Revert,
-        CommitEdits
+        CommitEdits,
+        Delete
     }
 
     internal sealed class EditorCommandDescriptor

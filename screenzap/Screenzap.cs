@@ -74,8 +74,6 @@ namespace screenzap
             if (clipboardMonitor != null)
             {
                 clipboardMonitor.OnUpdateImage -= ClipboardMonitor_OnUpdateImageForQr;
-                clipboardMonitor.OnUpdateImage -= ClipboardMonitor_OnUpdateImageForHistory;
-                clipboardMonitor.OnUpdateText -= ClipboardMonitor_OnUpdateTextForHistory;
                 clipboardMonitor.Dispose();
                 clipboardMonitor = null;
             }
@@ -87,43 +85,11 @@ namespace screenzap
             {
                 clipboardMonitor = new ClipboardMonitor();
                 clipboardMonitor.OnUpdateImage += ClipboardMonitor_OnUpdateImageForQr;
-                clipboardMonitor.OnUpdateImage += ClipboardMonitor_OnUpdateImageForHistory;
-                clipboardMonitor.OnUpdateText += ClipboardMonitor_OnUpdateTextForHistory;
                 clipboardMonitor.isListening = true;
             }
             catch (Exception ex)
             {
                 Logger.Log($"Failed to initialize QR clipboard monitor: {ex.Message}");
-            }
-        }
-
-        private void ClipboardMonitor_OnUpdateImageForHistory(object? sender, Bitmap image)
-        {
-            if (image == null) return;
-            var host = EnsureClipboardHost();
-            try
-            {
-                var item = host.HistoryStore.AddObservedImage(image);
-                host.OnObservedClipboardItem(item);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Failed to record clipboard image in history: {ex.Message}");
-            }
-        }
-
-        private void ClipboardMonitor_OnUpdateTextForHistory(object? sender, string text)
-        {
-            if (string.IsNullOrEmpty(text)) return;
-            var host = EnsureClipboardHost();
-            try
-            {
-                var item = host.HistoryStore.AddObservedText(text);
-                host.OnObservedClipboardItem(item);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Failed to record clipboard text in history: {ex.Message}");
             }
         }
 
@@ -559,9 +525,42 @@ namespace screenzap
                 var textPresenter = EnsureTextEditor();
                 clipboardEditorHost = new ClipboardEditorHostForm(imagePresenter, textPresenter);
                 clipboardEditorHost.FormClosed += OnClipboardHostClosed;
+                InitializeSystemClipboardHistoryForHost(clipboardEditorHost);
             }
 
             return clipboardEditorHost;
+        }
+
+        private SystemClipboardHistoryService? systemHistoryService;
+
+        private void InitializeSystemClipboardHistoryForHost(ClipboardEditorHostForm host)
+        {
+            try
+            {
+                systemHistoryService?.Dispose();
+                systemHistoryService = new SystemClipboardHistoryService(
+                    host.HistoryStore,
+                    host,
+                    onItemObserved: host.OnObservedClipboardItem,
+                    isInternalWriteWindow: host.IsInternalClipboardWriteWindow);
+
+                if (systemHistoryService.IsAvailable)
+                {
+                    systemHistoryService.Start();
+                }
+                else
+                {
+                    Logger.Log("Windows clipboard history is disabled or unavailable; Screenzap history will be populated on demand only.");
+                }
+
+                host.TryDeleteFromSystemHistoryAsync = async item =>
+                    systemHistoryService != null
+                    && await systemHistoryService.TryDeleteSystemItemAsync(item.SystemHistoryId);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to initialize SystemClipboardHistoryService: {ex.Message}");
+            }
         }
 
         private void OnClipboardHostClosed(object? sender, FormClosedEventArgs e)
@@ -570,6 +569,9 @@ namespace screenzap
             {
                 host.FormClosed -= OnClipboardHostClosed;
             }
+
+            systemHistoryService?.Dispose();
+            systemHistoryService = null;
 
             clipboardEditorHost = null;
             imageEditor = null;

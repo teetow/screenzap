@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace screenzap.Components
@@ -24,10 +25,25 @@ namespace screenzap.Components
         private readonly ClipboardHistoryPanel historyPanel;
         private IClipboardDocumentPresenter? activePresenter;
         private bool hasPendingReloadIndicator;
+        private DateTime? suppressExternalClipboardUntilUtc;
         internal bool SuppressActivation { get; set; }
+        internal Func<ClipboardHistoryItem, Task<bool>>? TryDeleteFromSystemHistoryAsync { get; set; }
         /// <summary>When true, a clipboard event arriving via the store won't override the currently-active dirty item.</summary>
         internal bool IsHostVisibleForAutoSwitch => Visible && !SuppressActivation;
         internal ClipboardHistoryStore HistoryStore => historyStore;
+
+        private const int InternalClipboardWriteSuppressMs = 2000;
+
+        internal void BeginInternalClipboardWrite()
+        {
+            suppressExternalClipboardUntilUtc = DateTime.UtcNow.AddMilliseconds(InternalClipboardWriteSuppressMs);
+        }
+
+        /// <summary>True when a recent internal clipboard write should suppress inbound history observation.</summary>
+        internal bool IsInternalClipboardWriteWindow()
+        {
+            return suppressExternalClipboardUntilUtc.HasValue && DateTime.UtcNow < suppressExternalClipboardUntilUtc.Value;
+        }
 
         public ClipboardEditorHostForm(IEnumerable<IClipboardDocumentPresenter>? presentersToHost)
         {
@@ -40,6 +56,10 @@ namespace screenzap.Components
             historyPanel = new ClipboardHistoryPanel();
             historyPanel.AttachStore(historyStore);
             historyPanel.ItemActivated += OnHistoryItemActivated;
+            historyPanel.ItemSetActive  += (_, item) => SetItemAsClipboard(item);
+            historyPanel.ItemDuplicate  += (_, item) => DuplicateItem(item);
+            historyPanel.ItemRevert     += (_, item) => RevertItem(item);
+            historyPanel.ItemDelete     += (_, item) => _ = DeleteItemAsync(item);
             historyStore.ItemUpdated += OnStoreItemUpdated;
 
             InitializeComponent();
@@ -175,6 +195,8 @@ namespace screenzap.Components
             AddCommandButton(EditorCommandId.CommitEdits);
             AddCommandButton(EditorCommandId.Duplicate);
             AddCommandButton(EditorCommandId.Revert);
+            toolbar.Items.Add(new ToolStripSeparator());
+            AddCommandButton(EditorCommandId.Delete);
             toolbar.Items.Add(dirtyIndicatorLabel);
 
             presenterHostPanel.Dock = DockStyle.Fill;
@@ -299,6 +321,11 @@ namespace screenzap.Components
                     return DuplicateActiveItem();
                 case EditorCommandId.Revert:
                     return RevertActiveItem();
+                case EditorCommandId.Delete:
+                    var active = historyStore.ActiveItem;
+                    if (active == null) return false;
+                    _ = DeleteItemAsync(active);
+                    return true;
                 default:
                     return activePresenter?.TryExecute(commandId) == true;
             }
@@ -320,6 +347,9 @@ namespace screenzap.Components
                     case EditorCommandId.Duplicate:
                         pair.Value.Enabled = activeItem != null;
                         break;
+                    case EditorCommandId.Delete:
+                        pair.Value.Enabled = activeItem != null;
+                        break;
                     default:
                         pair.Value.Enabled = activePresenter?.CanExecute(pair.Key) == true;
                         break;
@@ -334,19 +364,31 @@ namespace screenzap.Components
             var item = historyStore.ActiveItem;
             if (item == null || !item.IsDirty) return false;
 
-            // Push the current content to the Windows clipboard, then mark the item clean.
+            // Stash first so Annotations + base image are captured. Then flatten for clipboard.
+            activePresenter?.StashHistoryItemState(item);
+
+            Bitmap? flattened = null;
+            string? flattenedText = null;
+            if (item.Kind == ClipboardItemKind.Image && activePresenter?.GetCurrentContent() is Bitmap bmp)
+            {
+                flattened = bmp;
+            }
+            else if (item.Kind == ClipboardItemKind.Text)
+            {
+                flattenedText = item.CurrentText ?? string.Empty;
+            }
+
+            // Mark internal write so the system-history observer won't create a duplicate entry.
+            BeginInternalClipboardWrite();
             try
             {
-                if (item.Kind == ClipboardItemKind.Image && activePresenter?.GetCurrentContent() is Bitmap bmp)
+                if (flattened != null)
                 {
-                    using (bmp)
-                    {
-                        Clipboard.SetImage(bmp);
-                    }
+                    Clipboard.SetImage(flattened);
                 }
-                else if (item.Kind == ClipboardItemKind.Text && activePresenter?.GetCurrentContent() is string text)
+                else if (flattenedText != null)
                 {
-                    Clipboard.SetText(text ?? string.Empty);
+                    Clipboard.SetText(flattenedText);
                 }
             }
             catch (Exception ex)
@@ -354,10 +396,18 @@ namespace screenzap.Components
                 screenzap.lib.Logger.Log($"CommitActiveItemEdits clipboard write failed: {ex.Message}");
             }
 
-            // Persist current presenter state back into the item BEFORE marking clean so MarkClean baselines the right content.
-            activePresenter?.StashHistoryItemState(item);
+            // Bake the flattened state into the item as the new baseline; annotations are consumed.
+            if (flattened != null)
+            {
+                item.UpdateCurrentImage(flattened);  // resets dirty since we'll MarkClean below
+                flattened.Dispose();
+                item.Annotations = null;
+                item.TextAnnotations = null;
+                item.SetPreviewComposite(null);
+            }
+
             historyStore.MarkClean(item);
-            // Restore the stashed undo snapshot so the user can still undo edits they just committed.
+            // Reload cleaned state into presenter; undo stack is preserved inside the item snapshot.
             activePresenter?.LoadHistoryItem(item);
             UpdateCommandStates();
             UpdateStatusText("Edits committed to clipboard.");
@@ -389,7 +439,7 @@ namespace screenzap.Components
 
         /// <summary>
         /// Called by <see cref="EditorHostServices.NotifyContentEdited"/> when the active presenter dirties its content.
-        /// We lazily push the current content into the store's active item to keep thumbnails + dirty flag accurate.
+        /// We update the item's preview composite (for thumbnails) and flag it dirty without flattening the base image.
         /// </summary>
         private void OnActivePresenterContentEdited()
         {
@@ -407,8 +457,12 @@ namespace screenzap.Components
             {
                 using (bmp)
                 {
-                    historyStore.NotifyImageEdited(item, bmp);
+                    // For images, treat presenter output as a preview composite only; base image lives in
+                    // the presenter until StashHistoryItemState flushes it. We still mark dirty + refresh thumb.
+                    item.SetPreviewComposite(bmp);
                 }
+                item.MarkDirtyExternally();
+                historyStore.NotifyItemUpdated(item);
             }
             else if (content is string text)
             {
@@ -431,6 +485,82 @@ namespace screenzap.Components
         private void OnHistoryItemActivated(object? sender, ClipboardHistoryItem item)
         {
             ActivateHistoryItem(item);
+        }
+
+        private void SetItemAsClipboard(ClipboardHistoryItem item)
+        {
+            // Activate in the editor first, then write to the system clipboard.
+            ActivateHistoryItem(item);
+
+            BeginInternalClipboardWrite();
+            try
+            {
+                if (item.Kind == ClipboardItemKind.Image && item.CurrentImage != null)
+                    Clipboard.SetImage(item.CurrentImage);
+                else if (item.Kind == ClipboardItemKind.Text && item.CurrentText != null)
+                    Clipboard.SetText(item.CurrentText);
+            }
+            catch (Exception ex)
+            {
+                screenzap.lib.Logger.Log($"SetItemAsClipboard failed: {ex.Message}");
+            }
+
+            UpdateStatusText("Set as active clipboard content.");
+        }
+
+        private void DuplicateItem(ClipboardHistoryItem item)
+        {
+            activePresenter?.StashHistoryItemState(item);
+            var clone = historyStore.DuplicateAbove(item);
+            ActivateHistoryItem(clone);
+            UpdateStatusText("Duplicated.");
+        }
+
+        private void RevertItem(ClipboardHistoryItem item)
+        {
+            historyStore.Revert(item);
+            if (ReferenceEquals(historyStore.ActiveItem, item))
+                activePresenter?.LoadHistoryItem(item);
+            UpdateCommandStates();
+            UpdateStatusText("Reverted to original.");
+        }
+
+        private async Task DeleteItemAsync(ClipboardHistoryItem item)
+        {
+            if (!string.IsNullOrEmpty(item.SystemHistoryId))
+            {
+                bool removedFromSystem = TryDeleteFromSystemHistoryAsync != null
+                    && await TryDeleteFromSystemHistoryAsync(item);
+                if (!removedFromSystem)
+                {
+                    UpdateStatusText("Could not delete this Windows clipboard history item.");
+                    return;
+                }
+            }
+
+            bool wasActive = ReferenceEquals(historyStore.ActiveItem, item);
+            var items = historyStore.Items;
+            int idx = -1;
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (ReferenceEquals(items[i], item)) { idx = i; break; }
+            }
+
+            historyStore.Remove(item);
+
+            if (wasActive)
+            {
+                var remaining = historyStore.Items;
+                var next = remaining.Count > 0
+                    ? remaining[Math.Min(idx, remaining.Count - 1)]
+                    : null;
+                if (next != null)
+                    ActivateHistoryItem(next);
+                else
+                    UpdateCommandStates();
+            }
+
+            UpdateStatusText("Deleted from history.");
         }
 
         /// <summary>
@@ -607,6 +737,71 @@ namespace screenzap.Components
         private void OnHostFormClosed(object? sender, FormClosedEventArgs e)
         {
             Application.Idle -= OnApplicationIdle;
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            // Ctrl+PageUp: move to previous history item
+            if (keyData == (Keys.Control | Keys.PageUp))
+            {
+                return NavigateHistoryPrevious();
+            }
+
+            // Ctrl+PageDown: move to next history item
+            if (keyData == (Keys.Control | Keys.PageDown))
+            {
+                return NavigateHistoryNext();
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private bool NavigateHistoryPrevious()
+        {
+            var activeItem = historyStore.ActiveItem;
+            var items = historyStore.Items;
+
+            if (items.Count == 0) return false;
+
+            // Find the current index
+            int currentIndex = -1;
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (ReferenceEquals(items[i], activeItem))
+                {
+                    currentIndex = i;
+                    break;
+                }
+            }
+
+            // If no active item or at the beginning, go to the last item
+            int nextIndex = currentIndex <= 0 ? items.Count - 1 : currentIndex - 1;
+
+            return ActivateHistoryItem(items[nextIndex]);
+        }
+
+        private bool NavigateHistoryNext()
+        {
+            var activeItem = historyStore.ActiveItem;
+            var items = historyStore.Items;
+
+            if (items.Count == 0) return false;
+
+            // Find the current index
+            int currentIndex = -1;
+            for (int i = 0; i < items.Count; i++)
+            {
+                if (ReferenceEquals(items[i], activeItem))
+                {
+                    currentIndex = i;
+                    break;
+                }
+            }
+
+            // If no active item or at the end, go to the first item
+            int nextIndex = currentIndex < 0 || currentIndex >= items.Count - 1 ? 0 : currentIndex + 1;
+
+            return ActivateHistoryItem(items[nextIndex]);
         }
     }
 }
