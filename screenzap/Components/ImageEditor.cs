@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using FontAwesome.Sharp;
 using TextDetection;
+using screenzap.Components;
 using screenzap.Components.Shared;
 using screenzap.lib;
 
@@ -68,6 +69,14 @@ namespace screenzap
     private string? currentSavePath;
         private bool isPlaceholderImage;
     private bool hasUnsavedChanges;
+    /// <summary>Invoked when the editor's content is dirtied (e.g. by an edit, tool apply or undo push).</summary>
+    internal Action? ContentEditedCallback;
+    private void MarkDirtyAndNotify()
+    {
+        hasUnsavedChanges = true;
+        try { ContentEditedCallback?.Invoke(); }
+        catch (Exception ex) { lib.Logger.Log($"ContentEditedCallback threw: {ex.Message}"); }
+    }
     private bool clipboardHasPendingReload;
         private string? expectedInternalClipboardSignature;
             private DateTime? suppressClipboardAutoReloadUntilUtc;
@@ -247,6 +256,7 @@ namespace screenzap
             ConfigureIconButton(expandCanvasToolStripButton, IconChar.Expand);
             ConfigureIconButton(flipHorizontalToolStripButton, IconChar.LeftRight);
             ConfigureIconButton(flipVerticalToolStripButton, IconChar.UpDown);
+            ConfigureIconButton(rotateToolStripButton, IconChar.ArrowRotateRight);
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
             ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
             ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
@@ -1504,6 +1514,10 @@ namespace screenzap
             {
                 flipVerticalToolStripButton.Enabled = enable;
             }
+            if (rotateToolStripButton != null)
+            {
+                rotateToolStripButton.Enabled = enable;
+            }
             if (replaceToolStripButton != null)
             {
                 replaceToolStripButton.Enabled = enable && !Selection.IsEmpty;
@@ -2149,6 +2163,73 @@ namespace screenzap
             ExecuteFlip(RotateFlipType.RotateNoneFlipY);
         }
 
+        private void rotateToolStripButton_Click(object sender, EventArgs e)
+        {
+            ExecuteRotate90Cw();
+        }
+
+        private bool ExecuteRotate90Cw()
+        {
+            if (!HasEditableImage || pictureBox1.Image == null)
+            {
+                return false;
+            }
+
+            var beforeImage = new Bitmap(pictureBox1.Image);
+            var selectionBefore = Selection;
+            var annotationStateBefore = CloneAnnotations();
+            int width = pictureBox1.Image.Width;
+            int height = pictureBox1.Image.Height;
+
+            var rotated = new Bitmap(pictureBox1.Image);
+            rotated.RotateFlip(RotateFlipType.Rotate90FlipNone);
+
+            pictureBox1.Image?.Dispose();
+            pictureBox1.Image = rotated;
+
+            // CW 90: (x,y) in (W,H) -> (H-1-y, x) in (H,W)
+            static Point RotPoint(Point p, int srcHeight) => new Point(srcHeight - 1 - p.Y, p.X);
+
+            if (!Selection.IsEmpty)
+            {
+                var tl = RotPoint(new Point(Selection.Left, Selection.Bottom), height);
+                var br = RotPoint(new Point(Selection.Right, Selection.Top), height);
+                Selection = new Rectangle(
+                    Math.Min(tl.X, br.X),
+                    Math.Min(tl.Y, br.Y),
+                    Math.Abs(br.X - tl.X),
+                    Math.Abs(br.Y - tl.Y));
+            }
+
+            for (int i = 0; i < annotationShapes.Count; i++)
+            {
+                var shape = annotationShapes[i];
+                shape.Start = RotPoint(shape.Start, height);
+                shape.End = RotPoint(shape.End, height);
+            }
+
+            for (int i = 0; i < textAnnotations.Count; i++)
+            {
+                var annotation = textAnnotations[i];
+                annotation.Position = RotPoint(annotation.Position, height);
+            }
+
+            SyncSelectedAnnotation();
+            SyncSelectedTextAnnotation();
+
+            var selectionAfter = Selection;
+            var annotationStateAfter = CloneAnnotations();
+            PushUndoStep(Rectangle.Empty, beforeImage, new Bitmap(rotated), selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
+
+            MarkDirtyAndNotify();
+            ResizeWindowToImage(rotated.Size);
+            UpdateCommandUI();
+            UpdateStatusBar();
+            pictureBox1.Invalidate();
+            _ = width;
+            return true;
+        }
+
         private bool ExecuteFlip(RotateFlipType flipType)
         {
             if (!HasEditableImage || pictureBox1.Image == null)
@@ -2220,7 +2301,7 @@ namespace screenzap
             var annotationStateAfter = CloneAnnotations();
             PushUndoStep(Rectangle.Empty, beforeImage, new Bitmap(flipped), selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
 
-            hasUnsavedChanges = true;
+            MarkDirtyAndNotify();
             UpdateCommandUI();
             UpdateStatusBar();
             pictureBox1.Invalidate();
@@ -2683,6 +2764,7 @@ namespace screenzap
             hostServices = services;
             hostServices.SetReloadIndicator?.Invoke(clipboardHasPendingReload);
             ApplyHostChromeVisibility(isHosted: true);
+            ContentEditedCallback = () => hostServices?.NotifyContentEdited?.Invoke();
         }
 
         bool IClipboardDocumentPresenter.CanHandleClipboard(IDataObject dataObject)
@@ -2776,6 +2858,42 @@ namespace screenzap
         void IClipboardDocumentPresenter.OnDeactivated()
         {
             // No-op for now.
+        }
+
+        bool IClipboardDocumentPresenter.CanPresent(ClipboardHistoryItem item)
+        {
+            return item?.Kind == ClipboardItemKind.Image;
+        }
+
+        void IClipboardDocumentPresenter.LoadHistoryItem(ClipboardHistoryItem item)
+        {
+            if (item?.CurrentImage == null) return;
+            LoadImage(item.CurrentImage);
+            // LoadImage clears the undo stack. Restore any stashed state so the user can keep undoing.
+            undoStack.RestoreState(item.UndoSnapshot);
+            hasUnsavedChanges = item.IsDirty;
+            UpdateCommandUI();
+        }
+
+        void IClipboardDocumentPresenter.StashHistoryItemState(ClipboardHistoryItem item)
+        {
+            if (item == null) return;
+            if (pictureBox1?.Image is Bitmap current)
+            {
+                // Flatten annotations into the stored bitmap so switching back preserves the visual state.
+                using var composite = BuildCompositeImage();
+                item.UpdateCurrentImage(composite);
+            }
+            item.UndoSnapshot = undoStack.ExtractState();
+        }
+
+        object? IClipboardDocumentPresenter.GetCurrentContent()
+        {
+            if (pictureBox1?.Image is Bitmap && HasEditableImage)
+            {
+                return BuildCompositeImage();
+            }
+            return null;
         }
 
         private void ApplyHostChromeVisibility(bool isHosted)

@@ -3,6 +3,7 @@ using ScintillaNet.Abstractions.Classes;
 using ScintillaNet.Abstractions.Enumerations;
 using ScintillaNet.WinForms;
 using ScintillaNet.WinForms.EventArguments;
+using screenzap.Components;
 using screenzap.Components.Shared;
 using screenzap.lib;
 using System;
@@ -47,6 +48,13 @@ namespace screenzap
             WriteIndented = true
         };
         private bool isDirty;
+        internal Action? ContentEditedCallback;
+        private void MarkDirtyAndNotify()
+        {
+            isDirty = true;
+            try { ContentEditedCallback?.Invoke(); }
+            catch (Exception ex) { lib.Logger.Log($"ContentEditedCallback threw: {ex.Message}"); }
+        }
         private bool suppressTextChanged;
         private string? currentSavePath;
         private DateTime? bufferTimestamp;
@@ -818,7 +826,7 @@ namespace screenzap
                 return;
             }
 
-            isDirty = true;
+            MarkDirtyAndNotify();
             UpdateWindowTitle();
             UpdateCommandStates();
             UpdateStatusLabels();
@@ -905,6 +913,7 @@ namespace screenzap
             hostServices = services;
             hostServices.SetReloadIndicator?.Invoke(clipboardHasPendingReload);
             ApplyHostChromeVisibility(isHosted: true);
+            ContentEditedCallback = () => hostServices?.NotifyContentEdited?.Invoke();
         }
 
         bool IClipboardDocumentPresenter.CanHandleClipboard(IDataObject dataObject)
@@ -979,6 +988,31 @@ namespace screenzap
         void IClipboardDocumentPresenter.OnDeactivated()
         {
             // no-op
+        }
+
+        bool IClipboardDocumentPresenter.CanPresent(ClipboardHistoryItem item)
+        {
+            return item?.Kind == ClipboardItemKind.Text;
+        }
+
+        void IClipboardDocumentPresenter.LoadHistoryItem(ClipboardHistoryItem item)
+        {
+            if (item == null) return;
+            LoadText(item.CurrentText ?? string.Empty);
+            isDirty = item.IsDirty;
+            UpdateWindowTitle();
+            UpdateCommandStates();
+        }
+
+        void IClipboardDocumentPresenter.StashHistoryItemState(ClipboardHistoryItem item)
+        {
+            if (item == null || editor == null) return;
+            item.UpdateCurrentText(editor.Text);
+        }
+
+        object? IClipboardDocumentPresenter.GetCurrentContent()
+        {
+            return editor?.Text;
         }
 
         private void ApplyHostChromeVisibility(bool isHosted)
@@ -1177,7 +1211,7 @@ namespace screenzap
             var caret = start + internalClipboardText.Length;
             editor.SetSelection(caret, caret);
 
-            isDirty = true;
+            MarkDirtyAndNotify();
             UpdateWindowTitle();
             UpdateCommandStates();
             UpdateStatusLabels();
@@ -1438,7 +1472,7 @@ namespace screenzap
             editor.TargetEnd = start + length;
             editor.ReplaceTarget(replacement);
             editor.SetSelection(editor.TargetEnd, editor.TargetEnd);
-            isDirty = true;
+            MarkDirtyAndNotify();
             UpdateWindowTitle();
             UpdateCommandStates();
         }
@@ -1490,7 +1524,7 @@ namespace screenzap
 
             if (replacedCount > 0)
             {
-                isDirty = true;
+                MarkDirtyAndNotify();
                 UpdateWindowTitle();
                 UpdateCommandStates();
             }
@@ -1561,7 +1595,7 @@ namespace screenzap
             suppressTextChanged = true;
             editor.Text = text ?? string.Empty;
             suppressTextChanged = false;
-            isDirty = true;
+            MarkDirtyAndNotify();
             UpdateWindowTitle();
             UpdateCommandStates();
             UpdateStatusLabels();

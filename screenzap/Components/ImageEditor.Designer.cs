@@ -40,6 +40,7 @@
             this.expandCanvasToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.flipHorizontalToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.flipVerticalToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.rotateToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.optimizeTextToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.straightenToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -111,6 +112,7 @@
             this.expandCanvasToolStripButton,
             this.flipHorizontalToolStripButton,
             this.flipVerticalToolStripButton,
+            this.rotateToolStripButton,
             this.replaceToolStripButton,
             this.optimizeTextToolStripButton,
             this.straightenToolStripButton,
@@ -454,6 +456,16 @@
             this.flipVerticalToolStripButton.Text = "Flip V";
             this.flipVerticalToolStripButton.ToolTipText = "Flip Vertical";
             this.flipVerticalToolStripButton.Click += new System.EventHandler(this.flipVerticalToolStripButton_Click);
+            //
+            // rotateToolStripButton
+            //
+            this.rotateToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.rotateToolStripButton.Enabled = false;
+            this.rotateToolStripButton.Name = "rotateToolStripButton";
+            this.rotateToolStripButton.Size = new System.Drawing.Size(56, 23);
+            this.rotateToolStripButton.Text = "Rotate";
+            this.rotateToolStripButton.ToolTipText = "Rotate 90\u00B0 clockwise";
+            this.rotateToolStripButton.Click += new System.EventHandler(this.rotateToolStripButton_Click);
             // 
             // replaceToolStripButton
             // 
@@ -736,6 +748,7 @@
     private FontAwesome.Sharp.IconToolStripButton expandCanvasToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton flipHorizontalToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton flipVerticalToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton rotateToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton optimizeTextToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton straightenToolStripButton;

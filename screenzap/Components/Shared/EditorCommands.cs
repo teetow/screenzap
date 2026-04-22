@@ -11,7 +11,10 @@ namespace screenzap.Components.Shared
         ExpandCanvas,
         Undo,
         Redo,
-        Find
+        Find,
+        Duplicate,
+        Revert,
+        CommitEdits
     }
 
     internal sealed class EditorCommandDescriptor

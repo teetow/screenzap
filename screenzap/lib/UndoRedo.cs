@@ -105,6 +105,47 @@ namespace screenzap
             return _steps[_currentIndex];
         }
 
+        /// <summary>
+        /// Snapshot of the internal step list + cursor for stashing between editor contexts.
+        /// Steps are transferred by reference; ownership moves to the snapshot until restored.
+        /// </summary>
+        internal sealed class Snapshot
+        {
+            internal List<IUndoStep> Steps = new List<IUndoStep>();
+            internal int Index = -1;
+        }
+
+        internal Snapshot ExtractState()
+        {
+            var snapshot = new Snapshot
+            {
+                Steps = new List<IUndoStep>(_steps),
+                Index = _currentIndex
+            };
+            _steps.Clear();
+            _currentIndex = -1;
+            return snapshot;
+        }
+
+        internal void RestoreState(Snapshot? snapshot)
+        {
+            // Dispose any existing owned steps before replacing.
+            foreach (var step in _steps)
+            {
+                step.Dispose();
+            }
+            _steps.Clear();
+            _currentIndex = -1;
+
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            _steps.AddRange(snapshot.Steps);
+            _currentIndex = snapshot.Index;
+        }
+
         public void Dispose()
         {
             Clear();

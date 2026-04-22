@@ -579,7 +579,7 @@ namespace screenzap
             }
 
             undoStack.Push(new ImageUndoStep(region, before, after, selectionBefore, selectionAfter, replacesImage, shapesBefore, shapesAfter));
-            hasUnsavedChanges = true;
+            MarkDirtyAndNotify();
         }
 
         private void ApplyUndoStep(IUndoStep step, bool applyAfterState)

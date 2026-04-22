@@ -357,6 +357,11 @@ namespace screenzap.Testing
             {
             }
 
+            public bool CanPresent(screenzap.Components.ClipboardHistoryItem item) => false;
+            public void LoadHistoryItem(screenzap.Components.ClipboardHistoryItem item) { }
+            public void StashHistoryItemState(screenzap.Components.ClipboardHistoryItem item) { }
+            public object? GetCurrentContent() => null;
+
             public void Dispose()
             {
                 view.Dispose();

@@ -15,20 +15,32 @@ namespace screenzap.Components
         private readonly List<IClipboardDocumentPresenter> presenters = new();
         private readonly ToolStrip toolbar;
         private readonly ToolStripLabel reloadIndicatorLabel;
+        private readonly ToolStripLabel dirtyIndicatorLabel;
         private readonly Panel presenterHostPanel;
         private readonly StatusStrip statusStrip;
         private readonly ToolStripStatusLabel statusLabel;
         private readonly EditorHostServices hostServices;
+        private readonly ClipboardHistoryStore historyStore;
+        private readonly ClipboardHistoryPanel historyPanel;
         private IClipboardDocumentPresenter? activePresenter;
         private bool hasPendingReloadIndicator;
         internal bool SuppressActivation { get; set; }
+        /// <summary>When true, a clipboard event arriving via the store won't override the currently-active dirty item.</summary>
+        internal bool IsHostVisibleForAutoSwitch => Visible && !SuppressActivation;
+        internal ClipboardHistoryStore HistoryStore => historyStore;
 
         public ClipboardEditorHostForm(IEnumerable<IClipboardDocumentPresenter>? presentersToHost)
         {
             toolbar = CreateToolbar();
             reloadIndicatorLabel = CreateReloadIndicatorLabel();
+            dirtyIndicatorLabel = CreateDirtyIndicatorLabel();
             presenterHostPanel = CreatePresenterHostPanel();
             statusStrip = CreateStatusStrip(out statusLabel);
+            historyStore = new ClipboardHistoryStore();
+            historyPanel = new ClipboardHistoryPanel();
+            historyPanel.AttachStore(historyStore);
+            historyPanel.ItemActivated += OnHistoryItemActivated;
+            historyStore.ItemUpdated += OnStoreItemUpdated;
 
             InitializeComponent();
 
@@ -38,7 +50,8 @@ namespace screenzap.Components
                 RequestClipboardReload = () => ExecuteCommand(EditorCommandId.Reload),
                 UpdateStatusText = UpdateStatusText,
                 FocusHost = FocusHostWindow,
-                ActivatePresenter = ActivatePresenter
+                ActivatePresenter = ActivatePresenter,
+                NotifyContentEdited = OnActivePresenterContentEdited
             };
 
             if (presentersToHost != null)
@@ -159,14 +172,21 @@ namespace screenzap.Components
             toolbar.Items.Add(new ToolStripSeparator());
             AddCommandButton(EditorCommandId.Find);
             toolbar.Items.Add(new ToolStripSeparator());
+            AddCommandButton(EditorCommandId.CommitEdits);
+            AddCommandButton(EditorCommandId.Duplicate);
+            AddCommandButton(EditorCommandId.Revert);
+            toolbar.Items.Add(dirtyIndicatorLabel);
 
             presenterHostPanel.Dock = DockStyle.Fill;
             presenterHostPanel.BackColor = SystemColors.ControlDarkDark;
+
+            historyPanel.Dock = DockStyle.Right;
 
             statusStrip.Dock = DockStyle.Bottom;
             statusStrip.Items.Add(statusLabel);
 
             Controls.Add(presenterHostPanel);
+            Controls.Add(historyPanel);
             Controls.Add(statusStrip);
             Controls.Add(toolbar);
 
@@ -198,6 +218,20 @@ namespace screenzap.Components
                 AutoSize = false,
                 Width = 14,
                 TextAlign = ContentAlignment.MiddleCenter
+            };
+        }
+
+        private ToolStripLabel CreateDirtyIndicatorLabel()
+        {
+            return new ToolStripLabel
+            {
+                Text = "• Edited",
+                ForeColor = Color.OrangeRed,
+                Visible = false,
+                Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold),
+                ToolTipText = "This item has unsaved edits",
+                Margin = new Padding(8, 0, 4, 0),
+                AutoSize = true
             };
         }
 
@@ -257,15 +291,194 @@ namespace screenzap.Components
 
         private bool ExecuteCommand(EditorCommandId commandId)
         {
-            return activePresenter?.TryExecute(commandId) == true;
+            switch (commandId)
+            {
+                case EditorCommandId.CommitEdits:
+                    return CommitActiveItemEdits();
+                case EditorCommandId.Duplicate:
+                    return DuplicateActiveItem();
+                case EditorCommandId.Revert:
+                    return RevertActiveItem();
+                default:
+                    return activePresenter?.TryExecute(commandId) == true;
+            }
         }
 
         private void UpdateCommandStates()
         {
+            var activeItem = historyStore.ActiveItem;
             foreach (var pair in commandButtons)
             {
-                pair.Value.Enabled = activePresenter?.CanExecute(pair.Key) == true;
+                switch (pair.Key)
+                {
+                    case EditorCommandId.CommitEdits:
+                        pair.Value.Enabled = activeItem?.IsDirty == true;
+                        break;
+                    case EditorCommandId.Revert:
+                        pair.Value.Enabled = activeItem?.IsDirty == true;
+                        break;
+                    case EditorCommandId.Duplicate:
+                        pair.Value.Enabled = activeItem != null;
+                        break;
+                    default:
+                        pair.Value.Enabled = activePresenter?.CanExecute(pair.Key) == true;
+                        break;
+                }
             }
+
+            dirtyIndicatorLabel.Visible = activeItem?.IsDirty == true;
+        }
+
+        private bool CommitActiveItemEdits()
+        {
+            var item = historyStore.ActiveItem;
+            if (item == null || !item.IsDirty) return false;
+
+            // Push the current content to the Windows clipboard, then mark the item clean.
+            try
+            {
+                if (item.Kind == ClipboardItemKind.Image && activePresenter?.GetCurrentContent() is Bitmap bmp)
+                {
+                    using (bmp)
+                    {
+                        Clipboard.SetImage(bmp);
+                    }
+                }
+                else if (item.Kind == ClipboardItemKind.Text && activePresenter?.GetCurrentContent() is string text)
+                {
+                    Clipboard.SetText(text ?? string.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                screenzap.lib.Logger.Log($"CommitActiveItemEdits clipboard write failed: {ex.Message}");
+            }
+
+            // Persist current presenter state back into the item BEFORE marking clean so MarkClean baselines the right content.
+            activePresenter?.StashHistoryItemState(item);
+            historyStore.MarkClean(item);
+            // Restore the stashed undo snapshot so the user can still undo edits they just committed.
+            activePresenter?.LoadHistoryItem(item);
+            UpdateCommandStates();
+            UpdateStatusText("Edits committed to clipboard.");
+            return true;
+        }
+
+        private bool DuplicateActiveItem()
+        {
+            var item = historyStore.ActiveItem;
+            if (item == null) return false;
+            // Capture latest presenter content into the source before cloning.
+            activePresenter?.StashHistoryItemState(item);
+            var clone = historyStore.Duplicate(item);
+            ActivateHistoryItem(clone);
+            UpdateStatusText("Duplicated to new history entry.");
+            return true;
+        }
+
+        private bool RevertActiveItem()
+        {
+            var item = historyStore.ActiveItem;
+            if (item == null || !item.IsDirty) return false;
+            historyStore.Revert(item);
+            activePresenter?.LoadHistoryItem(item);
+            UpdateCommandStates();
+            UpdateStatusText("Reverted to original.");
+            return true;
+        }
+
+        /// <summary>
+        /// Called by <see cref="EditorHostServices.NotifyContentEdited"/> when the active presenter dirties its content.
+        /// We lazily push the current content into the store's active item to keep thumbnails + dirty flag accurate.
+        /// </summary>
+        private void OnActivePresenterContentEdited()
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(OnActivePresenterContentEdited));
+                return;
+            }
+
+            var item = historyStore.ActiveItem;
+            if (item == null || activePresenter == null) return;
+
+            var content = activePresenter.GetCurrentContent();
+            if (content is Bitmap bmp)
+            {
+                using (bmp)
+                {
+                    historyStore.NotifyImageEdited(item, bmp);
+                }
+            }
+            else if (content is string text)
+            {
+                historyStore.NotifyTextEdited(item, text);
+            }
+
+            UpdateCommandStates();
+        }
+
+        private void OnStoreItemUpdated(object? sender, ClipboardHistoryItem e)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<object?, ClipboardHistoryItem>(OnStoreItemUpdated), sender, e);
+                return;
+            }
+            UpdateCommandStates();
+        }
+
+        private void OnHistoryItemActivated(object? sender, ClipboardHistoryItem item)
+        {
+            ActivateHistoryItem(item);
+        }
+
+        /// <summary>
+        /// Activates the given history item: stashes outgoing state, loads content into the matching presenter.
+        /// </summary>
+        internal bool ActivateHistoryItem(ClipboardHistoryItem item)
+        {
+            if (item == null) return false;
+
+            // Stash current active item state first.
+            var outgoing = historyStore.ActiveItem;
+            if (outgoing != null && outgoing.Id != item.Id)
+            {
+                activePresenter?.StashHistoryItemState(outgoing);
+            }
+
+            // Find a presenter that can handle this kind.
+            var presenter = presenters.FirstOrDefault(p => p.CanPresent(item));
+            if (presenter == null) return false;
+
+            historyStore.Activate(item);
+            ActivatePresenter(presenter);
+            presenter.LoadHistoryItem(item);
+            UpdateCommandStates();
+            return true;
+        }
+
+        /// <summary>
+        /// Applies the auto-switch rule for a newly-observed clipboard item.
+        /// Rule: if host is visible AND the current active item is dirty, keep the current item active.
+        /// Otherwise, activate the new item.
+        /// </summary>
+        internal void OnObservedClipboardItem(ClipboardHistoryItem newItem)
+        {
+            if (newItem == null) return;
+
+            var activeItem = historyStore.ActiveItem;
+            bool hostVisible = Visible;
+            bool shouldPreserve = hostVisible && activeItem?.IsDirty == true;
+
+            if (shouldPreserve)
+            {
+                // Keep the dirty item active; the new one is still in the list.
+                UpdateCommandStates();
+                return;
+            }
+
+            ActivateHistoryItem(newItem);
         }
 
         private void UpdateWindowTitle()

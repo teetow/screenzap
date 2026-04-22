@@ -142,7 +142,7 @@ namespace screenzap
             RenderColorCorrectionToBuffer();
             pictureBox1.Image = (Bitmap)livePreviewBuffer.Clone();
             pictureBox1.Invalidate();
-            hasUnsavedChanges = true;
+            MarkDirtyAndNotify();
             UpdateCommandUI();
         }
 

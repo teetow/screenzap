@@ -99,7 +99,7 @@ namespace screenzap
 
                 rotated.Dispose();
 
-                hasUnsavedChanges = true;
+                MarkDirtyAndNotify();
                 RecenterViewportAfterImageChange(resizeWindow: true);
                 UpdateStatusBar();
             }

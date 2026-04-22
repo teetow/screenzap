@@ -74,6 +74,8 @@ namespace screenzap
             if (clipboardMonitor != null)
             {
                 clipboardMonitor.OnUpdateImage -= ClipboardMonitor_OnUpdateImageForQr;
+                clipboardMonitor.OnUpdateImage -= ClipboardMonitor_OnUpdateImageForHistory;
+                clipboardMonitor.OnUpdateText -= ClipboardMonitor_OnUpdateTextForHistory;
                 clipboardMonitor.Dispose();
                 clipboardMonitor = null;
             }
@@ -85,11 +87,43 @@ namespace screenzap
             {
                 clipboardMonitor = new ClipboardMonitor();
                 clipboardMonitor.OnUpdateImage += ClipboardMonitor_OnUpdateImageForQr;
+                clipboardMonitor.OnUpdateImage += ClipboardMonitor_OnUpdateImageForHistory;
+                clipboardMonitor.OnUpdateText += ClipboardMonitor_OnUpdateTextForHistory;
                 clipboardMonitor.isListening = true;
             }
             catch (Exception ex)
             {
                 Logger.Log($"Failed to initialize QR clipboard monitor: {ex.Message}");
+            }
+        }
+
+        private void ClipboardMonitor_OnUpdateImageForHistory(object? sender, Bitmap image)
+        {
+            if (image == null) return;
+            var host = EnsureClipboardHost();
+            try
+            {
+                var item = host.HistoryStore.AddObservedImage(image);
+                host.OnObservedClipboardItem(item);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to record clipboard image in history: {ex.Message}");
+            }
+        }
+
+        private void ClipboardMonitor_OnUpdateTextForHistory(object? sender, string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            var host = EnsureClipboardHost();
+            try
+            {
+                var item = host.HistoryStore.AddObservedText(text);
+                host.OnObservedClipboardItem(item);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to record clipboard text in history: {ex.Message}");
             }
         }
 
@@ -466,31 +500,55 @@ namespace screenzap
 
         private void ShowClipboardEditorForCurrentData()
         {
-            IDataObject? dataObject = null;
-            try
-            {
-                dataObject = Clipboard.GetDataObject();
-            }
-            catch (ExternalException ex)
-            {
-                Logger.Log($"Failed to access clipboard: {ex.Message}");
-                notifyIcon1.ShowBalloonTip(2000, "Clipboard error", "Unable to read clipboard contents.", ToolTipIcon.Error);
-                return;
-            }
-
-            if (dataObject == null)
-            {
-                notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain text or image data.", ToolTipIcon.Info);
-                return;
-            }
-
             var host = EnsureClipboardHost();
-            if (host.TryShowClipboardData(dataObject))
+
+            // Seed the history with the current clipboard content if the list is empty (first-time open).
+            if (host.HistoryStore.Items.Count == 0)
             {
+                try
+                {
+                    if (Clipboard.ContainsImage())
+                    {
+                        using var img = Clipboard.GetImage();
+                        if (img is Bitmap bmp)
+                        {
+                            host.HistoryStore.AddObservedImage(bmp);
+                        }
+                    }
+                    else if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
+                    {
+                        var text = Clipboard.GetText(TextDataFormat.UnicodeText);
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            host.HistoryStore.AddObservedText(text);
+                        }
+                    }
+                }
+                catch (ExternalException ex)
+                {
+                    Logger.Log($"Failed to seed clipboard history: {ex.Message}");
+                }
+            }
+
+            var top = host.HistoryStore.TopItem;
+            if (top == null)
+            {
+                // Fallback to legacy path for unusual clipboard types.
+                IDataObject? dataObject = null;
+                try { dataObject = Clipboard.GetDataObject(); } catch { }
+                if (dataObject == null || !host.TryShowClipboardData(dataObject))
+                {
+                    notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain text or image data.", ToolTipIcon.Info);
+                    return;
+                }
+                if (!host.Visible) host.Show();
+                host.Activate();
                 return;
             }
 
-            notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain text or image data.", ToolTipIcon.Info);
+            host.ActivateHistoryItem(top);
+            if (!host.Visible) host.Show();
+            host.Activate();
         }
 
         private ClipboardEditorHostForm EnsureClipboardHost()
