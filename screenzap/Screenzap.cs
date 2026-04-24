@@ -478,7 +478,8 @@ namespace screenzap
                         using var img = Clipboard.GetImage();
                         if (img is Bitmap bmp)
                         {
-                            host.HistoryStore.AddObservedImage(bmp);
+                            var seeded = host.HistoryStore.AddObservedImage(bmp);
+                            seeded.IsSeededFallback = true;
                         }
                     }
                     else if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
@@ -486,7 +487,8 @@ namespace screenzap
                         var text = Clipboard.GetText(TextDataFormat.UnicodeText);
                         if (!string.IsNullOrEmpty(text))
                         {
-                            host.HistoryStore.AddObservedText(text);
+                            var seeded = host.HistoryStore.AddObservedText(text);
+                            seeded.IsSeededFallback = true;
                         }
                     }
                 }

@@ -13,10 +13,13 @@ namespace screenzap.Components
     /// </summary>
     internal sealed class ClipboardHistoryPanel : Panel
     {
+        private const int ThumbnailOuterPadding = 8;
         private readonly FlowLayoutPanel flow;
         private readonly ToolTip tooltip = new ToolTip();
         private readonly Dictionary<Guid, ThumbnailButton> buttons = new();
         private ClipboardHistoryStore? store;
+        private int currentThumbMaxWidth = 64;
+        private int currentThumbMaxHeight = 64;
 
         public event EventHandler<ClipboardHistoryItem>? ItemActivated;
         public event EventHandler<ClipboardHistoryItem>? ItemSetActive;
@@ -42,6 +45,9 @@ namespace screenzap.Components
                 Padding = new Padding(4, 4, 17, 4)
             };
             Controls.Add(flow);
+
+            SizeChanged += (_, _) => UpdateThumbnailSizing();
+            flow.SizeChanged += (_, _) => UpdateThumbnailSizing();
         }
 
         public void AttachStore(ClipboardHistoryStore store)
@@ -80,6 +86,7 @@ namespace screenzap.Components
 
         private void RefreshItem(ClipboardHistoryItem item)
         {
+            item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
             if (buttons.TryGetValue(item.Id, out var btn))
             {
                 btn.Rebind(item, ReferenceEquals(store?.ActiveItem, item));
@@ -90,6 +97,8 @@ namespace screenzap.Components
         private void RebuildAll()
         {
             if (store == null) return;
+
+            UpdateThumbnailSizing(force: true);
 
             flow.SuspendLayout();
             try
@@ -117,6 +126,7 @@ namespace screenzap.Components
                         buttons[item.Id] = btn;
                     }
 
+                    item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
                     btn.Rebind(item, ReferenceEquals(store.ActiveItem, item));
                     tooltip.SetToolTip(btn, BuildToolTip(item));
                     flow.Controls.Add(btn);
@@ -129,6 +139,42 @@ namespace screenzap.Components
                     {
                         buttons.Remove(goneId);
                         orphan.Dispose();
+                    }
+                }
+            }
+            finally
+            {
+                flow.ResumeLayout();
+            }
+        }
+
+        private void UpdateThumbnailSizing(bool force = false)
+        {
+            int availableWidth = Math.Max(1, flow.ClientSize.Width - flow.Padding.Horizontal - ThumbnailOuterPadding);
+            int availableHeight = availableWidth;
+
+            if (!force && availableWidth == currentThumbMaxWidth && availableHeight == currentThumbMaxHeight)
+            {
+                return;
+            }
+
+            currentThumbMaxWidth = availableWidth;
+            currentThumbMaxHeight = availableHeight;
+
+            if (store == null)
+            {
+                return;
+            }
+
+            flow.SuspendLayout();
+            try
+            {
+                foreach (var item in store.Items)
+                {
+                    item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
+                    if (buttons.TryGetValue(item.Id, out var btn))
+                    {
+                        btn.Rebind(item, ReferenceEquals(store.ActiveItem, item));
                     }
                 }
             }

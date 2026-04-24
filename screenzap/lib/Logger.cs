@@ -35,13 +35,21 @@ namespace screenzap.lib
         {
             lock (Sync)
             {
-                if (clearExisting)
+                try
                 {
-                    TryResetLogFile();
-                }
+                    if (clearExisting)
+                    {
+                        TryResetLogFile();
+                    }
 
-                sessionInitialized = false;
-                EnsureSessionHeader();
+                    sessionInitialized = false;
+                    EnsureSessionHeader();
+                }
+                catch
+                {
+                    // Logging must never prevent app startup.
+                    sessionInitialized = true;
+                }
             }
         }
 
@@ -52,10 +60,18 @@ namespace screenzap.lib
                 return;
             }
 
-            Directory.CreateDirectory(LogDirectory);
-            var header = $"[{DateTime.Now:O}] === Screenzap session start ==={Environment.NewLine}";
-            File.AppendAllText(LogPath, header, Encoding.UTF8);
-            sessionInitialized = true;
+            try
+            {
+                Directory.CreateDirectory(LogDirectory);
+                var header = $"[{DateTime.Now:O}] === Screenzap session start ==={Environment.NewLine}";
+                File.AppendAllText(LogPath, header, Encoding.UTF8);
+                sessionInitialized = true;
+            }
+            catch
+            {
+                // Disable session-header writes for this process.
+                sessionInitialized = true;
+            }
         }
 
         private static void TryResetLogFile()

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -183,7 +184,20 @@ namespace screenzap.Components
             foreach (var item in store.Items)
             {
                 if (handled.Contains(item.Id)) continue;
-                if (string.IsNullOrEmpty(item.SystemHistoryId) || item.IsDirty)
+                if (string.IsNullOrEmpty(item.SystemHistoryId))
+                {
+                    // Startup fallback seed can race with WinRT sync; remove it once an equivalent
+                    // system-backed entry is available to avoid duplicate rows for one clipboard item.
+                    if (item.IsSeededFallback && !item.IsDirty && ContainsEquivalentSystemItem(item, finalOrder))
+                    {
+                        item.Dispose();
+                        continue;
+                    }
+
+                    finalOrder.Insert(0, item);
+                    handled.Add(item.Id);
+                }
+                else if (item.IsDirty)
                 {
                     finalOrder.Insert(0, item);
                     handled.Add(item.Id);
@@ -211,6 +225,62 @@ namespace screenzap.Components
         private void OnHistoryChanged(object? sender, object e)
         {
             _ = RefreshAsync();
+        }
+
+        private static bool ContainsEquivalentSystemItem(ClipboardHistoryItem candidate, List<ClipboardHistoryItem> items)
+        {
+            foreach (var item in items)
+            {
+                if (string.IsNullOrEmpty(item.SystemHistoryId)) continue;
+                if (item.Kind != candidate.Kind) continue;
+
+                if (candidate.Kind == ClipboardItemKind.Text)
+                {
+                    if (string.Equals(item.CurrentText ?? string.Empty, candidate.CurrentText ?? string.Empty, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                    continue;
+                }
+
+                if (AreImagesEquivalent(item.CurrentImage, candidate.CurrentImage))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool AreImagesEquivalent(Bitmap? a, Bitmap? b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a == null || b == null) return false;
+            if (a.Size != b.Size) return false;
+            return ImageSignature(a).SequenceEqual(ImageSignature(b));
+        }
+
+        private static byte[] ImageSignature(Bitmap bmp)
+        {
+            using var small = new Bitmap(16, 16, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(small))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(bmp, new Rectangle(0, 0, 16, 16));
+            }
+
+            var rect = new Rectangle(0, 0, 16, 16);
+            var data = small.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                var buffer = new byte[16 * 16 * 4];
+                System.Runtime.InteropServices.Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
+                return buffer;
+            }
+            finally
+            {
+                small.UnlockBits(data);
+            }
         }
 
         /// <summary>

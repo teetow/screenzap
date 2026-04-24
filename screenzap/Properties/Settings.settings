@@ -35,5 +35,8 @@
     <Setting Name="textToolOutlineColorArgb" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">-16777216</Value>
     </Setting>
+    <Setting Name="clipboardHistoryPanelWidth" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">93</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

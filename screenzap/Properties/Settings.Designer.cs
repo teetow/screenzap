@@ -127,5 +127,13 @@ namespace screenzap.Properties {
             get { return ((int)(this["textToolOutlineColorArgb"])); }
             set { this["textToolOutlineColorArgb"] = value; }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("93")]
+        public int clipboardHistoryPanelWidth {
+            get { return ((int)(this["clipboardHistoryPanelWidth"])); }
+            set { this["clipboardHistoryPanelWidth"] = value; }
+        }
     }
 }

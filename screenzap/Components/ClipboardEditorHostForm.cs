@@ -20,6 +20,7 @@ namespace screenzap.Components
         private readonly Panel presenterHostPanel;
         private readonly StatusStrip statusStrip;
         private readonly ToolStripStatusLabel statusLabel;
+        private readonly Splitter historySplitter;
         private readonly EditorHostServices hostServices;
         private readonly ClipboardHistoryStore historyStore;
         private readonly ClipboardHistoryPanel historyPanel;
@@ -33,6 +34,8 @@ namespace screenzap.Components
         internal ClipboardHistoryStore HistoryStore => historyStore;
 
         private const int InternalClipboardWriteSuppressMs = 2000;
+        private const int HistoryPanelMinWidth = 72;
+        private const int HistoryPanelDefaultWidth = 93;
 
         internal void BeginInternalClipboardWrite()
         {
@@ -54,6 +57,9 @@ namespace screenzap.Components
             statusStrip = CreateStatusStrip(out statusLabel);
             historyStore = new ClipboardHistoryStore();
             historyPanel = new ClipboardHistoryPanel();
+            historyPanel.Width = HistoryPanelDefaultWidth;
+            historyPanel.MinimumSize = new Size(HistoryPanelMinWidth, 0);
+            historySplitter = CreateHistorySplitter();
             historyPanel.AttachStore(historyStore);
             historyPanel.ItemActivated += OnHistoryItemActivated;
             historyPanel.ItemSetActive  += (_, item) => SetItemAsClipboard(item);
@@ -63,6 +69,7 @@ namespace screenzap.Components
             historyStore.ItemUpdated += OnStoreItemUpdated;
 
             InitializeComponent();
+            ApplyPersistedHistoryPanelWidth();
 
             hostServices = new EditorHostServices
             {
@@ -203,11 +210,13 @@ namespace screenzap.Components
             presenterHostPanel.BackColor = SystemColors.ControlDarkDark;
 
             historyPanel.Dock = DockStyle.Right;
+            historySplitter.Dock = DockStyle.Right;
 
             statusStrip.Dock = DockStyle.Bottom;
             statusStrip.Items.Add(statusLabel);
 
             Controls.Add(presenterHostPanel);
+            Controls.Add(historySplitter);
             Controls.Add(historyPanel);
             Controls.Add(statusStrip);
             Controls.Add(toolbar);
@@ -217,6 +226,7 @@ namespace screenzap.Components
             MinimumSize = new Size(900, 600);
             ClientSize = new Size(1100, 700);
             Text = "Screenzap Clipboard Editor";
+            Resize += (_, _) => ClampHistoryPanelWidth();
 
             ResumeLayout(false);
             PerformLayout();
@@ -274,6 +284,61 @@ namespace screenzap.Components
             {
                 SizingGrip = false
             };
+        }
+
+        private Splitter CreateHistorySplitter()
+        {
+            var splitter = new Splitter
+            {
+                Width = 6,
+                MinSize = HistoryPanelMinWidth,
+                MinExtra = 300,
+                BackColor = SystemColors.ControlDark,
+                Cursor = Cursors.VSplit,
+                TabStop = false
+            };
+
+            splitter.SplitterMoved += (_, _) =>
+            {
+                ClampHistoryPanelWidth();
+                SaveHistoryPanelWidth();
+            };
+            return splitter;
+        }
+
+        private void ClampHistoryPanelWidth()
+        {
+            historyPanel.Width = ClampHistoryPanelWidthValue(historyPanel.Width);
+        }
+
+        private int ClampHistoryPanelWidthValue(int proposedWidth)
+        {
+            int min = HistoryPanelMinWidth;
+            int max = Math.Max(min, ClientSize.Width - 300);
+            return Math.Min(Math.Max(proposedWidth, min), max);
+        }
+
+        private void ApplyPersistedHistoryPanelWidth()
+        {
+            int persisted = Properties.Settings.Default.clipboardHistoryPanelWidth;
+            if (persisted <= 0)
+            {
+                persisted = HistoryPanelDefaultWidth;
+            }
+
+            historyPanel.Width = ClampHistoryPanelWidthValue(persisted);
+        }
+
+        private void SaveHistoryPanelWidth()
+        {
+            int clamped = ClampHistoryPanelWidthValue(historyPanel.Width);
+            if (Properties.Settings.Default.clipboardHistoryPanelWidth == clamped)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.clipboardHistoryPanelWidth = clamped;
+            Properties.Settings.Default.Save();
         }
 
         private void AddCommandButton(EditorCommandId commandId)
@@ -737,6 +802,7 @@ namespace screenzap.Components
         private void OnHostFormClosed(object? sender, FormClosedEventArgs e)
         {
             Application.Idle -= OnApplicationIdle;
+            SaveHistoryPanelWidth();
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

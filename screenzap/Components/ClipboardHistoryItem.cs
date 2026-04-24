@@ -21,8 +21,9 @@ namespace screenzap.Components
     /// </summary>
     internal sealed class ClipboardHistoryItem : IDisposable
     {
-        private const int MaxThumbnailDim = 64;
-        private static readonly Size TextThumbnailSize = new Size(43, 64); // 2:3 portrait
+        private const int DefaultThumbnailMaxWidth = 64;
+        private const int DefaultThumbnailMaxHeight = 64;
+        private const float TextThumbnailAspect = 2f / 3f; // 2:3 portrait (w:h)
 
         public ClipboardHistoryItem(ClipboardItemKind kind)
         {
@@ -37,6 +38,11 @@ namespace screenzap.Components
 
         /// <summary>Windows clipboard history item Id (from WinRT), if this entry originated there.</summary>
         public string? SystemHistoryId { get; set; }
+        /// <summary>
+        /// True when inserted via first-open fallback seeding from current clipboard rather than WinRT history.
+        /// Used to reconcile startup races when WinRT history refresh arrives moments later.
+        /// </summary>
+        internal bool IsSeededFallback { get; set; }
 
         // Originals (immutable after construction via setters from store).
         public Bitmap? OriginalImage { get; private set; }
@@ -169,27 +175,37 @@ namespace screenzap.Components
 
         public void RebuildThumbnail()
         {
+            RebuildThumbnail(DefaultThumbnailMaxWidth, DefaultThumbnailMaxHeight);
+        }
+
+        public void RebuildThumbnail(int maxWidth, int maxHeight)
+        {
+            maxWidth = Math.Max(1, maxWidth);
+            maxHeight = Math.Max(1, maxHeight);
+
             var previous = Thumbnail;
             Thumbnail = Kind == ClipboardItemKind.Image
-                ? RenderImageThumbnail(PreviewComposite ?? CurrentImage)
-                : RenderTextThumbnail(CurrentText ?? string.Empty);
+                ? RenderImageThumbnail(PreviewComposite ?? CurrentImage, maxWidth, maxHeight)
+                : RenderTextThumbnail(CurrentText ?? string.Empty, maxWidth, maxHeight);
             previous?.Dispose();
         }
 
-        private static Bitmap RenderImageThumbnail(Bitmap? source)
+        private static Bitmap RenderImageThumbnail(Bitmap? source, int maxWidth, int maxHeight)
         {
             if (source == null || source.Width <= 0 || source.Height <= 0)
             {
-                var fallback = new Bitmap(MaxThumbnailDim, MaxThumbnailDim, PixelFormat.Format32bppArgb);
+                var fallback = new Bitmap(maxWidth, maxHeight, PixelFormat.Format32bppArgb);
                 using var fg = Graphics.FromImage(fallback);
                 fg.Clear(Color.FromArgb(32, 32, 32));
                 return fallback;
             }
 
-            // Scale so the longest axis is exactly MaxThumbnailDim.
-            float scale = (float)MaxThumbnailDim / Math.Max(source.Width, source.Height);
-            int w = Math.Max(1, (int)(source.Width * scale));
-            int h = Math.Max(1, (int)(source.Height * scale));
+            // Fit inside the thumbnail bounds while preserving aspect ratio.
+            float widthScale = (float)maxWidth / source.Width;
+            float heightScale = (float)maxHeight / source.Height;
+            float scale = Math.Min(widthScale, heightScale);
+            int w = Math.Max(1, (int)Math.Round(source.Width * scale));
+            int h = Math.Max(1, (int)Math.Round(source.Height * scale));
 
             var thumb = new Bitmap(w, h, PixelFormat.Format32bppArgb);
             using var g = Graphics.FromImage(thumb);
@@ -200,10 +216,17 @@ namespace screenzap.Components
             return thumb;
         }
 
-        private static Bitmap RenderTextThumbnail(string text)
+        private static Bitmap RenderTextThumbnail(string text, int maxWidth, int maxHeight)
         {
-            int w = TextThumbnailSize.Width;
-            int h = TextThumbnailSize.Height;
+            // Keep text cards in a portrait 2:3 shape while fitting the available bounds.
+            int h = maxHeight;
+            int w = Math.Max(1, (int)Math.Round(h * TextThumbnailAspect));
+            if (w > maxWidth)
+            {
+                w = maxWidth;
+                h = Math.Max(1, (int)Math.Round(w / TextThumbnailAspect));
+            }
+
             var thumb = new Bitmap(w, h, PixelFormat.Format32bppArgb);
             using var g = Graphics.FromImage(thumb);
             g.Clear(Color.FromArgb(40, 50, 65));

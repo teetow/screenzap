@@ -85,7 +85,6 @@ namespace screenzap
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (_, e) => LogUnhandled("UI thread", e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (_, e) => LogUnhandled("AppDomain", e.ExceptionObject as Exception);
-            AppDomain.CurrentDomain.FirstChanceException += (_, e) => Logger.Log($"First chance exception: {e.Exception}");
             AppDomain.CurrentDomain.ProcessExit += (_, _) => Logger.Log("Process exiting");
         }
     }
