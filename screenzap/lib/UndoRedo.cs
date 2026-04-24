@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 
 namespace screenzap
 {
@@ -113,6 +114,57 @@ namespace screenzap
         {
             internal List<IUndoStep> Steps = new List<IUndoStep>();
             internal int Index = -1;
+        }
+
+        internal static Snapshot? CloneSnapshot(Snapshot? snapshot)
+        {
+            if (snapshot == null)
+            {
+                return null;
+            }
+
+            var clone = new Snapshot
+            {
+                Index = snapshot.Index
+            };
+
+            foreach (var step in snapshot.Steps)
+            {
+                if (CloneStep(step) is IUndoStep clonedStep)
+                {
+                    clone.Steps.Add(clonedStep);
+                }
+            }
+
+            clone.Index = Math.Clamp(clone.Index, -1, clone.Steps.Count - 1);
+            return clone;
+        }
+
+        private static IUndoStep? CloneStep(IUndoStep step)
+        {
+            if (step is ImageUndoStep image)
+            {
+                return new ImageUndoStep(
+                    image.Region,
+                    image.Before == null ? null : new Bitmap(image.Before),
+                    image.After == null ? null : new Bitmap(image.After),
+                    image.SelectionBefore,
+                    image.SelectionAfter,
+                    image.ReplacesImage,
+                    image.ShapesBefore?.Select(shape => shape.Clone()).ToList(),
+                    image.ShapesAfter?.Select(shape => shape.Clone()).ToList(),
+                    image.TextsBefore?.Select(text => text.Clone()).ToList(),
+                    image.TextsAfter?.Select(text => text.Clone()).ToList());
+            }
+
+            if (step is TextAnnotationUndoStep text)
+            {
+                return new TextAnnotationUndoStep(
+                    text.Before.Select(entry => entry.Clone()).ToList(),
+                    text.After.Select(entry => entry.Clone()).ToList());
+            }
+
+            return null;
         }
 
         internal Snapshot ExtractState()

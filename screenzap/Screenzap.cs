@@ -544,6 +544,7 @@ namespace screenzap
                     host.HistoryStore,
                     host,
                     onItemObserved: host.OnObservedClipboardItem,
+                    tryBindPendingCommittedItem: host.TryBindPendingCommittedSystemItem,
                     isInternalWriteWindow: host.IsInternalClipboardWriteWindow);
 
                 if (systemHistoryService.IsAvailable)

@@ -24,6 +24,7 @@ namespace screenzap.Components
         private readonly ClipboardHistoryStore store;
         private readonly SynchronizationContextPoster poster;
         private readonly Action<ClipboardHistoryItem>? onItemObserved;
+        private readonly Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem;
         private readonly Func<bool>? isInternalWriteWindow;
         private bool disposed;
         private bool subscribed;
@@ -32,11 +33,13 @@ namespace screenzap.Components
             ClipboardHistoryStore store,
             Control uiDispatcher,
             Action<ClipboardHistoryItem>? onItemObserved,
+            Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem,
             Func<bool>? isInternalWriteWindow)
         {
             this.store = store;
             this.poster = new SynchronizationContextPoster(uiDispatcher);
             this.onItemObserved = onItemObserved;
+            this.tryBindPendingCommittedItem = tryBindPendingCommittedItem;
             this.isInternalWriteWindow = isInternalWriteWindow;
         }
 
@@ -120,7 +123,7 @@ namespace screenzap.Components
                     ms.Position = 0;
                     using var bitmap = new Bitmap(ms);
                     var item = ClipboardHistoryItem.FromImage(bitmap);
-                    item.SystemHistoryId = sys.Id;
+                    item.AssignSystemHistoryId(sys.Id);
                     return (sys.Id, item);
                 }
 
@@ -128,7 +131,7 @@ namespace screenzap.Components
                 {
                     var text = await dp.GetTextAsync();
                     var item = ClipboardHistoryItem.FromText(text ?? string.Empty);
-                    item.SystemHistoryId = sys.Id;
+                    item.AssignSystemHistoryId(sys.Id);
                     return (sys.Id, item);
                 }
             }
@@ -167,6 +170,23 @@ namespace screenzap.Components
             {
                 if (!maybe.HasValue) continue;
                 var (sysId, built) = maybe.Value;
+
+                if (store.ContainsSuppressedSystemHistoryId(sysId))
+                {
+                    built.Dispose();
+                    continue;
+                }
+
+                if (tryBindPendingCommittedItem?.Invoke(built) is ClipboardHistoryItem rebound)
+                {
+                    if (!handled.Contains(rebound.Id))
+                    {
+                        finalOrder.Add(rebound);
+                        handled.Add(rebound.Id);
+                    }
+                    built.Dispose();
+                    continue;
+                }
 
                 if (existingById.TryGetValue(sysId, out var existing))
                 {

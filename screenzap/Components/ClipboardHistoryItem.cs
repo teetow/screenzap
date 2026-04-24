@@ -24,12 +24,13 @@ namespace screenzap.Components
         private const int DefaultThumbnailMaxWidth = 64;
         private const int DefaultThumbnailMaxHeight = 64;
         private const float TextThumbnailAspect = 2f / 3f; // 2:3 portrait (w:h)
+        private readonly HashSet<string> suppressedSystemHistoryIds = new(StringComparer.Ordinal);
 
-        public ClipboardHistoryItem(ClipboardItemKind kind)
+        private ClipboardHistoryItem(ClipboardItemKind kind, Guid? id = null, DateTime? createdUtc = null)
         {
-            Id = Guid.NewGuid();
+            Id = id ?? Guid.NewGuid();
             Kind = kind;
-            CreatedUtc = DateTime.UtcNow;
+            CreatedUtc = createdUtc ?? DateTime.UtcNow;
         }
 
         public Guid Id { get; }
@@ -48,11 +49,28 @@ namespace screenzap.Components
         public Bitmap? OriginalImage { get; private set; }
         public string? OriginalText { get; private set; }
 
+        // Last committed baseline (what "Accept edits" wrote to clipboard).
+        public Bitmap? CommittedImage { get; private set; }
+        public string? CommittedText { get; private set; }
+
         // Current edited state.
         public Bitmap? CurrentImage { get; private set; }
         public string? CurrentText { get; private set; }
 
         public bool IsDirty { get; private set; }
+        public IReadOnlyCollection<string> SuppressedSystemHistoryIds => suppressedSystemHistoryIds;
+        public bool CanRevertToOriginal
+        {
+            get
+            {
+                if (Kind == ClipboardItemKind.Image)
+                {
+                    return IsDirty || !AreImagesEqual(OriginalImage, CommittedImage);
+                }
+
+                return IsDirty || !string.Equals(OriginalText ?? string.Empty, CommittedText ?? string.Empty, StringComparison.Ordinal);
+            }
+        }
 
         /// <summary>32x32 thumbnail. Owned by the item; regenerated on content change.</summary>
         public Bitmap? Thumbnail { get; private set; }
@@ -81,6 +99,7 @@ namespace screenzap.Components
         {
             var item = new ClipboardHistoryItem(ClipboardItemKind.Image);
             item.OriginalImage = new Bitmap(source);
+            item.CommittedImage = new Bitmap(source);
             item.CurrentImage = new Bitmap(source);
             item.RebuildThumbnail();
             return item;
@@ -90,7 +109,34 @@ namespace screenzap.Components
         {
             var item = new ClipboardHistoryItem(ClipboardItemKind.Text);
             item.OriginalText = source ?? string.Empty;
+            item.CommittedText = source ?? string.Empty;
             item.CurrentText = source ?? string.Empty;
+            item.RebuildThumbnail();
+            return item;
+        }
+
+        internal static ClipboardHistoryItem FromPersistedImage(Guid id, DateTime createdUtc, Bitmap original, Bitmap committed, Bitmap current)
+        {
+            var item = new ClipboardHistoryItem(ClipboardItemKind.Image, id, createdUtc)
+            {
+                OriginalImage = new Bitmap(original),
+                CommittedImage = new Bitmap(committed),
+                CurrentImage = new Bitmap(current)
+            };
+            item.IsDirty = !AreImagesEqual(item.CommittedImage, item.CurrentImage);
+            item.RebuildThumbnail();
+            return item;
+        }
+
+        internal static ClipboardHistoryItem FromPersistedText(Guid id, DateTime createdUtc, string original, string committed, string current)
+        {
+            var item = new ClipboardHistoryItem(ClipboardItemKind.Text, id, createdUtc)
+            {
+                OriginalText = original ?? string.Empty,
+                CommittedText = committed ?? string.Empty,
+                CurrentText = current ?? string.Empty
+            };
+            item.IsDirty = !string.Equals(item.CommittedText ?? string.Empty, item.CurrentText ?? string.Empty, StringComparison.Ordinal);
             item.RebuildThumbnail();
             return item;
         }
@@ -101,7 +147,7 @@ namespace screenzap.Components
             var replacement = new Bitmap(updated);
             CurrentImage?.Dispose();
             CurrentImage = replacement;
-            IsDirty = !AreImagesEqual(OriginalImage, CurrentImage);
+            IsDirty = !AreImagesEqual(CommittedImage, CurrentImage);
             RebuildThumbnail();
         }
 
@@ -124,23 +170,27 @@ namespace screenzap.Components
         {
             if (Kind != ClipboardItemKind.Text) return;
             CurrentText = updated ?? string.Empty;
-            IsDirty = !string.Equals(OriginalText ?? string.Empty, CurrentText, StringComparison.Ordinal);
+            IsDirty = !string.Equals(CommittedText ?? string.Empty, CurrentText, StringComparison.Ordinal);
             RebuildThumbnail();
         }
 
         public void MarkClean()
         {
-            // Treat current state as the new baseline.
+            // Treat current state as the new committed baseline, but keep Original* immutable.
             if (Kind == ClipboardItemKind.Image && CurrentImage != null)
             {
-                OriginalImage?.Dispose();
-                OriginalImage = new Bitmap(CurrentImage);
+                CommittedImage?.Dispose();
+                CommittedImage = new Bitmap(CurrentImage);
             }
             else if (Kind == ClipboardItemKind.Text)
             {
-                OriginalText = CurrentText ?? string.Empty;
+                CommittedText = CurrentText ?? string.Empty;
             }
 
+            UndoSnapshot = null;
+            Annotations = null;
+            TextAnnotations = null;
+            SetPreviewComposite(null);
             IsDirty = false;
         }
 
@@ -150,10 +200,13 @@ namespace screenzap.Components
             {
                 CurrentImage?.Dispose();
                 CurrentImage = new Bitmap(OriginalImage);
+                CommittedImage?.Dispose();
+                CommittedImage = new Bitmap(OriginalImage);
             }
             else if (Kind == ClipboardItemKind.Text)
             {
                 CurrentText = OriginalText ?? string.Empty;
+                CommittedText = OriginalText ?? string.Empty;
             }
 
             IsDirty = false;
@@ -165,12 +218,83 @@ namespace screenzap.Components
 
         public ClipboardHistoryItem CloneCurrentAsNew()
         {
-            if (Kind == ClipboardItemKind.Image && CurrentImage != null)
+            var clone = new ClipboardHistoryItem(Kind);
+            clone.SystemHistoryId = null;
+            clone.IsSeededFallback = false;
+
+            foreach (var suppressedId in suppressedSystemHistoryIds)
             {
-                return FromImage(CurrentImage);
+                clone.suppressedSystemHistoryIds.Add(suppressedId);
             }
 
-            return FromText(CurrentText ?? string.Empty);
+            if (Kind == ClipboardItemKind.Image)
+            {
+                clone.OriginalImage = OriginalImage == null ? null : new Bitmap(OriginalImage);
+                clone.CommittedImage = CommittedImage == null ? null : new Bitmap(CommittedImage);
+                clone.CurrentImage = CurrentImage == null ? null : new Bitmap(CurrentImage);
+                clone.PreviewComposite = PreviewComposite == null ? null : new Bitmap(PreviewComposite);
+            }
+            else
+            {
+                clone.OriginalText = OriginalText ?? string.Empty;
+                clone.CommittedText = CommittedText ?? string.Empty;
+                clone.CurrentText = CurrentText ?? string.Empty;
+            }
+
+            clone.Annotations = Annotations?.Select(shape => shape.Clone()).ToList();
+            clone.TextAnnotations = TextAnnotations?.Select(text => text.Clone()).ToList();
+            clone.UndoSnapshot = UndoRedo.CloneSnapshot(UndoSnapshot);
+            clone.IsDirty = IsDirty;
+            clone.RebuildThumbnail();
+            return clone;
+        }
+
+        internal void AssignSystemHistoryId(string? systemHistoryId)
+        {
+            if (string.IsNullOrWhiteSpace(systemHistoryId))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(SystemHistoryId) && !string.Equals(SystemHistoryId, systemHistoryId, StringComparison.Ordinal))
+            {
+                suppressedSystemHistoryIds.Add(SystemHistoryId);
+            }
+
+            SystemHistoryId = systemHistoryId;
+        }
+
+        internal void AddSuppressedSystemHistoryId(string? systemHistoryId)
+        {
+            if (!string.IsNullOrWhiteSpace(systemHistoryId))
+            {
+                suppressedSystemHistoryIds.Add(systemHistoryId);
+            }
+        }
+
+        internal bool ContainsSuppressedSystemHistoryId(string? systemHistoryId)
+        {
+            return !string.IsNullOrWhiteSpace(systemHistoryId) && suppressedSystemHistoryIds.Contains(systemHistoryId);
+        }
+
+        internal bool ContentMatches(ClipboardHistoryItem other)
+        {
+            if (other == null || Kind != other.Kind)
+            {
+                return false;
+            }
+
+            if (Kind == ClipboardItemKind.Image)
+            {
+                return AreImagesEqual(CurrentImage, other.CurrentImage);
+            }
+
+            return string.Equals(CurrentText ?? string.Empty, other.CurrentText ?? string.Empty, StringComparison.Ordinal);
+        }
+
+        internal void SetDirtyFlagForRestore(bool isDirty)
+        {
+            IsDirty = isDirty;
         }
 
         public void RebuildThumbnail()
@@ -292,13 +416,16 @@ namespace screenzap.Components
         public void Dispose()
         {
             OriginalImage?.Dispose();
+            CommittedImage?.Dispose();
             CurrentImage?.Dispose();
             PreviewComposite?.Dispose();
             Thumbnail?.Dispose();
             OriginalImage = null;
+            CommittedImage = null;
             CurrentImage = null;
             PreviewComposite = null;
             Thumbnail = null;
+            suppressedSystemHistoryIds.Clear();
         }
     }
 }

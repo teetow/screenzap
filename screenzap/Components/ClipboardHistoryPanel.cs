@@ -231,7 +231,7 @@ namespace screenzap.Components
 
                 menu = new ContextMenuStrip();
                 menu.Items.AddRange(new ToolStripItem[] { setActiveItem, duplicateItem, revertItem, new ToolStripSeparator(), deleteItem });
-                menu.Opening += (s, e) => { revertItem.Enabled = Item?.IsDirty == true; };
+                menu.Opening += (s, e) => { revertItem.Enabled = Item?.CanRevertToOriginal == true; };
                 ContextMenuStrip = menu;
             }
 

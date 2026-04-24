@@ -23,10 +23,13 @@ namespace screenzap.Components
         private readonly Splitter historySplitter;
         private readonly EditorHostServices hostServices;
         private readonly ClipboardHistoryStore historyStore;
+        private readonly ClipboardHistoryPersistence historyPersistence;
         private readonly ClipboardHistoryPanel historyPanel;
         private IClipboardDocumentPresenter? activePresenter;
         private bool hasPendingReloadIndicator;
         private DateTime? suppressExternalClipboardUntilUtc;
+        private Guid? pendingCommittedItemId;
+        private DateTime? pendingCommittedItemUntilUtc;
         internal bool SuppressActivation { get; set; }
         internal Func<ClipboardHistoryItem, Task<bool>>? TryDeleteFromSystemHistoryAsync { get; set; }
         /// <summary>When true, a clipboard event arriving via the store won't override the currently-active dirty item.</summary>
@@ -34,6 +37,7 @@ namespace screenzap.Components
         internal ClipboardHistoryStore HistoryStore => historyStore;
 
         private const int InternalClipboardWriteSuppressMs = 2000;
+        private const int PendingCommittedItemMatchMs = 10000;
         private const int HistoryPanelMinWidth = 72;
         private const int HistoryPanelDefaultWidth = 93;
 
@@ -56,6 +60,8 @@ namespace screenzap.Components
             presenterHostPanel = CreatePresenterHostPanel();
             statusStrip = CreateStatusStrip(out statusLabel);
             historyStore = new ClipboardHistoryStore();
+            historyPersistence = new ClipboardHistoryPersistence();
+            RestorePersistedHistory();
             historyPanel = new ClipboardHistoryPanel();
             historyPanel.Width = HistoryPanelDefaultWidth;
             historyPanel.MinimumSize = new Size(HistoryPanelMinWidth, 0);
@@ -67,6 +73,7 @@ namespace screenzap.Components
             historyPanel.ItemRevert     += (_, item) => RevertItem(item);
             historyPanel.ItemDelete     += (_, item) => _ = DeleteItemAsync(item);
             historyStore.ItemUpdated += OnStoreItemUpdated;
+            historyStore.Changed += OnStoreChanged;
 
             InitializeComponent();
             ApplyPersistedHistoryPanelWidth();
@@ -407,7 +414,7 @@ namespace screenzap.Components
                         pair.Value.Enabled = activeItem?.IsDirty == true;
                         break;
                     case EditorCommandId.Revert:
-                        pair.Value.Enabled = activeItem?.IsDirty == true;
+                        pair.Value.Enabled = activeItem?.CanRevertToOriginal == true;
                         break;
                     case EditorCommandId.Duplicate:
                         pair.Value.Enabled = activeItem != null;
@@ -464,15 +471,24 @@ namespace screenzap.Components
             // Bake the flattened state into the item as the new baseline; annotations are consumed.
             if (flattened != null)
             {
-                item.UpdateCurrentImage(flattened);  // resets dirty since we'll MarkClean below
+                item.UpdateCurrentImage(flattened);
                 flattened.Dispose();
-                item.Annotations = null;
-                item.TextAnnotations = null;
-                item.SetPreviewComposite(null);
+            }
+            else if (flattenedText != null)
+            {
+                item.UpdateCurrentText(flattenedText);
+            }
+
+            if (!string.IsNullOrEmpty(item.SystemHistoryId))
+            {
+                item.AddSuppressedSystemHistoryId(item.SystemHistoryId);
+                item.SystemHistoryId = null;
             }
 
             historyStore.MarkClean(item);
-            // Reload cleaned state into presenter; undo stack is preserved inside the item snapshot.
+            TrackPendingCommittedItem(item.Id);
+
+            // Reload cleaned state into presenter; undo is intentionally flattened on commit.
             activePresenter?.LoadHistoryItem(item);
             UpdateCommandStates();
             UpdateStatusText("Edits committed to clipboard.");
@@ -494,7 +510,7 @@ namespace screenzap.Components
         private bool RevertActiveItem()
         {
             var item = historyStore.ActiveItem;
-            if (item == null || !item.IsDirty) return false;
+            if (item == null || !item.CanRevertToOriginal) return false;
             historyStore.Revert(item);
             activePresenter?.LoadHistoryItem(item);
             UpdateCommandStates();
@@ -545,6 +561,18 @@ namespace screenzap.Components
                 return;
             }
             UpdateCommandStates();
+            SavePersistedHistory();
+        }
+
+        private void OnStoreChanged(object? sender, EventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<object?, EventArgs>(OnStoreChanged), sender, e);
+                return;
+            }
+
+            SavePersistedHistory();
         }
 
         private void OnHistoryItemActivated(object? sender, ClipboardHistoryItem item)
@@ -583,6 +611,11 @@ namespace screenzap.Components
 
         private void RevertItem(ClipboardHistoryItem item)
         {
+            if (!item.CanRevertToOriginal)
+            {
+                return;
+            }
+
             historyStore.Revert(item);
             if (ReferenceEquals(historyStore.ActiveItem, item))
                 activePresenter?.LoadHistoryItem(item);
@@ -803,6 +836,57 @@ namespace screenzap.Components
         {
             Application.Idle -= OnApplicationIdle;
             SaveHistoryPanelWidth();
+            SavePersistedHistory();
+        }
+
+        internal ClipboardHistoryItem? TryBindPendingCommittedSystemItem(ClipboardHistoryItem incomingSystemItem)
+        {
+            if (pendingCommittedItemId == null || pendingCommittedItemUntilUtc == null)
+            {
+                return null;
+            }
+
+            if (DateTime.UtcNow > pendingCommittedItemUntilUtc.Value)
+            {
+                pendingCommittedItemId = null;
+                pendingCommittedItemUntilUtc = null;
+                return null;
+            }
+
+            var localItem = historyStore.FindById(pendingCommittedItemId.Value);
+            if (localItem == null || !localItem.ContentMatches(incomingSystemItem))
+            {
+                return null;
+            }
+
+            localItem.AssignSystemHistoryId(incomingSystemItem.SystemHistoryId);
+            historyStore.NotifyItemUpdated(localItem);
+
+            pendingCommittedItemId = null;
+            pendingCommittedItemUntilUtc = null;
+            return localItem;
+        }
+
+        private void TrackPendingCommittedItem(Guid itemId)
+        {
+            pendingCommittedItemId = itemId;
+            pendingCommittedItemUntilUtc = DateTime.UtcNow.AddMilliseconds(PendingCommittedItemMatchMs);
+        }
+
+        private void RestorePersistedHistory()
+        {
+            var restored = historyPersistence.Load();
+            if (restored.Items.Count == 0)
+            {
+                return;
+            }
+
+            historyStore.LoadPersisted(restored.Items, restored.ActiveItemId);
+        }
+
+        private void SavePersistedHistory()
+        {
+            historyPersistence.Save(historyStore.Items, historyStore.ActiveItem);
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

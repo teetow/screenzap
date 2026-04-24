@@ -130,6 +130,39 @@ namespace screenzap.Components
 
         public ClipboardHistoryItem? TopItem => items.FirstOrDefault();
 
+        internal ClipboardHistoryItem? FindById(Guid id)
+        {
+            return items.FirstOrDefault(item => item.Id == id);
+        }
+
+        internal bool ContainsSuppressedSystemHistoryId(string? systemHistoryId)
+        {
+            if (string.IsNullOrWhiteSpace(systemHistoryId))
+            {
+                return false;
+            }
+
+            return items.Any(item => item.ContainsSuppressedSystemHistoryId(systemHistoryId));
+        }
+
+        internal void LoadPersisted(IEnumerable<ClipboardHistoryItem> restoredItems, Guid? activeItemId)
+        {
+            var incoming = restoredItems?.ToList() ?? new List<ClipboardHistoryItem>();
+            ReplaceAll(incoming);
+
+            if (!activeItemId.HasValue)
+            {
+                return;
+            }
+
+            var restoredActive = items.FirstOrDefault(entry => entry.Id == activeItemId.Value);
+            if (restoredActive != null)
+            {
+                activeItem = restoredActive;
+                Changed?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
         /// <summary>Replace the entire ordered list of items (used by the system-history sync path). Disposes items that aren't in the new list.</summary>
         public void ReplaceAll(IEnumerable<ClipboardHistoryItem> newOrder)
         {
