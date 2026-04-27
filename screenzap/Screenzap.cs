@@ -20,7 +20,7 @@ namespace screenzap
         private readonly KeyboardHook rectCaptureHook = new KeyboardHook();
         private readonly KeyboardHook seqCaptureHook = new KeyboardHook();
         private readonly string autostartAppName = "Screenzap";
-        private readonly string assemblyLocation = Assembly.GetExecutingAssembly().Location;  // Or the EXE path.
+        private readonly string autoStartCommand = BuildAutoStartCommand();
         private KeyCombo rectCaptureCombo;
         private KeyCombo seqCaptureCombo;
         private bool isCapturing;
@@ -46,7 +46,8 @@ namespace screenzap
 
             rectCaptureCombo = ParseKeyCombo(Properties.Settings.Default.currentCombo);
             seqCaptureCombo = ParseKeyCombo(Properties.Settings.Default.seqCaptureCombo);
-            startWhenLoggedInToolStripMenuItem.Checked = Util.IsAutoStartEnabled(autostartAppName, assemblyLocation);
+            Util.MigrateLegacyDllAutoStart(autostartAppName, autoStartCommand);
+            startWhenLoggedInToolStripMenuItem.Checked = Util.IsAutoStartEnabled(autostartAppName, autoStartCommand);
             showBalloonMenuItem.Checked = Properties.Settings.Default.showBalloon;
 
 
@@ -368,12 +369,20 @@ namespace screenzap
         private void startWhenLoggedInToolStripMenuItem_CheckStateChanged(object? sender, EventArgs e)
         {
             if (startWhenLoggedInToolStripMenuItem.Checked)
-                Util.SetAutoStart(autostartAppName, assemblyLocation);
+                Util.SetAutoStart(autostartAppName, autoStartCommand);
             else
+                Util.UnSetAutoStart(autostartAppName);
+        }
+
+        private static string BuildAutoStartCommand()
+        {
+            var processPath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(processPath))
             {
-                if (Util.IsAutoStartEnabled(autostartAppName, assemblyLocation))
-                    Util.UnSetAutoStart(autostartAppName);
+                processPath = Application.ExecutablePath;
             }
+
+            return $"\"{processPath}\"";
         }
 
         private void saveClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
