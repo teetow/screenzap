@@ -245,12 +245,12 @@ namespace screenzap
             }
 
             isCensorToolActive = true;
-            currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Value ?? 0);
+            currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Maximum ?? 100);
             suppressConfidenceEvents = true;
 
             if (confidenceTrackBar != null)
             {
-                confidenceTrackBar.Value = confidenceTrackBar.Minimum;
+                confidenceTrackBar.Value = confidenceTrackBar.Maximum;
                 currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar.Value);
             }
 
@@ -260,6 +260,11 @@ namespace screenzap
             {
                 censorToolStrip.Visible = true;
                 PositionOverlayToolStrips();
+            }
+
+            if (confidenceTrackBar != null)
+            {
+                confidenceTrackBar_ValueChanged(confidenceTrackBar, EventArgs.Empty);
             }
 
             UpdateCensorToolbarState();
@@ -280,13 +285,13 @@ namespace screenzap
             isCensorToolActive = false;
             censorRegions.Clear();
             ReleaseCensorPreviewBuffer();
-            currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Value ?? 0);
+            currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Maximum ?? 100);
             Cursor = Cursors.Default;
 
             suppressConfidenceEvents = true;
             if (confidenceTrackBar != null)
             {
-                confidenceTrackBar.Value = confidenceTrackBar.Minimum;
+                confidenceTrackBar.Value = confidenceTrackBar.Maximum;
                 currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar.Value);
                 confidenceTrackBar.Enabled = false;
             }
