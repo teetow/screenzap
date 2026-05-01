@@ -97,13 +97,24 @@ namespace screenzap.Components
                 return;
             }
 
-            // Translate WinRT items to Screenzap items sequentially so order is preserved.
-            var translated = new List<(string id, ClipboardHistoryItem built)?>();
+            // Translate WinRT items and then order by WinRT timestamp (newest first).
+            var translated = new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>();
             foreach (var sys in result.Items)
             {
                 var converted = await TryConvertAsync(sys);
-                translated.Add(converted);
+                if (converted.HasValue)
+                {
+                    translated.Add((converted.Value.id, sys.Timestamp, converted.Value.built));
+                }
+                else
+                {
+                    translated.Add(null);
+                }
             }
+
+            translated = translated
+                .OrderByDescending(entry => entry?.timestamp ?? DateTimeOffset.MinValue)
+                .ToList();
 
             poster.Post(() => ApplySnapshot(translated));
         }
@@ -115,26 +126,28 @@ namespace screenzap.Components
                 var dp = sys.Content;
                 if (dp == null) return null;
 
-                // Prefer bitmap; fall back to text.
-                if (dp.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
+                bool declaresBitmap = dp.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap);
+                var availableFormats = dp.AvailableFormats?.ToList() ?? new List<string>();
+                bool imageLikeFormats = LooksImageLike(availableFormats);
+
+                // Prefer image conversion. Some providers do not reliably advertise bitmap support,
+                // so probe likely image formats too.
+                if (declaresBitmap || imageLikeFormats)
                 {
-                    var bmpRef = await dp.GetBitmapAsync();
-                    using var stream = await bmpRef.OpenReadAsync();
-                    using var ms = new MemoryStream();
-                    using (var dotNetStream = stream.AsStreamForRead())
+                    var imageItem = await TryBuildImageItemAsync(dp, sys.Id, logFailures: declaresBitmap);
+                    if (imageItem != null)
                     {
-                        await dotNetStream.CopyToAsync(ms);
+                        return (sys.Id, imageItem);
                     }
-                    ms.Position = 0;
-                    using var bitmap = new Bitmap(ms);
-                    var item = ClipboardHistoryItem.FromImage(bitmap);
-                    item.AssignSystemHistoryId(sys.Id);
-                    return (sys.Id, item);
                 }
 
                 // Optional filter: keep only bitmap-backed system entries.
                 if (includeNonBitmapItems?.Invoke() != true)
                 {
+                    if (imageLikeFormats)
+                    {
+                        Logger.Log($"Skipping image-like WinRT history item {sys.Id} because bitmap decode failed. Formats: {string.Join(", ", availableFormats.Take(6))}");
+                    }
                     return null;
                 }
 
@@ -148,7 +161,6 @@ namespace screenzap.Components
 
                 // Preserve recency/order visibility even for clipboard entries we cannot edit directly.
                 // We represent unsupported WinRT formats as lightweight text placeholders.
-                var availableFormats = dp.AvailableFormats;
                 if (availableFormats != null && availableFormats.Count > 0)
                 {
                     var summary = string.Join(", ", availableFormats.Take(6));
@@ -170,7 +182,153 @@ namespace screenzap.Components
             return null;
         }
 
-        private void ApplySnapshot(List<(string id, ClipboardHistoryItem built)?> translated)
+        private static bool LooksImageLike(IEnumerable<string> formats)
+        {
+            foreach (var format in formats)
+            {
+                if (string.IsNullOrWhiteSpace(format))
+                {
+                    continue;
+                }
+
+                var lower = format.ToLowerInvariant();
+                if (lower.Contains("bitmap") || lower.Contains("image") || lower.Contains("png") || lower.Contains("jpg") || lower.Contains("jpeg") || lower.Contains("gif") || lower.Contains("tiff") || lower.Contains("dib"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static async Task<ClipboardHistoryItem?> TryBuildImageItemAsync(Windows.ApplicationModel.DataTransfer.DataPackageView dataPackage, string systemId, bool logFailures)
+        {
+            try
+            {
+                Bitmap? bitmap = await TryDecodeBitmapFromBitmapReferenceAsync(dataPackage);
+                bitmap ??= await TryDecodeBitmapFromStorageItemsAsync(dataPackage);
+
+                if (bitmap == null)
+                {
+                    return null;
+                }
+
+                using (bitmap)
+                {
+                    var item = ClipboardHistoryItem.FromImage(bitmap);
+                    item.AssignSystemHistoryId(systemId);
+                    return item;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (logFailures)
+                {
+                    Logger.Log($"Failed to decode WinRT bitmap history item {systemId}: {ex.Message}");
+                }
+
+                return null;
+            }
+        }
+
+        private static async Task<Bitmap?> TryDecodeBitmapFromBitmapReferenceAsync(Windows.ApplicationModel.DataTransfer.DataPackageView dataPackage)
+        {
+            try
+            {
+                var bmpRef = await dataPackage.GetBitmapAsync();
+                using var stream = await bmpRef.OpenReadAsync();
+                using var ms = new MemoryStream();
+                using (var dotNetStream = stream.AsStreamForRead())
+                {
+                    await dotNetStream.CopyToAsync(ms);
+                }
+
+                ms.Position = 0;
+                try
+                {
+                    return new Bitmap(ms);
+                }
+                catch
+                {
+                    ms.Position = 0;
+                    using var decoded = Image.FromStream(ms, false, false);
+                    return new Bitmap(decoded);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static async Task<Bitmap?> TryDecodeBitmapFromStorageItemsAsync(Windows.ApplicationModel.DataTransfer.DataPackageView dataPackage)
+        {
+            if (!dataPackage.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                return null;
+            }
+
+            try
+            {
+                var storageItems = await dataPackage.GetStorageItemsAsync();
+                if (storageItems == null || storageItems.Count == 0)
+                {
+                    return null;
+                }
+
+                for (int index = 0; index < storageItems.Count; index++)
+                {
+                    if (storageItems[index] is not Windows.Storage.StorageFile file)
+                    {
+                        continue;
+                    }
+
+                    var contentType = (file.ContentType ?? string.Empty).ToLowerInvariant();
+                    var extension = Path.GetExtension(file.Name ?? string.Empty).ToLowerInvariant();
+                    bool imageLike = contentType.StartsWith("image/")
+                        || extension == ".png"
+                        || extension == ".jpg"
+                        || extension == ".jpeg"
+                        || extension == ".bmp"
+                        || extension == ".gif"
+                        || extension == ".tif"
+                        || extension == ".tiff"
+                        || extension == ".webp";
+
+                    if (!imageLike)
+                    {
+                        continue;
+                    }
+
+                    using var stream = await file.OpenReadAsync();
+                    using var ms = new MemoryStream();
+                    using (var dotNetStream = stream.AsStreamForRead())
+                    {
+                        await dotNetStream.CopyToAsync(ms);
+                    }
+
+                    ms.Position = 0;
+                    try
+                    {
+                        return new Bitmap(ms);
+                    }
+                    catch
+                    {
+                        ms.Position = 0;
+                        using var decoded = Image.FromStream(ms, false, false);
+                        return new Bitmap(decoded);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore storage-item decode failures and let caller continue with other paths.
+            }
+
+            return null;
+        }
+
+        private void ApplySnapshot(List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?> translated)
         {
             if (disposed) return;
 
@@ -196,7 +354,7 @@ namespace screenzap.Components
             foreach (var maybe in translated)
             {
                 if (!maybe.HasValue) continue;
-                var (sysId, built) = maybe.Value;
+                var (sysId, _, built) = maybe.Value;
 
                 if (store.ContainsSuppressedSystemHistoryId(sysId))
                 {
@@ -246,7 +404,9 @@ namespace screenzap.Components
                 }
                 else if (item.IsDirty)
                 {
-                    finalOrder.Insert(0, item);
+                    // Keep dirty system-backed items, but do not force them to the top when
+                    // their current system id is absent from the latest WinRT snapshot.
+                    finalOrder.Add(item);
                     handled.Add(item.Id);
                 }
                 else

@@ -3001,7 +3001,7 @@ namespace screenzap
         {
             if (item == null) return;
             // Preserve base image unflattened so annotations remain editable after round-trip.
-            if (pictureBox1?.Image is Bitmap baseImage)
+            if (HasEditableImage && pictureBox1?.Image is Bitmap baseImage)
             {
                 item.UpdateCurrentImageWithoutDirty(baseImage);
             }
@@ -3016,6 +3016,10 @@ namespace screenzap
             {
                 using var composite = BuildCompositeImage();
                 item.SetPreviewComposite(composite);
+            }
+            else
+            {
+                item.SetPreviewComposite(null);
             }
         }
 
