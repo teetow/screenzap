@@ -554,7 +554,11 @@ namespace screenzap
                     host,
                     onItemObserved: host.OnObservedClipboardItem,
                     tryBindPendingCommittedItem: host.TryBindPendingCommittedSystemItem,
-                    isInternalWriteWindow: host.IsInternalClipboardWriteWindow);
+                    isInternalWriteWindow: host.IsInternalClipboardWriteWindow,
+                    includeNonBitmapItems: () => Properties.Settings.Default.clipboardHistoryShowTextItems);
+
+                host.RefreshSystemHistoryAsync = () =>
+                    systemHistoryService?.RefreshAsync() ?? System.Threading.Tasks.Task.CompletedTask;
 
                 if (systemHistoryService.IsAvailable)
                 {

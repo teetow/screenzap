@@ -32,6 +32,7 @@ namespace screenzap.Components
         private DateTime? pendingCommittedItemUntilUtc;
         internal bool SuppressActivation { get; set; }
         internal Func<ClipboardHistoryItem, Task<bool>>? TryDeleteFromSystemHistoryAsync { get; set; }
+        internal Func<Task>? RefreshSystemHistoryAsync { get; set; }
         /// <summary>When true, a clipboard event arriving via the store won't override the currently-active dirty item.</summary>
         internal bool IsHostVisibleForAutoSwitch => Visible && !SuppressActivation;
         internal ClipboardHistoryStore HistoryStore => historyStore;
@@ -72,6 +73,10 @@ namespace screenzap.Components
             historyPanel.ItemDuplicate  += (_, item) => DuplicateItem(item);
             historyPanel.ItemRevert     += (_, item) => RevertItem(item);
             historyPanel.ItemDelete     += (_, item) => _ = DeleteItemAsync(item);
+            historyPanel.RefreshRequested += async (_, _) => await RefreshHistoryFromSystemAsync();
+            historyPanel.ActivateNewestRequested += (_, _) => ActivateNewestHistoryItem();
+            historyPanel.ShowTextItemsChanged += (_, enabled) => ToggleShowTextItems(enabled);
+            historyPanel.SetShowTextItems(Properties.Settings.Default.clipboardHistoryShowTextItems);
             historyStore.ItemUpdated += OnStoreItemUpdated;
             historyStore.Changed += OnStoreChanged;
 
@@ -346,6 +351,56 @@ namespace screenzap.Components
 
             Properties.Settings.Default.clipboardHistoryPanelWidth = clamped;
             Properties.Settings.Default.Save();
+        }
+
+        private async Task RefreshHistoryFromSystemAsync()
+        {
+            if (RefreshSystemHistoryAsync == null)
+            {
+                UpdateStatusText("Windows clipboard history sync is unavailable.");
+                return;
+            }
+
+            try
+            {
+                await RefreshSystemHistoryAsync();
+                UpdateStatusText("Clipboard history refreshed.");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Manual system history refresh failed: {ex.Message}");
+                UpdateStatusText("Failed to refresh Windows clipboard history.");
+            }
+        }
+
+        private void ActivateNewestHistoryItem()
+        {
+            var newest = historyStore.TopItem;
+            if (newest == null)
+            {
+                return;
+            }
+
+            ActivateHistoryItem(newest);
+            UpdateStatusText("Activated newest history item.");
+        }
+
+        private void ToggleShowTextItems(bool enabled)
+        {
+            if (Properties.Settings.Default.clipboardHistoryShowTextItems == enabled)
+            {
+                _ = RefreshHistoryFromSystemAsync();
+                return;
+            }
+
+            Properties.Settings.Default.clipboardHistoryShowTextItems = enabled;
+            Properties.Settings.Default.Save();
+            historyPanel.SetShowTextItems(enabled);
+            UpdateStatusText(enabled
+                ? "Showing image and text clipboard history items."
+                : "Showing image clipboard history items only.");
+
+            _ = RefreshHistoryFromSystemAsync();
         }
 
         private void AddCommandButton(EditorCommandId commandId)

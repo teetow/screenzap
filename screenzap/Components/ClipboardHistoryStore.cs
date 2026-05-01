@@ -12,7 +12,7 @@ namespace screenzap.Components
     /// </summary>
     internal sealed class ClipboardHistoryStore
     {
-        public const int MaxItems = 25;
+        public const int MaxItems = 128;
 
         private readonly List<ClipboardHistoryItem> items = new();
         private ClipboardHistoryItem? activeItem;

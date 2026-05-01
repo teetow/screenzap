@@ -17,15 +17,24 @@ namespace screenzap.Components
         private readonly FlowLayoutPanel flow;
         private readonly ToolTip tooltip = new ToolTip();
         private readonly Dictionary<Guid, ThumbnailButton> buttons = new();
+        private readonly ContextMenuStrip listMenu;
+        private readonly ToolStripMenuItem refreshFromWindowsHistoryItem;
+        private readonly ToolStripMenuItem activateNewestItem;
+        private readonly ToolStripMenuItem scrollToActiveItem;
+        private readonly ToolStripMenuItem showTextItemsItem;
         private ClipboardHistoryStore? store;
         private int currentThumbMaxWidth = 64;
         private int currentThumbMaxHeight = 64;
+        private bool suppressShowTextItemsEvents;
 
         public event EventHandler<ClipboardHistoryItem>? ItemActivated;
         public event EventHandler<ClipboardHistoryItem>? ItemSetActive;
         public event EventHandler<ClipboardHistoryItem>? ItemDuplicate;
         public event EventHandler<ClipboardHistoryItem>? ItemRevert;
         public event EventHandler<ClipboardHistoryItem>? ItemDelete;
+        public event EventHandler? RefreshRequested;
+        public event EventHandler? ActivateNewestRequested;
+        public event EventHandler<bool>? ShowTextItemsChanged;
 
         public ClipboardHistoryPanel()
         {
@@ -46,8 +55,74 @@ namespace screenzap.Components
             };
             Controls.Add(flow);
 
+            refreshFromWindowsHistoryItem = new ToolStripMenuItem("Refresh from Windows History")
+            {
+                Image = MakeIcon(IconChar.Rotate, Color.FromArgb(180, 220, 255))
+            };
+            refreshFromWindowsHistoryItem.Click += (s, e) => RefreshRequested?.Invoke(this, EventArgs.Empty);
+
+            activateNewestItem = new ToolStripMenuItem("Activate Newest")
+            {
+                Image = MakeIcon(IconChar.ClockRotateLeft, SystemColors.ControlText)
+            };
+            activateNewestItem.Click += (s, e) => ActivateNewestRequested?.Invoke(this, EventArgs.Empty);
+
+            scrollToActiveItem = new ToolStripMenuItem("Scroll to Active")
+            {
+                Image = MakeIcon(IconChar.LocationArrow, SystemColors.ControlText)
+            };
+            scrollToActiveItem.Click += (s, e) => ScrollToActiveItem();
+
+            showTextItemsItem = new ToolStripMenuItem("Show Text Items")
+            {
+                CheckOnClick = true,
+                Image = MakeIcon(IconChar.Font, SystemColors.ControlText)
+            };
+            showTextItemsItem.CheckedChanged += (s, e) =>
+            {
+                if (suppressShowTextItemsEvents)
+                {
+                    return;
+                }
+
+                ShowTextItemsChanged?.Invoke(this, showTextItemsItem.Checked);
+            };
+
+            listMenu = new ContextMenuStrip();
+            listMenu.Items.AddRange(new ToolStripItem[]
+            {
+                refreshFromWindowsHistoryItem,
+                new ToolStripSeparator(),
+                activateNewestItem,
+                scrollToActiveItem,
+                new ToolStripSeparator(),
+                showTextItemsItem
+            });
+            listMenu.Opening += (s, e) =>
+            {
+                bool hasItems = store?.Items.Count > 0;
+                activateNewestItem.Enabled = hasItems;
+                scrollToActiveItem.Enabled = store?.ActiveItem != null;
+            };
+
+            flow.ContextMenuStrip = listMenu;
+            ContextMenuStrip = listMenu;
+
             SizeChanged += (_, _) => UpdateThumbnailSizing();
             flow.SizeChanged += (_, _) => UpdateThumbnailSizing();
+        }
+
+        public void SetShowTextItems(bool enabled)
+        {
+            suppressShowTextItemsEvents = true;
+            try
+            {
+                showTextItemsItem.Checked = enabled;
+            }
+            finally
+            {
+                suppressShowTextItemsEvents = false;
+            }
         }
 
         public void AttachStore(ClipboardHistoryStore store)
@@ -190,6 +265,23 @@ namespace screenzap.Components
             var dirty = item.IsDirty ? " (edited)" : string.Empty;
             return $"{kindLabel} - {item.CreatedUtc.ToLocalTime():HH:mm:ss}{dirty}";
         }
+
+        private void ScrollToActiveItem()
+        {
+            var active = store?.ActiveItem;
+            if (active == null)
+            {
+                return;
+            }
+
+            if (buttons.TryGetValue(active.Id, out var btn))
+            {
+                flow.ScrollControlIntoView(btn);
+            }
+        }
+
+        private static Bitmap MakeIcon(IconChar icon, Color color)
+            => FormsIconHelper.ToBitmap(icon, color, 16, 0, FlipOrientation.Normal);
 
         private sealed class ThumbnailButton : Control
         {

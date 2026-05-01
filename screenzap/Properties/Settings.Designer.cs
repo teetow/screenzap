@@ -135,5 +135,13 @@ namespace screenzap.Properties {
             get { return ((int)(this["clipboardHistoryPanelWidth"])); }
             set { this["clipboardHistoryPanelWidth"] = value; }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool clipboardHistoryShowTextItems {
+            get { return ((bool)(this["clipboardHistoryShowTextItems"])); }
+            set { this["clipboardHistoryShowTextItems"] = value; }
+        }
     }
 }

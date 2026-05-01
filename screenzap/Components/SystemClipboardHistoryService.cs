@@ -26,6 +26,7 @@ namespace screenzap.Components
         private readonly Action<ClipboardHistoryItem>? onItemObserved;
         private readonly Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem;
         private readonly Func<bool>? isInternalWriteWindow;
+        private readonly Func<bool>? includeNonBitmapItems;
         private bool disposed;
         private bool subscribed;
 
@@ -34,13 +35,15 @@ namespace screenzap.Components
             Control uiDispatcher,
             Action<ClipboardHistoryItem>? onItemObserved,
             Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem,
-            Func<bool>? isInternalWriteWindow)
+            Func<bool>? isInternalWriteWindow,
+            Func<bool>? includeNonBitmapItems)
         {
             this.store = store;
             this.poster = new SynchronizationContextPoster(uiDispatcher);
             this.onItemObserved = onItemObserved;
             this.tryBindPendingCommittedItem = tryBindPendingCommittedItem;
             this.isInternalWriteWindow = isInternalWriteWindow;
+            this.includeNonBitmapItems = includeNonBitmapItems;
         }
 
         public bool IsAvailable
@@ -127,6 +130,12 @@ namespace screenzap.Components
                     var item = ClipboardHistoryItem.FromImage(bitmap);
                     item.AssignSystemHistoryId(sys.Id);
                     return (sys.Id, item);
+                }
+
+                // Optional filter: keep only bitmap-backed system entries.
+                if (includeNonBitmapItems?.Invoke() != true)
+                {
+                    return null;
                 }
 
                 if (dp.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))

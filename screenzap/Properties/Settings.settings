@@ -38,5 +38,8 @@
     <Setting Name="clipboardHistoryPanelWidth" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">93</Value>
     </Setting>
+    <Setting Name="clipboardHistoryShowTextItems" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
   </Settings>
 </SettingsFile>
