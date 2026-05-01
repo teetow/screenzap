@@ -2175,6 +2175,12 @@ namespace screenzap
                 return false;
             }
 
+            // When a selection is active, rotate only the selected region in-place.
+            if (!Selection.IsEmpty)
+            {
+                return ExecuteRotateSelection90Cw();
+            }
+
             var beforeImage = new Bitmap(pictureBox1.Image);
             var selectionBefore = Selection;
             var annotationStateBefore = CloneAnnotations();
@@ -2230,11 +2236,88 @@ namespace screenzap
             return true;
         }
 
+        private bool ExecuteRotateSelection90Cw()
+        {
+            if (pictureBox1.Image == null)
+            {
+                return false;
+            }
+
+            var clampedSelection = ClampToImage(Selection);
+            if (clampedSelection.Width <= 0 || clampedSelection.Height <= 0)
+            {
+                return false;
+            }
+
+            var selectionBefore = Selection;
+            var before = CaptureRegion(clampedSelection);
+            if (before == null)
+            {
+                return false;
+            }
+
+            Bitmap? rotated = null;
+            Bitmap? after = null;
+
+            try
+            {
+                rotated = new Bitmap(before);
+                rotated.RotateFlip(RotateFlipType.Rotate90FlipNone);
+
+                // Keep operation bounded to current selection by compositing into a same-size buffer.
+                after = new Bitmap(before.Width, before.Height, PixelFormat.Format32bppArgb);
+                using (var gAfter = Graphics.FromImage(after))
+                {
+                    gAfter.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    gAfter.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                    gAfter.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+
+                    gAfter.DrawImage(before, new Rectangle(0, 0, before.Width, before.Height));
+
+                    int offsetX = (before.Width - rotated.Width) / 2;
+                    int offsetY = (before.Height - rotated.Height) / 2;
+                    gAfter.DrawImage(rotated, new Rectangle(offsetX, offsetY, rotated.Width, rotated.Height));
+                }
+
+                using (var g = Graphics.FromImage(pictureBox1.Image))
+                {
+                    g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                    g.DrawImage(after, clampedSelection);
+                }
+
+                PushUndoStep(clampedSelection, before, after, selectionBefore, Selection);
+                MarkDirtyAndNotify();
+                UpdateCommandUI();
+                UpdateStatusBar();
+                pictureBox1.Invalidate();
+                return true;
+            }
+            catch
+            {
+                before.Dispose();
+                rotated?.Dispose();
+                after?.Dispose();
+                throw;
+            }
+            finally
+            {
+                rotated?.Dispose();
+            }
+        }
+
         private bool ExecuteFlip(RotateFlipType flipType)
         {
             if (!HasEditableImage || pictureBox1.Image == null)
             {
                 return false;
+            }
+
+            // When a selection is active, flip only the selected region in-place
+            if (!Selection.IsEmpty)
+            {
+                return ExecuteFlipSelection(flipType);
             }
 
             var beforeImage = new Bitmap(pictureBox1.Image);
@@ -2250,19 +2333,6 @@ namespace screenzap
             pictureBox1.Image = flipped;
 
             bool horizontal = flipType == RotateFlipType.RotateNoneFlipX;
-
-            // Mirror selection
-            if (!Selection.IsEmpty)
-            {
-                if (horizontal)
-                {
-                    Selection = new Rectangle(width - Selection.Right, Selection.Y, Selection.Width, Selection.Height);
-                }
-                else
-                {
-                    Selection = new Rectangle(Selection.X, height - Selection.Bottom, Selection.Width, Selection.Height);
-                }
-            }
 
             // Mirror annotation shapes
             for (int i = 0; i < annotationShapes.Count; i++)
@@ -2307,6 +2377,55 @@ namespace screenzap
             pictureBox1.Invalidate();
 
             return true;
+        }
+
+        private bool ExecuteFlipSelection(RotateFlipType flipType)
+        {
+            if (pictureBox1.Image == null)
+            {
+                return false;
+            }
+
+            var clampedSelection = ClampToImage(Selection);
+            if (clampedSelection.Width <= 0 || clampedSelection.Height <= 0)
+            {
+                return false;
+            }
+
+            var selectionBefore = Selection;
+            var before = CaptureRegion(clampedSelection);
+            if (before == null)
+            {
+                return false;
+            }
+
+            Bitmap? after = null;
+            try
+            {
+                after = new Bitmap(before);
+                after.RotateFlip(flipType);
+
+                using (var g = Graphics.FromImage(pictureBox1.Image))
+                {
+                    g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                    g.DrawImage(after, clampedSelection);
+                }
+
+                PushUndoStep(clampedSelection, before, after, selectionBefore, Selection);
+                MarkDirtyAndNotify();
+                UpdateCommandUI();
+                UpdateStatusBar();
+                pictureBox1.Invalidate();
+                return true;
+            }
+            catch
+            {
+                before.Dispose();
+                after?.Dispose();
+                throw;
+            }
         }
 
         private void replaceToolStripButton_Click(object sender, EventArgs e)

@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 
 namespace screenzap
@@ -31,7 +32,6 @@ namespace screenzap
                 PositionOverlayToolStrips();
             }
 
-            ClearSelection();
             UpdateStraightenToolbarState();
             UpdateCommandUI();
             pictureBox1.Invalidate();
@@ -84,6 +84,12 @@ namespace screenzap
                 return;
             }
 
+            if (!Selection.IsEmpty)
+            {
+                ApplyStraightenToSelection(correctionAngle);
+                return;
+            }
+
             var selectionBefore = Selection;
             var beforeFullImage = new Bitmap(pictureBox1.Image);
             Bitmap? rotated = null;
@@ -108,6 +114,74 @@ namespace screenzap
                 beforeFullImage.Dispose();
                 rotated?.Dispose();
                 throw;
+            }
+        }
+
+        private void ApplyStraightenToSelection(double correctionAngle)
+        {
+            if (pictureBox1.Image == null)
+            {
+                return;
+            }
+
+            var clampedSelection = ClampToImage(Selection);
+            if (clampedSelection.Width <= 0 || clampedSelection.Height <= 0)
+            {
+                return;
+            }
+
+            var selectionBefore = Selection;
+            var before = CaptureRegion(clampedSelection);
+            if (before == null)
+            {
+                return;
+            }
+
+            Bitmap? rotated = null;
+            Bitmap? after = null;
+
+            try
+            {
+                rotated = lib.ImageStraightener.RotateImage(before, correctionAngle);
+
+                after = new Bitmap(before.Width, before.Height, PixelFormat.Format32bppArgb);
+                using (var gAfter = Graphics.FromImage(after))
+                {
+                    gAfter.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    gAfter.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                    gAfter.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+
+                    gAfter.DrawImage(before, new Rectangle(0, 0, before.Width, before.Height));
+
+                    int offsetX = (before.Width - rotated.Width) / 2;
+                    int offsetY = (before.Height - rotated.Height) / 2;
+                    gAfter.DrawImage(rotated, new Rectangle(offsetX, offsetY, rotated.Width, rotated.Height));
+                }
+
+                using (var g = Graphics.FromImage(pictureBox1.Image))
+                {
+                    g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                    g.DrawImage(after, clampedSelection);
+                }
+
+                PushUndoStep(clampedSelection, before, after, selectionBefore, Selection);
+                MarkDirtyAndNotify();
+                UpdateCommandUI();
+                UpdateStatusBar();
+                pictureBox1.Invalidate();
+            }
+            catch
+            {
+                before.Dispose();
+                rotated?.Dispose();
+                after?.Dispose();
+                throw;
+            }
+            finally
+            {
+                rotated?.Dispose();
             }
         }
 
