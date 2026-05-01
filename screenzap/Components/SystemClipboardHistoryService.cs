@@ -89,6 +89,8 @@ namespace screenzap.Components
 
             if (result == null || result.Status.ToString() != "Success")
             {
+                var status = result == null ? "null" : result.Status.ToString();
+                Logger.Log($"WinRT GetHistoryItemsAsync returned non-success status: {status}");
                 return;
             }
 
@@ -133,6 +135,22 @@ namespace screenzap.Components
                     var item = ClipboardHistoryItem.FromText(text ?? string.Empty);
                     item.AssignSystemHistoryId(sys.Id);
                     return (sys.Id, item);
+                }
+
+                // Preserve recency/order visibility even for clipboard entries we cannot edit directly.
+                // We represent unsupported WinRT formats as lightweight text placeholders.
+                var availableFormats = dp.AvailableFormats;
+                if (availableFormats != null && availableFormats.Count > 0)
+                {
+                    var summary = string.Join(", ", availableFormats.Take(6));
+                    if (availableFormats.Count > 6)
+                    {
+                        summary += ", ...";
+                    }
+
+                    var placeholder = ClipboardHistoryItem.FromText($"[Unsupported clipboard item: {summary}]");
+                    placeholder.AssignSystemHistoryId(sys.Id);
+                    return (sys.Id, placeholder);
                 }
             }
             catch (Exception ex)
