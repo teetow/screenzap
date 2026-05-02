@@ -307,11 +307,22 @@ namespace screenzap.Components
             maxWidth = Math.Max(1, maxWidth);
             maxHeight = Math.Max(1, maxHeight);
 
+            using var perf = LoggerPerfScope(maxWidth, maxHeight);
+
             var previous = Thumbnail;
             Thumbnail = Kind == ClipboardItemKind.Image
                 ? RenderImageThumbnail(PreviewComposite ?? CurrentImage, maxWidth, maxHeight)
                 : RenderTextThumbnail(CurrentText ?? string.Empty, maxWidth, maxHeight);
             previous?.Dispose();
+        }
+
+        private IDisposable LoggerPerfScope(int maxWidth, int maxHeight)
+        {
+            return lib.PerfTrace.Scope(
+                "ClipboardHistoryItem.RebuildThumbnail",
+                () => $"kind={Kind} max={maxWidth}x{maxHeight}",
+                slowMs: 20,
+                summaryEvery: 100);
         }
 
         private static Bitmap RenderImageThumbnail(Bitmap? source, int maxWidth, int maxHeight)

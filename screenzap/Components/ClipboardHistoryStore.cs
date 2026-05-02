@@ -23,6 +23,9 @@ namespace screenzap.Components
         /// <summary>Fired whenever the ordered list of items changes (add/remove/activate/update).</summary>
         public event EventHandler? Changed;
 
+        /// <summary>Fired when only the active item changed.</summary>
+        public event EventHandler? ActiveItemChanged;
+
         /// <summary>Fired when a specific item's content/dirty flag changed and thumbnails should be refreshed.</summary>
         public event EventHandler<ClipboardHistoryItem>? ItemUpdated;
 
@@ -67,8 +70,13 @@ namespace screenzap.Components
 
         public void Activate(ClipboardHistoryItem? item)
         {
+            if (ReferenceEquals(activeItem, item))
+            {
+                return;
+            }
+
             activeItem = item;
-            Changed?.Invoke(this, EventArgs.Empty);
+            ActiveItemChanged?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>Notify the store that the active item's current image changed (editor edit).</summary>

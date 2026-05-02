@@ -81,6 +81,11 @@ namespace screenzap
                 return false;
             }
 
+            using var perf = PerfTrace.Scope(
+                "ImageEditor.BuildCensorPreviewBuffer",
+                () => $"size={imageSize.Width}x{imageSize.Height} regions={censorRegions.Count}",
+                slowMs: 80);
+
             var working = new Bitmap(imageSize.Width, imageSize.Height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(working))
             {
@@ -725,6 +730,11 @@ namespace screenzap
 
         private Bitmap GenerateCensoredBitmap(Bitmap source, Rectangle selectionBounds)
         {
+            using var perf = PerfTrace.Scope(
+                "ImageEditor.GenerateCensoredBitmap",
+                () => $"size={source.Width}x{source.Height} selection={selectionBounds.Width}x{selectionBounds.Height}@{selectionBounds.X},{selectionBounds.Y}",
+                slowMs: 40);
+
             var target = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
             var lockRect = new Rectangle(0, 0, source.Width, source.Height);
 

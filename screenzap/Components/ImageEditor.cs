@@ -1260,6 +1260,11 @@ namespace screenzap
 
         private static Bitmap CreateOptimizedForTextCopy(Bitmap source)
         {
+            using var perf = PerfTrace.Scope(
+                "ImageEditor.CreateOptimizedForTextCopy",
+                () => $"size={source.Width}x{source.Height} blurRadius={OptimizeTextBlurRadius}",
+                slowMs: 60);
+
             using var original = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(original))
             {
@@ -1316,6 +1321,11 @@ namespace screenzap
 
         private static byte[] ApplyGaussianBlur(byte[] source, int width, int height, int stride, int radius)
         {
+            using var perf = PerfTrace.Scope(
+                "ImageEditor.ApplyGaussianBlur",
+                () => $"size={width}x{height} radius={radius}",
+                slowMs: 40);
+
             var kernel = BuildGaussianKernel(radius);
             int pixelCount = width * height;
             var tempB = new float[pixelCount];
@@ -1667,6 +1677,11 @@ namespace screenzap
             {
                 throw new InvalidOperationException("No image is currently loaded.");
             }
+
+            using var perf = PerfTrace.Scope(
+                "ImageEditor.BuildCompositeImage",
+                () => $"size={pictureBox1.Image.Width}x{pictureBox1.Image.Height} shapes={annotationShapes.Count} text={textAnnotations.Count}",
+                slowMs: 50);
 
             var composite = new Bitmap(pictureBox1.Image);
 
@@ -3000,6 +3015,12 @@ namespace screenzap
         void IClipboardDocumentPresenter.StashHistoryItemState(ClipboardHistoryItem item)
         {
             if (item == null) return;
+
+            using var perf = PerfTrace.Scope(
+                "ImageEditor.StashHistoryItemState",
+                () => $"dirty={item.IsDirty} hasImage={HasEditableImage}",
+                slowMs: 80);
+
             // Preserve base image unflattened so annotations remain editable after round-trip.
             if (HasEditableImage && pictureBox1?.Image is Bitmap baseImage)
             {
@@ -3027,6 +3048,10 @@ namespace screenzap
         {
             if (pictureBox1?.Image is Bitmap && HasEditableImage)
             {
+                using var perf = PerfTrace.Scope(
+                    "ImageEditor.GetCurrentContent",
+                    () => $"size={pictureBox1.Image.Width}x{pictureBox1.Image.Height}",
+                    slowMs: 80);
                 return BuildCompositeImage();
             }
             return null;

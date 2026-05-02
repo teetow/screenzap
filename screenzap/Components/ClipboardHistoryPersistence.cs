@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using screenzap.lib;
 
 namespace screenzap.Components
 {
@@ -21,6 +22,11 @@ namespace screenzap.Components
         {
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             rootDirectory = Path.Combine(localAppData, "Screenzap", "ClipboardHistory", "v1");
+        }
+
+        internal ClipboardHistoryPersistence(string persistenceDirectory)
+        {
+            rootDirectory = persistenceDirectory;
         }
 
         public (List<ClipboardHistoryItem> Items, Guid? ActiveItemId) Load()
@@ -67,6 +73,11 @@ namespace screenzap.Components
 
         public void Save(IReadOnlyList<ClipboardHistoryItem> items, ClipboardHistoryItem? activeItem)
         {
+            using var perf = PerfTrace.Scope(
+                "ClipboardHistoryPersistence.Save",
+                () => $"items={items.Count} active={(activeItem != null)}",
+                slowMs: 80);
+
             try
             {
                 Directory.CreateDirectory(rootDirectory);
@@ -99,6 +110,44 @@ namespace screenzap.Components
                         File.Delete(file);
                     }
                 }
+            }
+            catch
+            {
+                // Persistence must not break editing workflow.
+            }
+        }
+
+        public void SaveActiveItemOnly(Guid? activeItemId)
+        {
+            using var perf = PerfTrace.Scope(
+                "ClipboardHistoryPersistence.SaveActiveItemOnly",
+                () => $"active={(activeItemId.HasValue ? activeItemId.Value.ToString("N") : "none")}",
+                slowMs: 30,
+                summaryEvery: 50);
+
+            try
+            {
+                Directory.CreateDirectory(rootDirectory);
+                var manifestPath = Path.Combine(rootDirectory, ManifestFileName);
+                ClipboardHistoryManifest manifest;
+
+                if (File.Exists(manifestPath))
+                {
+                    var json = File.ReadAllText(manifestPath);
+                    manifest = JsonSerializer.Deserialize<ClipboardHistoryManifest>(json, jsonOptions) ?? new ClipboardHistoryManifest();
+                }
+                else
+                {
+                    manifest = new ClipboardHistoryManifest();
+                }
+
+                manifest.ActiveItemId = activeItemId;
+
+                var tmpPath = manifestPath + ".tmp";
+                var updatedJson = JsonSerializer.Serialize(manifest, jsonOptions);
+                File.WriteAllText(tmpPath, updatedJson);
+                File.Copy(tmpPath, manifestPath, overwrite: true);
+                File.Delete(tmpPath);
             }
             catch
             {
@@ -143,6 +192,12 @@ namespace screenzap.Components
             {
                 return null;
             }
+
+            using var perf = PerfTrace.Scope(
+                "ClipboardHistoryPersistence.SaveImage",
+                () => $"role={role} size={image.Width}x{image.Height}",
+                slowMs: 30,
+                summaryEvery: 50);
 
             var fileName = $"{itemId:N}_{role}.png";
             var path = Path.Combine(rootDirectory, fileName);

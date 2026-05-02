@@ -130,11 +130,13 @@ namespace screenzap.Components
             if (this.store != null)
             {
                 this.store.Changed -= OnStoreChanged;
+                this.store.ActiveItemChanged -= OnActiveItemChanged;
                 this.store.ItemUpdated -= OnItemUpdated;
             }
 
             this.store = store;
             store.Changed += OnStoreChanged;
+            store.ActiveItemChanged += OnActiveItemChanged;
             store.ItemUpdated += OnItemUpdated;
             RebuildAll();
         }
@@ -147,6 +149,17 @@ namespace screenzap.Components
                 return;
             }
             RebuildAll();
+        }
+
+        private void OnActiveItemChanged(object? sender, EventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(UpdateActiveSelection));
+                return;
+            }
+
+            UpdateActiveSelection();
         }
 
         private void OnItemUpdated(object? sender, ClipboardHistoryItem item)
@@ -166,6 +179,25 @@ namespace screenzap.Components
             {
                 btn.Rebind(item, ReferenceEquals(store?.ActiveItem, item));
                 btn.Invalidate();
+            }
+        }
+
+        private void UpdateActiveSelection()
+        {
+            if (store == null)
+            {
+                return;
+            }
+
+            foreach (var item in store.Items)
+            {
+                if (!buttons.TryGetValue(item.Id, out var btn))
+                {
+                    continue;
+                }
+
+                bool isActive = ReferenceEquals(store.ActiveItem, item);
+                btn.Rebind(item, isActive);
             }
         }
 
@@ -293,6 +325,7 @@ namespace screenzap.Components
             private readonly ToolStripMenuItem duplicateItem;
             private readonly ToolStripMenuItem revertItem;
             private readonly ToolStripMenuItem deleteItem;
+            private Bitmap? lastThumbnail;
 
             public Action<ClipboardHistoryItem>? OnSetActive;
             public Action<ClipboardHistoryItem>? OnDuplicate;
@@ -332,13 +365,30 @@ namespace screenzap.Components
 
             public void Rebind(ClipboardHistoryItem item, bool active)
             {
+                bool changed = !ReferenceEquals(Item, item) || isActive != active;
                 Item = item;
                 isActive = active;
+                var currentThumb = item.Thumbnail;
+                if (!ReferenceEquals(lastThumbnail, currentThumb))
+                {
+                    lastThumbnail = currentThumb;
+                    changed = true;
+                }
+
                 if (item.Thumbnail is Bitmap thumb)
                 {
-                    Size = new Size(thumb.Width + 8, thumb.Height + 8);
+                    var newSize = new Size(thumb.Width + 8, thumb.Height + 8);
+                    if (Size != newSize)
+                    {
+                        Size = newSize;
+                        changed = true;
+                    }
                 }
-                Invalidate();
+
+                if (changed)
+                {
+                    Invalidate();
+                }
             }
 
             protected override void OnPaint(PaintEventArgs e)

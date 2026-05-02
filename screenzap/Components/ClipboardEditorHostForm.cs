@@ -79,6 +79,7 @@ namespace screenzap.Components
             historyPanel.SetShowTextItems(Properties.Settings.Default.clipboardHistoryShowTextItems);
             historyStore.ItemUpdated += OnStoreItemUpdated;
             historyStore.Changed += OnStoreChanged;
+            historyStore.ActiveItemChanged += OnActiveItemChanged;
 
             InitializeComponent();
             ApplyPersistedHistoryPanelWidth();
@@ -628,6 +629,17 @@ namespace screenzap.Components
             }
 
             SavePersistedHistory();
+        }
+
+        private void OnActiveItemChanged(object? sender, EventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<object?, EventArgs>(OnActiveItemChanged), sender, e);
+                return;
+            }
+
+            historyPersistence.SaveActiveItemOnly(historyStore.ActiveItem?.Id);
         }
 
         private void OnHistoryItemActivated(object? sender, ClipboardHistoryItem item)
