@@ -704,7 +704,7 @@ namespace screenzap
                         MouseOutPixel = cursorPixel;
 
                     }
-                    if (ModifierKeys.HasFlag(Keys.ControlKey))
+                    if (ModifierKeys.HasFlag(Keys.Control))
                     {
                         var delta = MouseOutPixel.Subtract(MouseInPixel);
                         delta = new Point(
@@ -712,7 +712,7 @@ namespace screenzap
                             (int)(Math.Round(delta.Y / 16.0) * 16)
                         );
 
-                        MouseOutPixel = delta;
+                        MouseOutPixel = MouseInPixel.Add(delta);
                     }
                     UpdateRubberBandStatus();
                     pictureBox1.Invalidate();

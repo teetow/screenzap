@@ -21,27 +21,30 @@ namespace Screenzap.ViewportTests
             {
                 screenzap.Properties.Settings.Default.captureFolder = tempRoot;
 
-                using var editor = new screenzap.ImageEditor();
-                using var source = new Bitmap(32, 24);
-                editor.LoadImage(source);
+                StaTest.Run(() =>
+                {
+                    using var editor = new screenzap.ImageEditor();
+                    using var source = new Bitmap(32, 24);
+                    editor.LoadImage(source);
 
-                Assert.True(editor.ExecuteSaveForDiagnostics());
+                    Assert.True(editor.ExecuteSaveForDiagnostics());
 
-                var filesAfterFirstSave = Directory.GetFiles(tempRoot, "*.png");
-                Assert.Single(filesAfterFirstSave);
+                    var filesAfterFirstSave = Directory.GetFiles(tempRoot, "*.png");
+                    Assert.Single(filesAfterFirstSave);
 
-                string firstFile = filesAfterFirstSave[0];
-                string fileName = Path.GetFileName(firstFile);
-                Assert.Matches(new Regex(@"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:_\d+)?\.png$"), fileName);
+                    string firstFile = filesAfterFirstSave[0];
+                    string fileName = Path.GetFileName(firstFile);
+                    Assert.Matches(new Regex(@"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:_\d+)?\.png$"), fileName);
 
-                DateTime firstWriteUtc = File.GetLastWriteTimeUtc(firstFile);
+                    DateTime firstWriteUtc = File.GetLastWriteTimeUtc(firstFile);
 
-                Assert.True(editor.ExecuteSaveForDiagnostics());
+                    Assert.True(editor.ExecuteSaveForDiagnostics());
 
-                var filesAfterSecondSave = Directory.GetFiles(tempRoot, "*.png");
-                Assert.Single(filesAfterSecondSave);
-                Assert.Equal(firstFile, filesAfterSecondSave.Single());
-                Assert.True(File.GetLastWriteTimeUtc(firstFile) >= firstWriteUtc);
+                    var filesAfterSecondSave = Directory.GetFiles(tempRoot, "*.png");
+                    Assert.Single(filesAfterSecondSave);
+                    Assert.Equal(firstFile, filesAfterSecondSave.Single());
+                    Assert.True(File.GetLastWriteTimeUtc(firstFile) >= firstWriteUtc);
+                });
             }
             finally
             {
@@ -67,20 +70,23 @@ namespace Screenzap.ViewportTests
 
             try
             {
-                using var editor = new screenzap.ImageEditor();
-                using var source = new Bitmap(20, 10);
-                editor.LoadImage(source);
+                StaTest.Run(() =>
+                {
+                    using var editor = new screenzap.ImageEditor();
+                    using var source = new Bitmap(20, 10);
+                    editor.LoadImage(source);
 
-                string saveAsPath = Path.Combine(tempRoot, "custom-name.png");
-                Assert.True(editor.ExecuteSaveAsForDiagnostics(saveAsPath));
-                Assert.True(File.Exists(saveAsPath));
+                    string saveAsPath = Path.Combine(tempRoot, "custom-name.png");
+                    Assert.True(editor.ExecuteSaveAsForDiagnostics(saveAsPath));
+                    Assert.True(File.Exists(saveAsPath));
 
-                DateTime afterSaveAsUtc = File.GetLastWriteTimeUtc(saveAsPath);
+                    DateTime afterSaveAsUtc = File.GetLastWriteTimeUtc(saveAsPath);
 
-                Assert.True(editor.ExecuteSaveForDiagnostics());
-                Assert.True(File.Exists(saveAsPath));
-                Assert.True(File.GetLastWriteTimeUtc(saveAsPath) >= afterSaveAsUtc);
-                Assert.Single(Directory.GetFiles(tempRoot, "*.png"));
+                    Assert.True(editor.ExecuteSaveForDiagnostics());
+                    Assert.True(File.Exists(saveAsPath));
+                    Assert.True(File.GetLastWriteTimeUtc(saveAsPath) >= afterSaveAsUtc);
+                    Assert.Single(Directory.GetFiles(tempRoot, "*.png"));
+                });
             }
             finally
             {

@@ -33,6 +33,8 @@ namespace screenzap.Components
         internal bool SuppressActivation { get; set; }
         internal Func<ClipboardHistoryItem, Task<bool>>? TryDeleteFromSystemHistoryAsync { get; set; }
         internal Func<Task>? RefreshSystemHistoryAsync { get; set; }
+        internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
+        internal Func<string, bool>? ClipboardTextWriterForDiagnostics { get; set; }
         /// <summary>When true, a clipboard event arriving via the store won't override the currently-active dirty item.</summary>
         internal bool IsHostVisibleForAutoSwitch => Visible && !SuppressActivation;
         internal ClipboardHistoryStore HistoryStore => historyStore;
@@ -655,10 +657,34 @@ namespace screenzap.Components
             BeginInternalClipboardWrite();
             try
             {
-                if (item.Kind == ClipboardItemKind.Image && item.CurrentImage != null)
-                    Clipboard.SetImage(item.CurrentImage);
+                if (item.Kind == ClipboardItemKind.Image)
+                {
+                    // Prefer composited preview so annotation/text-overlay edits are preserved in Set as Active.
+                    var imageToWrite = item.PreviewComposite ?? item.CurrentImage;
+                    if (imageToWrite != null)
+                    {
+                        if (ClipboardImageWriterForDiagnostics != null)
+                        {
+                            using var copy = new Bitmap(imageToWrite);
+                            ClipboardImageWriterForDiagnostics(copy);
+                        }
+                        else
+                        {
+                            Clipboard.SetImage(imageToWrite);
+                        }
+                    }
+                }
                 else if (item.Kind == ClipboardItemKind.Text && item.CurrentText != null)
-                    Clipboard.SetText(item.CurrentText);
+                {
+                    if (ClipboardTextWriterForDiagnostics != null)
+                    {
+                        ClipboardTextWriterForDiagnostics(item.CurrentText);
+                    }
+                    else
+                    {
+                        Clipboard.SetText(item.CurrentText);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -670,7 +696,11 @@ namespace screenzap.Components
 
         private void DuplicateItem(ClipboardHistoryItem item)
         {
-            activePresenter?.StashHistoryItemState(item);
+            if (ReferenceEquals(historyStore.ActiveItem, item))
+            {
+                activePresenter?.StashHistoryItemState(item);
+            }
+
             var clone = historyStore.DuplicateAbove(item);
             ActivateHistoryItem(clone);
             UpdateStatusText("Duplicated.");

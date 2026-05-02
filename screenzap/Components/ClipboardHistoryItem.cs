@@ -213,6 +213,7 @@ namespace screenzap.Components
             UndoSnapshot = null;
             Annotations = null;
             TextAnnotations = null;
+            SetPreviewComposite(null);
             RebuildThumbnail();
         }
 

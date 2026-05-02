@@ -2243,11 +2243,10 @@ namespace screenzap
             PushUndoStep(Rectangle.Empty, beforeImage, new Bitmap(rotated), selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
 
             MarkDirtyAndNotify();
-            ResizeWindowToImage(rotated.Size);
+            RecenterViewportAfterImageChange(resizeWindow: true);
             UpdateCommandUI();
             UpdateStatusBar();
             pictureBox1.Invalidate();
-            _ = width;
             return true;
         }
 
