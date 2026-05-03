@@ -11,7 +11,7 @@ namespace screenzap
 
     internal sealed class ImageUndoStep : IUndoStep
     {
-        public ImageUndoStep(Rectangle region, Bitmap? before, Bitmap? after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage, List<AnnotationShape>? shapesBefore, List<AnnotationShape>? shapesAfter, List<TextAnnotation>? textsBefore = null, List<TextAnnotation>? textsAfter = null)
+        public ImageUndoStep(Rectangle region, Bitmap? before, Bitmap? after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage, List<AnnotationShape>? shapesBefore, List<AnnotationShape>? shapesAfter, List<TextAnnotation>? textsBefore = null, List<TextAnnotation>? textsAfter = null, List<ImageLayer>? layersBefore = null, List<ImageLayer>? layersAfter = null)
         {
             Region = region;
             Before = before;
@@ -23,6 +23,8 @@ namespace screenzap
             ShapesAfter = shapesAfter;
             TextsBefore = textsBefore;
             TextsAfter = textsAfter;
+            LayersBefore = layersBefore;
+            LayersAfter = layersAfter;
         }
 
         public Rectangle Region { get; }
@@ -35,11 +37,24 @@ namespace screenzap
         public List<AnnotationShape>? ShapesAfter { get; }
         public List<TextAnnotation>? TextsBefore { get; }
         public List<TextAnnotation>? TextsAfter { get; }
+        public List<ImageLayer>? LayersBefore { get; }
+        public List<ImageLayer>? LayersAfter { get; }
 
         public void Dispose()
         {
             Before?.Dispose();
             After?.Dispose();
+            DisposeLayerList(LayersBefore);
+            DisposeLayerList(LayersAfter);
+        }
+
+        private static void DisposeLayerList(List<ImageLayer>? layers)
+        {
+            if (layers == null) return;
+            foreach (var layer in layers)
+            {
+                layer.Dispose();
+            }
         }
     }
 
@@ -154,7 +169,9 @@ namespace screenzap
                     image.ShapesBefore?.Select(shape => shape.Clone()).ToList(),
                     image.ShapesAfter?.Select(shape => shape.Clone()).ToList(),
                     image.TextsBefore?.Select(text => text.Clone()).ToList(),
-                    image.TextsAfter?.Select(text => text.Clone()).ToList());
+                    image.TextsAfter?.Select(text => text.Clone()).ToList(),
+                    image.LayersBefore?.Select(layer => layer.Clone()).ToList(),
+                    image.LayersAfter?.Select(layer => layer.Clone()).ToList());
             }
 
             if (step is TextAnnotationUndoStep text)

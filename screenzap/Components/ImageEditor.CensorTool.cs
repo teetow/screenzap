@@ -569,15 +569,19 @@ namespace screenzap
             return snapshot;
         }
 
-        private void PushUndoStep(Rectangle region, Bitmap? before, Bitmap? after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage = false, List<AnnotationShape>? shapesBefore = null, List<AnnotationShape>? shapesAfter = null)
+        private void PushUndoStep(Rectangle region, Bitmap? before, Bitmap? after, Rectangle selectionBefore, Rectangle selectionAfter, bool replacesImage = false, List<AnnotationShape>? shapesBefore = null, List<AnnotationShape>? shapesAfter = null, List<TextAnnotation>? textsBefore = null, List<TextAnnotation>? textsAfter = null, List<ImageLayer>? layersBefore = null, List<ImageLayer>? layersAfter = null)
         {
             bool hasBitmapChange = before != null && after != null;
             bool hasShapeChange = shapesBefore != null && shapesAfter != null;
+            bool hasTextChange = textsBefore != null && textsAfter != null;
+            bool hasLayerChange = layersBefore != null && layersAfter != null;
 
-            if (!hasBitmapChange && !hasShapeChange)
+            if (!hasBitmapChange && !hasShapeChange && !hasTextChange && !hasLayerChange)
             {
                 before?.Dispose();
                 after?.Dispose();
+                DisposeOrphanedLayers(layersBefore);
+                DisposeOrphanedLayers(layersAfter);
                 return;
             }
 
@@ -585,11 +589,22 @@ namespace screenzap
             {
                 before?.Dispose();
                 after?.Dispose();
+                DisposeOrphanedLayers(layersBefore);
+                DisposeOrphanedLayers(layersAfter);
                 return;
             }
 
-            undoStack.Push(new ImageUndoStep(region, before, after, selectionBefore, selectionAfter, replacesImage, shapesBefore, shapesAfter));
+            undoStack.Push(new ImageUndoStep(region, before, after, selectionBefore, selectionAfter, replacesImage, shapesBefore, shapesAfter, textsBefore, textsAfter, layersBefore, layersAfter));
             MarkDirtyAndNotify();
+        }
+
+        private static void DisposeOrphanedLayers(List<ImageLayer>? layers)
+        {
+            if (layers == null) return;
+            foreach (var layer in layers)
+            {
+                layer.Dispose();
+            }
         }
 
         private void ApplyUndoStep(IUndoStep step, bool applyAfterState)
@@ -668,6 +683,10 @@ namespace screenzap
             Selection = applyAfterState ? step.SelectionAfter : step.SelectionBefore;
             ApplyAnnotationState(shapeState);
             ApplyTextAnnotationState(textState);
+
+            var layerState = applyAfterState ? step.LayersAfter : step.LayersBefore;
+            ApplyLayerState(layerState);
+
             UpdateCommandUI();
             pictureBox1.Invalidate();
         }

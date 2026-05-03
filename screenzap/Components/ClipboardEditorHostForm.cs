@@ -441,6 +441,8 @@ namespace screenzap.Components
             }
         }
 
+        internal bool ExecuteCommandForDiagnostics(EditorCommandId commandId) => ExecuteCommand(commandId);
+
         private bool ExecuteCommand(EditorCommandId commandId)
         {
             switch (commandId)

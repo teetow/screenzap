@@ -572,6 +572,9 @@ namespace screenzap
             annotationTranslateModeActive = false;
             annotationDraftAnchorPixel = Point.Empty;
             
+            // Reset image layers (smart objects). Disposes owned bitmaps.
+            ClearImageLayers();
+
             // Reset text annotations
             textAnnotations.Clear();
             activeTextAnnotation = null;
@@ -1680,18 +1683,19 @@ namespace screenzap
 
             using var perf = PerfTrace.Scope(
                 "ImageEditor.BuildCompositeImage",
-                () => $"size={pictureBox1.Image.Width}x{pictureBox1.Image.Height} shapes={annotationShapes.Count} text={textAnnotations.Count}",
+                () => $"size={pictureBox1.Image.Width}x{pictureBox1.Image.Height} shapes={annotationShapes.Count} text={textAnnotations.Count} layers={imageLayers.Count}",
                 slowMs: 50);
 
             var composite = new Bitmap(pictureBox1.Image);
 
-            if (annotationShapes.Count == 0 && textAnnotations.Count == 0)
+            if (annotationShapes.Count == 0 && textAnnotations.Count == 0 && imageLayers.Count == 0)
             {
                 return composite;
             }
 
             using (var graphics = Graphics.FromImage(composite))
             {
+                DrawImageLayers(graphics, AnnotationSurface.Image);
                 DrawAnnotations(graphics, AnnotationSurface.Image);
                 DrawTextAnnotations(graphics, AnnotationSurface.Image);
             }
@@ -1848,6 +1852,12 @@ namespace screenzap
         internal bool PasteFromClipboardForDiagnostics()
         {
             return TryPasteImageFromClipboard();
+        }
+
+        internal void SetInternalClipboardImageForDiagnostics(Bitmap source)
+        {
+            internalClipboardImage?.Dispose();
+            internalClipboardImage = source == null ? null : new Bitmap(source);
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -2583,45 +2593,52 @@ namespace screenzap
                     return true;
                 }
 
-                var beforeImage = new Bitmap(pictureBox1.Image);
-                var afterImage = new Bitmap(pictureBox1.Image);
-                var selectionBefore = Selection;
-
-                var destination = !Selection.IsEmpty
-                    ? new Rectangle(Selection.Location, clipboardImage.Size)
-                    : new Rectangle(
-                        (afterImage.Width - clipboardImage.Width) / 2,
-                        (afterImage.Height - clipboardImage.Height) / 2,
+                // Non-destructive paste: drop the pasted image in as a smart layer rather than rasterizing.
+                // The base bitmap is captured in the undo step (ReplacesImage=true) so undoing across
+                // a future commit-flatten still walks back to the unflattened baseline.
+                var canvasSize = pictureBox1.Image.Size;
+                var frame = !Selection.IsEmpty
+                    ? new RectangleF(Selection.X, Selection.Y, clipboardImage.Width, clipboardImage.Height)
+                    : new RectangleF(
+                        (canvasSize.Width - clipboardImage.Width) / 2f,
+                        (canvasSize.Height - clipboardImage.Height) / 2f,
                         clipboardImage.Width,
                         clipboardImage.Height);
 
-                var imageBounds = new Rectangle(Point.Empty, afterImage.Size);
-                var clampedDestination = Rectangle.Intersect(imageBounds, destination);
-                if (clampedDestination.Width <= 0 || clampedDestination.Height <= 0)
-                {
-                    beforeImage.Dispose();
-                    afterImage.Dispose();
-                    return false;
-                }
+                var beforeImage = new Bitmap(pictureBox1.Image);
+                var afterImage = new Bitmap(pictureBox1.Image);
+                var selectionBefore = Selection;
+                var layersBefore = CloneLayers();
+                var annotationStateBefore = CloneAnnotations();
+                var textAnnotationStateBefore = CloneTextAnnotations();
 
-                var sourceRect = new Rectangle(
-                    clampedDestination.X - destination.X,
-                    clampedDestination.Y - destination.Y,
-                    clampedDestination.Width,
-                    clampedDestination.Height);
+                var newLayer = new ImageLayer(new Bitmap(clipboardImage), frame);
+                imageLayers.Add(newLayer);
 
-                using (var graphics = Graphics.FromImage(afterImage))
-                {
-                    graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                    graphics.DrawImage(clipboardImage, clampedDestination, sourceRect, GraphicsUnit.Pixel);
-                }
+                // Mirror the legacy paste contract: leave Selection sized over the layer footprint
+                // so the user can immediately act on it (e.g. crop, color adjustments). Layer
+                // selection UI is a Slice 2 concern.
+                var layerSelection = Rectangle.Round(frame);
+                layerSelection.Intersect(new Rectangle(Point.Empty, canvasSize));
+                Selection = layerSelection;
 
-                var appliedImage = new Bitmap(afterImage);
-                pictureBox1.Image.Dispose();
-                pictureBox1.Image = appliedImage;
-                Selection = clampedDestination;
+                var layersAfter = CloneLayers();
+                var annotationStateAfter = CloneAnnotations();
+                var textAnnotationStateAfter = CloneTextAnnotations();
 
-                PushUndoStep(Rectangle.Empty, beforeImage, afterImage, selectionBefore, Selection, true);
+                PushUndoStep(
+                    Rectangle.Empty,
+                    beforeImage,
+                    afterImage,
+                    selectionBefore,
+                    Selection,
+                    replacesImage: true,
+                    shapesBefore: annotationStateBefore,
+                    shapesAfter: annotationStateAfter,
+                    textsBefore: textAnnotationStateBefore,
+                    textsAfter: textAnnotationStateAfter,
+                    layersBefore: layersBefore,
+                    layersAfter: layersAfter);
 
                 isPlaceholderImage = false;
                 UpdateCommandUI();
@@ -3002,10 +3019,11 @@ namespace screenzap
         {
             if (item?.CurrentImage == null) return;
             LoadImage(item.CurrentImage);
-            // LoadImage clears the undo stack and annotations. Restore the stashed state.
+            // LoadImage clears the undo stack, annotations, and layers. Restore the stashed state.
             undoStack.RestoreState(item.UndoSnapshot);
             ApplyAnnotationState(item.Annotations);
             ApplyTextAnnotationState(item.TextAnnotations);
+            ApplyLayerState(item.ImageLayers);
             hasUnsavedChanges = item.IsDirty;
             UpdateCommandUI();
             pictureBox1?.Invalidate();
@@ -3026,9 +3044,10 @@ namespace screenzap
                 item.UpdateCurrentImageWithoutDirty(baseImage);
             }
 
-            // Clone annotations into the item.
+            // Clone annotations and layers into the item.
             item.Annotations = CloneAnnotations();
             item.TextAnnotations = CloneTextAnnotations();
+            item.ImageLayers = CloneLayers();
             item.UndoSnapshot = undoStack.ExtractState();
 
             // Generate a flattened preview composite just for the thumbnail.

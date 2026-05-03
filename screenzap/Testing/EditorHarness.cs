@@ -91,6 +91,186 @@ namespace screenzap.Testing
 
             ValidateViewportDiagnostics(imagePresenter, failures);
             ValidateSelectionDiagnostics(imagePresenter, failures);
+            ValidateImageLayerPasteFlow(host, imagePresenter, failures);
+        }
+
+        private static Bitmap CreateHarnessImage()
+        {
+            var bmp = new Bitmap(HarnessImageSize.Width, HarnessImageSize.Height);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.White);
+            }
+            return bmp;
+        }
+
+        private static void ValidateImageLayerPasteFlow(ClipboardEditorHostForm host, ImagePresenter editor, List<string> failures)
+        {
+            const string label = "Image layer paste";
+
+            // Seed a history item and activate it so commit has a target. TryShowClipboardData
+            // (used earlier) loads into the presenter but doesn't add to the history store.
+            using var seed = CreateHarnessImage();
+            var seededItem = host.HistoryStore.AddObservedImage(seed);
+            if (!host.ActivateHistoryItem(seededItem))
+            {
+                failures.Add($"{label}: failed to activate seeded history item.");
+                return;
+            }
+            ProcessPendingUi();
+
+            if (editor.ImageLayerCountForTests != 0)
+            {
+                failures.Add($"{label}: expected 0 layers before paste, got {editor.ImageLayerCountForTests}.");
+                return;
+            }
+
+            using var pasted = new Bitmap(20, 14);
+            using (var g = Graphics.FromImage(pasted))
+            {
+                g.Clear(Color.Magenta);
+            }
+            editor.SetInternalClipboardImageForDiagnostics(pasted);
+
+            if (!editor.PasteFromClipboardForDiagnostics())
+            {
+                failures.Add($"{label}: paste returned false.");
+                return;
+            }
+            ProcessPendingUi();
+
+            if (editor.ImageLayerCountForTests != 1)
+            {
+                failures.Add($"{label}: expected 1 layer after paste, got {editor.ImageLayerCountForTests}.");
+                return;
+            }
+
+            var frame = editor.GetImageLayerFrameForTests(0);
+            // Harness canvas is 96x64; 20x14 layer should center near (38,25).
+            if (Math.Abs(frame.X - 38f) > 0.5f || Math.Abs(frame.Y - 25f) > 0.5f)
+            {
+                failures.Add($"{label}: unexpected layer frame {frame}.");
+            }
+
+            using (var composite = editor.BuildCompositeImageForTests())
+            {
+                var center = composite.GetPixel(48, 32);
+                if (center.ToArgb() != Color.Magenta.ToArgb())
+                {
+                    failures.Add($"{label}: composite pixel at canvas center was {center}, expected Magenta — layer not baked.");
+                }
+                var corner = composite.GetPixel(0, 0);
+                if (corner.ToArgb() == Color.Magenta.ToArgb())
+                {
+                    failures.Add($"{label}: composite corner is Magenta — layer leaked outside its frame.");
+                }
+            }
+
+            // Commit through the real host pipeline (stash → flatten → MarkClean → reload).
+            if (!host.ExecuteCommandForDiagnostics(EditorCommandId.CommitEdits))
+            {
+                failures.Add($"{label}: CommitEdits returned false.");
+                return;
+            }
+            ProcessPendingUi();
+
+            if (editor.ImageLayerCountForTests != 0)
+            {
+                failures.Add($"{label}: expected 0 layers after commit, got {editor.ImageLayerCountForTests}.");
+            }
+
+            using (var afterCommit = editor.CloneBaseBitmapForTests())
+            {
+                if (afterCommit == null)
+                {
+                    failures.Add($"{label}: no base bitmap after commit.");
+                    return;
+                }
+                var center = afterCommit.GetPixel(48, 32);
+                if (center.ToArgb() != Color.Magenta.ToArgb())
+                {
+                    failures.Add($"{label}: post-commit base center was {center}, expected Magenta — flatten did not bake layer into baseline.");
+                }
+            }
+
+            // Undo across the commit boundary should unflatten: layer disappears, base reverts to pre-paste.
+            var presenter = (IClipboardDocumentPresenter)editor;
+            if (!presenter.CanExecute(EditorCommandId.Undo))
+            {
+                failures.Add($"{label}: undo not available after commit — UndoSnapshot lost.");
+                return;
+            }
+            if (!presenter.TryExecute(EditorCommandId.Undo))
+            {
+                failures.Add($"{label}: undo execution failed after commit.");
+                return;
+            }
+            ProcessPendingUi();
+
+            using (var afterUndo = editor.CloneBaseBitmapForTests())
+            {
+                if (afterUndo == null)
+                {
+                    failures.Add($"{label}: no base bitmap after undo.");
+                    return;
+                }
+                var center = afterUndo.GetPixel(48, 32);
+                if (center.ToArgb() == Color.Magenta.ToArgb())
+                {
+                    failures.Add($"{label}: post-undo base still Magenta at center — undo across commit failed to unflatten.");
+                }
+            }
+
+            Logger.Log($"{label} flow validated through host commit pipeline.");
+
+            // Validate the screen-surface paint at non-default zoom: the layer must shift with pan/zoom.
+            ValidateImageLayerScreenRender(editor, failures);
+        }
+
+        private static void ValidateImageLayerScreenRender(ImagePresenter editor, List<string> failures)
+        {
+            const string label = "Image layer screen render";
+
+            // Re-paste to get a layer back on the canvas.
+            using var pasted = new Bitmap(16, 16);
+            using (var g = Graphics.FromImage(pasted))
+            {
+                g.Clear(Color.Cyan);
+            }
+            editor.SetInternalClipboardImageForDiagnostics(pasted);
+            if (!editor.PasteFromClipboardForDiagnostics())
+            {
+                failures.Add($"{label}: paste returned false.");
+                return;
+            }
+            ProcessPendingUi();
+
+            // Render the screen-surface paint pass into an offscreen bitmap at 2x zoom.
+            var metrics = editor.ViewportDiagnostics;
+            using var screenBuffer = new Bitmap((int)metrics.ClientSize.Width, (int)metrics.ClientSize.Height);
+            using (var g = Graphics.FromImage(screenBuffer))
+            {
+                g.Clear(Color.Black);
+                editor.RenderScreenLayersForTests(g);
+            }
+
+            // Layer is centered on canvas (96x64), so its center sits at canvas (48,32).
+            // At zoom 1.0, screen position = pan + (48,32) * 1.
+            var sample = new Point(
+                (int)(metrics.PanOffset.X + 48),
+                (int)(metrics.PanOffset.Y + 32));
+            if (sample.X < 0 || sample.Y < 0 || sample.X >= screenBuffer.Width || sample.Y >= screenBuffer.Height)
+            {
+                failures.Add($"{label}: sample point {sample} fell outside screen buffer.");
+                return;
+            }
+            var pixel = screenBuffer.GetPixel(sample.X, sample.Y);
+            if (pixel.ToArgb() != Color.Cyan.ToArgb())
+            {
+                failures.Add($"{label}: expected Cyan at screen-space sample {sample}, got {pixel}.");
+            }
+
+            Logger.Log($"{label}: layer rendered correctly in screen surface at pan={metrics.PanOffset}.");
         }
 
         private static void ValidateViewportDiagnostics(ImagePresenter imagePresenter, List<string> failures)

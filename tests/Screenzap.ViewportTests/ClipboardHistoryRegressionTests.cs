@@ -1,5 +1,7 @@
 using System;
+using System.Drawing;
 using System.IO;
+using screenzap;
 using screenzap.Components;
 using Xunit;
 
@@ -79,6 +81,40 @@ namespace Screenzap.ViewportTests
                     // Best-effort cleanup for test artifacts.
                 }
             }
+        }
+
+        [Fact]
+        public void MarkClean_PreservesUndoSnapshot_SoUndoRemainsAvailableAfterCommit()
+        {
+            using var original = new Bitmap(4, 4);
+            using var edited = new Bitmap(4, 4);
+            using (var g = Graphics.FromImage(edited))
+            {
+                g.Clear(Color.Red);
+            }
+
+            using var item = ClipboardHistoryItem.FromImage(original);
+            item.UpdateCurrentImage(edited);
+            Assert.True(item.IsDirty);
+
+            var snapshot = new UndoRedo.Snapshot { Index = 0 };
+            snapshot.Steps.Add(new ImageUndoStep(
+                new Rectangle(0, 0, 4, 4),
+                new Bitmap(original),
+                new Bitmap(edited),
+                Rectangle.Empty,
+                Rectangle.Empty,
+                true,
+                null,
+                null));
+            item.UndoSnapshot = snapshot;
+
+            item.MarkClean();
+
+            Assert.False(item.IsDirty);
+            Assert.NotNull(item.UndoSnapshot);
+            Assert.Single(item.UndoSnapshot!.Steps);
+            Assert.Equal(0, item.UndoSnapshot.Index);
         }
     }
 }

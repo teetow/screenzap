@@ -827,6 +827,7 @@ namespace screenzap
                 }
             }
 
+            DrawImageLayers(e.Graphics, AnnotationSurface.Screen);
             DrawAnnotations(e.Graphics, AnnotationSurface.Screen);
             DrawTextAnnotations(e.Graphics, AnnotationSurface.Screen);
             DrawStraightenOverlay(e.Graphics);

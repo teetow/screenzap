@@ -84,6 +84,34 @@ namespace screenzap.Components
         /// <summary>Stashed text annotations for image items. Null if never touched.</summary>
         internal List<TextAnnotation>? TextAnnotations { get; set; }
 
+        private List<ImageLayer>? imageLayersBackingField;
+
+        /// <summary>
+        /// Stashed image layers (smart objects) for image items. Null if never touched.
+        /// The setter disposes the previously-held list so callers can simply assign a freshly-cloned list.
+        /// </summary>
+        internal List<ImageLayer>? ImageLayers
+        {
+            get => imageLayersBackingField;
+            set
+            {
+                if (!ReferenceEquals(imageLayersBackingField, value))
+                {
+                    DisposeImageLayerList(imageLayersBackingField);
+                }
+                imageLayersBackingField = value;
+            }
+        }
+
+        private static void DisposeImageLayerList(List<ImageLayer>? layers)
+        {
+            if (layers == null) return;
+            foreach (var layer in layers)
+            {
+                layer.Dispose();
+            }
+        }
+
         /// <summary>Optional composited preview (base image + annotations) used only for thumbnail rendering. Does not replace CurrentImage.</summary>
         internal Bitmap? PreviewComposite { get; private set; }
 
@@ -187,9 +215,12 @@ namespace screenzap.Components
                 CommittedText = CurrentText ?? string.Empty;
             }
 
-            UndoSnapshot = null;
+            // UndoSnapshot is intentionally preserved so undo/revert remain available after commit.
+            // Live annotations and layers are cleared because they're now baked into the flattened baseline;
+            // each undo step carries its own pre/post snapshot of those for restoration on undo.
             Annotations = null;
             TextAnnotations = null;
+            ImageLayers = null;
             SetPreviewComposite(null);
             IsDirty = false;
         }
@@ -213,6 +244,7 @@ namespace screenzap.Components
             UndoSnapshot = null;
             Annotations = null;
             TextAnnotations = null;
+            ImageLayers = null;
             SetPreviewComposite(null);
             RebuildThumbnail();
         }
@@ -244,6 +276,7 @@ namespace screenzap.Components
 
             clone.Annotations = Annotations?.Select(shape => shape.Clone()).ToList();
             clone.TextAnnotations = TextAnnotations?.Select(text => text.Clone()).ToList();
+            clone.ImageLayers = ImageLayers?.Select(layer => layer.Clone()).ToList();
             clone.UndoSnapshot = UndoRedo.CloneSnapshot(UndoSnapshot);
             clone.IsDirty = IsDirty;
             clone.RebuildThumbnail();
@@ -432,6 +465,7 @@ namespace screenzap.Components
             CurrentImage?.Dispose();
             PreviewComposite?.Dispose();
             Thumbnail?.Dispose();
+            ImageLayers = null; // setter disposes layer bitmaps
             OriginalImage = null;
             CommittedImage = null;
             CurrentImage = null;
