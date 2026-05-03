@@ -210,6 +210,63 @@ namespace Screenzap.ViewportTests
             }
         }
 
+        [Fact]
+        public void ThumbnailClick_ActivatesMatchingItem()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var panel = new ClipboardHistoryPanel();
+                    var store = new ClipboardHistoryStore();
+                    panel.AttachStore(store);
+
+                    var first = store.AddObservedText("first");
+                    var second = store.AddObservedText("second");
+                    var third = store.AddObservedText("third");
+
+                    ClipboardHistoryItem? activated = null;
+                    panel.ItemActivated += (_, item) => activated = item;
+
+                    var buttonsField = typeof(ClipboardHistoryPanel).GetField("buttons", BindingFlags.Instance | BindingFlags.NonPublic);
+                    Assert.NotNull(buttonsField);
+                    var buttons = buttonsField!.GetValue(panel);
+                    Assert.NotNull(buttons);
+
+                    var dictionaryType = buttons!.GetType();
+                    var tryGetValue = dictionaryType.GetMethod("TryGetValue");
+                    Assert.NotNull(tryGetValue);
+
+                    foreach (var item in new[] { first, second, third })
+                    {
+                        var args = new object?[] { item.Id, null };
+                        var found = (bool)tryGetValue!.Invoke(buttons, args)!;
+                        Assert.True(found);
+
+                        var button = args[1];
+                        Assert.NotNull(button);
+
+                        var onClick = button!.GetType().GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic);
+                        Assert.NotNull(onClick);
+                        onClick!.Invoke(button, new object[] { EventArgs.Empty });
+
+                        Assert.Same(item, activated);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
         private static void RunInSta(ThreadStart action)
         {
             Exception? failure = null;
