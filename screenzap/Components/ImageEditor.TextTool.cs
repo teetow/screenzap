@@ -1194,20 +1194,18 @@ namespace screenzap
                     FinalizeActiveTextAnnotation();
                 }
 
-                // Activate text tool if clicking on existing text
+                // Move-tool model: clicking on existing text in default mode just SELECTS it.
+                // The text tool only auto-activates when the user explicitly entered text mode
+                // (toolbar / shortcut). Double-click promotes to edit and engages the tool.
                 if (!isTextToolActive)
                 {
-                    isTextToolActive = true;
-                    UpdateTextToolButtons();
-                    UpdateTextToolbarVisibility();
-                    
-                    // Deactivate other drawing tools
-                    if (activeDrawingTool != DrawingTool.None)
-                    {
-                        activeDrawingTool = DrawingTool.None;
-                        CancelAnnotationPreview();
-                        UpdateDrawingToolButtons();
-                    }
+                    SelectTextAnnotation(hit);
+                    textDragOriginPixel = pixelPoint;
+                    isTextAnnotationDragging = true;
+                    textAnnotationChangedDuringDrag = false;
+                    textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                    pictureBox1?.Invalidate();
+                    return true;
                 }
 
                 textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
@@ -1521,7 +1519,13 @@ namespace screenzap
 
         private bool HandleTextToolKeyDown(KeyEventArgs e)
         {
-            if (!isTextToolActive)
+            // Move-tool model: object-selection key handling (Enter/Delete/Escape on a selected
+            // text) still works when the text tool isn't explicitly active. The tool only needs to
+            // be active for active text-editing or for creating new annotations.
+            bool inObjectSelectionMode = !isTextToolActive && selectedTextAnnotation != null
+                && (activeTextAnnotation == null || !activeTextAnnotation.IsEditing);
+
+            if (!isTextToolActive && !inObjectSelectionMode)
                 return false;
 
             if (!IsCanvasTextInputContext())
@@ -1557,11 +1561,18 @@ namespace screenzap
                     return true;
                 }
 
-                // Enter → enter text-edit mode
+                // Enter → enter text-edit mode. Activates the text tool implicitly so subsequent
+                // keystrokes are routed here (Move-mode entry path).
                 if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.F2)
                 {
                     if (textAnnotationSnapshotBeforeEdit == null)
                         textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                    if (!isTextToolActive)
+                    {
+                        isTextToolActive = true;
+                        UpdateTextToolButtons();
+                        UpdateTextToolbarVisibility();
+                    }
                     activeTextAnnotation = selectedTextAnnotation;
                     EnterTextEditMode(activeTextAnnotation);
                     e.Handled = true;

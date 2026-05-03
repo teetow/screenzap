@@ -225,6 +225,120 @@ namespace screenzap.Testing
 
             // Validate the screen-surface paint at non-default zoom: the layer must shift with pan/zoom.
             ValidateImageLayerScreenRender(editor, failures);
+
+            // Validate Move-tool selection / drag / resize / delete on a fresh layer.
+            ValidateImageLayerMoveTool(editor, failures);
+        }
+
+        private static void ValidateImageLayerMoveTool(ImagePresenter editor, List<string> failures)
+        {
+            const string label = "Image layer move-tool";
+
+            // Start clean: drop any leftover layers from prior validations by undoing back to baseline.
+            var presenter = (IClipboardDocumentPresenter)editor;
+            while (presenter.CanExecute(EditorCommandId.Undo))
+            {
+                if (!presenter.TryExecute(EditorCommandId.Undo)) break;
+            }
+            if (editor.ImageLayerCountForTests != 0)
+            {
+                failures.Add($"{label}: failed to clear pre-existing layers via undo (got {editor.ImageLayerCountForTests}).");
+                return;
+            }
+
+            using var pasted = new Bitmap(20, 14);
+            using (var g = Graphics.FromImage(pasted))
+            {
+                g.Clear(Color.Orange);
+            }
+            editor.SetInternalClipboardImageForDiagnostics(pasted);
+            if (!editor.PasteFromClipboardForDiagnostics())
+            {
+                failures.Add($"{label}: paste returned false.");
+                return;
+            }
+
+            var initialFrame = editor.GetImageLayerFrameForTests(0);
+
+            // Hit-test: click body should select.
+            var bodyPoint = new Point((int)(initialFrame.X + initialFrame.Width / 2), (int)(initialFrame.Y + initialFrame.Height / 2));
+            if (!editor.BeginLayerInteractionForTests(bodyPoint))
+            {
+                failures.Add($"{label}: body hit-test failed at {bodyPoint}.");
+                return;
+            }
+            if (editor.SelectedLayerIndexForTests != 0)
+            {
+                failures.Add($"{label}: expected selectedLayerIndex=0 after body hit, got {editor.SelectedLayerIndexForTests}.");
+                editor.EndLayerInteractionForTests();
+                return;
+            }
+
+            // Drag-translate.
+            editor.UpdateLayerInteractionForTests(new Point(bodyPoint.X + 7, bodyPoint.Y + 5));
+            var movedFrame = editor.GetImageLayerFrameForTests(0);
+            if (System.Math.Abs(movedFrame.X - (initialFrame.X + 7)) > 0.001f
+                || System.Math.Abs(movedFrame.Y - (initialFrame.Y + 5)) > 0.001f)
+            {
+                failures.Add($"{label}: drag translation incorrect (expected dx=7,dy=5 from {initialFrame}, got {movedFrame}).");
+                editor.EndLayerInteractionForTests();
+                return;
+            }
+            editor.EndLayerInteractionForTests();
+
+            // Undo restores frame.
+            if (!presenter.TryExecute(EditorCommandId.Undo))
+            {
+                failures.Add($"{label}: undo of drag returned false.");
+                return;
+            }
+            var afterUndo = editor.GetImageLayerFrameForTests(0);
+            if (System.Math.Abs(afterUndo.X - initialFrame.X) > 0.001f || System.Math.Abs(afterUndo.Y - initialFrame.Y) > 0.001f)
+            {
+                failures.Add($"{label}: undo did not restore translation (got {afterUndo}, expected {initialFrame}).");
+                return;
+            }
+
+            // Re-select then drag the bottom-right corner handle to resize.
+            if (!editor.BeginLayerInteractionForTests(bodyPoint))
+            {
+                failures.Add($"{label}: re-select body hit failed.");
+                return;
+            }
+            editor.EndLayerInteractionForTests();
+
+            var corner = new Point((int)initialFrame.Right, (int)initialFrame.Bottom);
+            if (!editor.BeginLayerInteractionForTests(corner))
+            {
+                failures.Add($"{label}: bottom-right handle hit failed at {corner}.");
+                return;
+            }
+            editor.UpdateLayerInteractionForTests(new Point(corner.X + 6, corner.Y + 4));
+            var resized = editor.GetImageLayerFrameForTests(0);
+            if (System.Math.Abs(resized.Width - (initialFrame.Width + 6)) > 0.001f
+                || System.Math.Abs(resized.Height - (initialFrame.Height + 4)) > 0.001f)
+            {
+                failures.Add($"{label}: resize incorrect (got W={resized.Width} H={resized.Height}, expected +6/+4 from {initialFrame.Width}x{initialFrame.Height}).");
+                editor.EndLayerInteractionForTests();
+                return;
+            }
+            editor.EndLayerInteractionForTests();
+
+            // Undo restores size.
+            if (!presenter.TryExecute(EditorCommandId.Undo))
+            {
+                failures.Add($"{label}: undo of resize returned false.");
+                return;
+            }
+            var afterResizeUndo = editor.GetImageLayerFrameForTests(0);
+            if (System.Math.Abs(afterResizeUndo.Width - initialFrame.Width) > 0.001f
+                || System.Math.Abs(afterResizeUndo.Height - initialFrame.Height) > 0.001f)
+            {
+                failures.Add($"{label}: undo did not restore resize.");
+                return;
+            }
+
+            Logger.Log($"{label}: select / translate / resize / undo flow OK.");
         }
 
         private static void ValidateImageLayerScreenRender(ImagePresenter editor, List<string> failures)

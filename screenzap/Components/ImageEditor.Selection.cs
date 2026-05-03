@@ -573,6 +573,23 @@ namespace screenzap
                 return;
             }
 
+            // Move-mode: in the default mode (no other tool active), clicking on an image layer
+            // (or its handle) selects it / starts drag-translate / starts drag-resize.
+            // Annotations and text annotations have already had their chance above; layers sit
+            // beneath them in the visual stack, so they hit-test last among content types.
+            if (e.Button == MouseButtons.Left && TryBeginLayerInteraction(cursorPixel))
+            {
+                base.OnMouseDown(e);
+                return;
+            }
+
+            // Click landed on empty canvas in Move mode → deselect any selected layer
+            // and fall through to the existing rubber-band/resize/pan behavior.
+            if (e.Button == MouseButtons.Left)
+            {
+                DeselectImageLayerIfAny();
+            }
+
             MouseInPixel = cursorPixel;
             MouseOutPixel = MouseInPixel;
 
@@ -640,6 +657,29 @@ namespace screenzap
             {
                 base.OnMouseMove(e);
                 return;
+            }
+
+            // Move-mode: drag-translate or drag-resize a selected layer.
+            if (isLayerInteractionActive && e.Button == MouseButtons.Left)
+            {
+                UpdateLayerInteraction(cursorPixel);
+                Cursor = CursorForLayerHandle(activeLayerHandle);
+                base.OnMouseMove(e);
+                return;
+            }
+
+            // Hover cursor feedback over a selected layer's handles / body.
+            if (e.Button == MouseButtons.None && HasSelectedLayer)
+            {
+                var hoverHandle = HitTestSelectedLayerHandle(cursorPixel);
+                if (hoverHandle != ImageLayerHandle.None)
+                {
+                    Cursor = CursorForLayerHandle(hoverHandle);
+                }
+                else if (HitTestLayerBody(cursorPixel) is int idx && idx == selectedLayerIndex)
+                {
+                    Cursor = Cursors.SizeAll;
+                }
             }
 
             if (e.Button == MouseButtons.Left)
@@ -779,6 +819,13 @@ namespace screenzap
                 return;
             }
 
+            if (isLayerInteractionActive && e.Button == MouseButtons.Left)
+            {
+                EndLayerInteraction();
+                base.OnMouseUp(e);
+                return;
+            }
+
             if (e.Button == MouseButtons.Left && isDrawingRubberBand)
             {
                 Selection = ClampToImage(GetNormalizedRect(MouseInPixel, MouseOutPixel));
@@ -830,6 +877,7 @@ namespace screenzap
             DrawImageLayers(e.Graphics, AnnotationSurface.Screen);
             DrawAnnotations(e.Graphics, AnnotationSurface.Screen);
             DrawTextAnnotations(e.Graphics, AnnotationSurface.Screen);
+            DrawSelectedLayerOverlay(e.Graphics);
             DrawStraightenOverlay(e.Graphics);
 
             if (isCensorToolActive && censorRegions.Count > 0)

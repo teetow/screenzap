@@ -1986,6 +1986,23 @@ namespace screenzap
                     e.Handled = true;
                     return;
                 }
+
+                if (DeselectImageLayerIfAny())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            if (e.KeyCode == Keys.Delete && HasSelectedLayer)
+            {
+                if (TryDeleteSelectedLayer())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
             }
 
             if (e.KeyCode == Keys.Delete && selectedAnnotation != null)
