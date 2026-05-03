@@ -29,6 +29,14 @@ namespace screenzap
                 return;
             }
 
+            if (IsUiCaptureRequested(args))
+            {
+                ConfigureApplication();
+                var exitCode = UiCaptureSession.Run();
+                Environment.Exit(exitCode);
+                return;
+            }
+
             mutex = new Mutex(true, mutexId);
 
             if (mutex.WaitOne(TimeSpan.Zero, true))
@@ -69,6 +77,21 @@ namespace screenzap
             var env = Environment.GetEnvironmentVariable("SCREENZAP_EDITOR_HARNESS");
             return string.Equals(env, "1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(env, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsUiCaptureRequested(string[] args)
+        {
+            if (args != null)
+            {
+                foreach (var arg in args)
+                {
+                    if (string.Equals(arg, "--ui-capture", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static void ConfigureApplication()
