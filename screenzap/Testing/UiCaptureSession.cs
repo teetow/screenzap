@@ -28,6 +28,7 @@ namespace screenzap.Testing
                 CaptureHistorySwitchFlow(outputDir);
                 CaptureTextAnnotationMoveModeFlow(outputDir);
                 CaptureZoomedPasteFlow(outputDir);
+                CaptureMultiCommitCycleFlow(outputDir);
             }
             catch (Exception ex)
             {
@@ -287,6 +288,41 @@ namespace screenzap.Testing
             kit.Drag(center, new Point(center.X + 12, center.Y + 8));
             Save(kit, outputDir, "zm-04-zoomed-after-drag");
             Logger.Log("After drag at zoom 2x: " + kit.Editor.TestDescribeState());
+        }
+
+        private static void CaptureMultiCommitCycleFlow(string outputDir)
+        {
+            Logger.Log("--- Multi-commit cycle flow ---");
+            using var kit = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+            kit.LoadCanvas(96, 64, Color.White);
+
+            // Cycle 1: paste red, commit.
+            using var red = MakeBitmap(20, 14, Color.Red);
+            kit.PasteImage(red);
+            Save(kit, outputDir, "mc-01-after-red-paste");
+            var ok1 = kit.Host!.ExecuteCommandForDiagnostics(Components.Shared.EditorCommandId.CommitEdits);
+            Logger.Log($"Cycle 1 commit: {ok1}, state={kit.Editor.TestDescribeState()}");
+            Save(kit, outputDir, "mc-02-after-cycle-1-commit");
+
+            // Cycle 2: paste blue ON TOP of the now-baked red, drag, commit.
+            using var blue = MakeBitmap(16, 10, Color.Blue);
+            kit.PasteImage(blue);
+            Save(kit, outputDir, "mc-03-after-blue-paste");
+            var f = kit.Editor.GetImageLayerFrameForTests(0);
+            kit.Drag(
+                new Point((int)(f.X + f.Width / 2), (int)(f.Y + f.Height / 2)),
+                new Point((int)(f.X + f.Width / 2 + 10), (int)(f.Y + f.Height / 2 + 5)));
+            Save(kit, outputDir, "mc-04-after-blue-drag");
+            var ok2 = kit.Host.ExecuteCommandForDiagnostics(Components.Shared.EditorCommandId.CommitEdits);
+            Logger.Log($"Cycle 2 commit: {ok2}, state={kit.Editor.TestDescribeState()}");
+            Save(kit, outputDir, "mc-05-after-cycle-2-commit");
+
+            // Undo the entire cycle 2 (drag + paste). Canvas should show only red+white from cycle 1.
+            kit.Press(Keys.Control | Keys.Z);
+            kit.Press(Keys.Control | Keys.Z);
+            kit.Press(Keys.Control | Keys.Z);
+            Save(kit, outputDir, "mc-06-after-3-undos");
+            Logger.Log($"After 3 undos: {kit.Editor.TestDescribeState()}");
         }
 
         private static Bitmap MakeBitmap(int width, int height, Color fill)
