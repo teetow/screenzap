@@ -426,6 +426,21 @@ namespace screenzap
             BeginInternalClipboardWriteSuppression(BuildImageClipboardSignature(image));
         }
 
+        /// <summary>
+        /// Called by the host before it writes a flattened image to the clipboard during commit.
+        /// Without this, the editor's clipboard observer treats the host's write as an external
+        /// change and auto-reloads (clobbering the just-restored undo stack).
+        /// </summary>
+        internal void TrackHostClipboardImageWrite(Image image)
+        {
+            BeginInternalClipboardWriteSuppression(BuildImageClipboardSignature(image));
+        }
+
+        internal void TrackHostClipboardTextWrite(string text)
+        {
+            BeginInternalClipboardWriteSuppression(BuildTextClipboardSignature(text));
+        }
+
         private void TrackInternalClipboardTextWrite(string text)
         {
             BeginInternalClipboardWriteSuppression(BuildTextClipboardSignature(text));
@@ -2631,13 +2646,12 @@ namespace screenzap
 
                 var newLayer = new ImageLayer(new Bitmap(clipboardImage), frame);
                 imageLayers.Add(newLayer);
+                SelectImageLayer(imageLayers.Count - 1);
 
-                // Mirror the legacy paste contract: leave Selection sized over the layer footprint
-                // so the user can immediately act on it (e.g. crop, color adjustments). Layer
-                // selection UI is a Slice 2 concern.
-                var layerSelection = Rectangle.Round(frame);
-                layerSelection.Intersect(new Rectangle(Point.Empty, canvasSize));
-                Selection = layerSelection;
+                // The image-region Selection is left untouched on paste. Earlier slices set it to
+                // the layer's footprint for a legacy test contract, but that produced a ghost
+                // marching-ants rectangle once the layer moved or resized.
+                ClearSelection();
 
                 var layersAfter = CloneLayers();
                 var annotationStateAfter = CloneAnnotations();

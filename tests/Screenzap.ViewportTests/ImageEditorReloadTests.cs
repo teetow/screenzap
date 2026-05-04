@@ -9,7 +9,7 @@ namespace Screenzap.ViewportTests
     public class ImageEditorReloadTests
     {
         [Fact]
-        public void SelectionCopy_PreservesSelection_ForInEditorPasteWorkflow()
+        public void SelectionCopy_PastedAtSelectionOrigin_AsLayer_ClearsImageRegionSelection()
         {
             StaTest.Run(() =>
             {
@@ -29,9 +29,18 @@ namespace Screenzap.ViewportTests
                 imageEditor.SetSelectionForDiagnostics(pasteTarget);
                 Assert.True(imageEditor.PasteFromClipboardForDiagnostics());
 
-                var pastedSelection = imageEditor.SelectionDiagnostics.Selection;
-                Assert.Equal(new Point(pasteTarget.X, pasteTarget.Y), pastedSelection.Location);
-                Assert.Equal(new Size(sourceSelection.Width, sourceSelection.Height), pastedSelection.Size);
+                // New contract (slice 1+2): paste creates a layer at the selection origin sized
+                // to the source. The image-region Selection is cleared so it doesn't ghost the
+                // layer's footprint when the layer is later moved or resized.
+                Assert.Equal(1, imageEditor.ImageLayerCountForTests);
+                var frame = imageEditor.GetImageLayerFrameForTests(0);
+                Assert.Equal(pasteTarget.X, (int)frame.X);
+                Assert.Equal(pasteTarget.Y, (int)frame.Y);
+                Assert.Equal(sourceSelection.Width, (int)frame.Width);
+                Assert.Equal(sourceSelection.Height, (int)frame.Height);
+
+                Assert.True(imageEditor.SelectionDiagnostics.Selection.IsEmpty);
+                Assert.Equal(0, imageEditor.SelectedLayerIndexForTests);
                 Assert.False(imageEditor.ClipboardHasPendingReloadForDiagnostics);
             });
         }

@@ -512,6 +512,21 @@ namespace screenzap.Components
 
             // Mark internal write so the system-history observer won't create a duplicate entry.
             BeginInternalClipboardWrite();
+
+            // Tell the editor itself to suppress its own auto-reload of this clipboard event,
+            // otherwise its observer treats the host's write as an external change and reloads
+            // the image — wiping the freshly-restored undo stack from item.UndoSnapshot.
+            if (flattened != null && activePresenter is screenzap.ImageEditor ie)
+            {
+                ie.TrackHostClipboardImageWrite(flattened);
+            }
+            else if (flattenedText != null && activePresenter is screenzap.TextEditor te)
+            {
+                // TextEditor has its own observer logic; if equivalent suppression hooks exist,
+                // wire them here. (Out of scope for this fix.)
+                _ = te;
+            }
+
             try
             {
                 if (flattened != null)
@@ -548,7 +563,8 @@ namespace screenzap.Components
             historyStore.MarkClean(item);
             TrackPendingCommittedItem(item.Id);
 
-            // Reload cleaned state into presenter; undo is intentionally flattened on commit.
+            // Reload cleaned state into presenter. UndoSnapshot is restored here so undo continues
+            // working after commit (per design: push to clipboard but keep undo/revert available).
             activePresenter?.LoadHistoryItem(item);
             UpdateCommandStates();
             UpdateStatusText("Edits committed to clipboard.");

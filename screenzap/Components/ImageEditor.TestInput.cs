@@ -129,6 +129,13 @@ namespace screenzap
             ClientSize = new Size(width, height);
         }
 
+        internal string TestDescribeUndoStack()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"canUndo={undoStack.CanUndo} canRedo={undoStack.CanRedo}");
+            return sb.ToString();
+        }
+
         internal string TestDescribeState()
         {
             var pb = pictureBox1;

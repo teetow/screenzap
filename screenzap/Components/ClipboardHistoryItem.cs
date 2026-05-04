@@ -78,6 +78,11 @@ namespace screenzap.Components
         /// <summary>Stashed undo state so re-activating this item restores its history.</summary>
         internal UndoRedo.Snapshot? UndoSnapshot { get; set; }
 
+        internal bool TestHasUndoSnapshot() => UndoSnapshot != null && UndoSnapshot.Steps.Count > 0;
+
+        internal string TestDescribeUndoSnapshot() =>
+            UndoSnapshot == null ? "null" : $"steps={UndoSnapshot.Steps.Count} index={UndoSnapshot.Index}";
+
         /// <summary>Stashed annotation state (arrow/rectangle shapes) for image items. Null if never touched.</summary>
         internal List<AnnotationShape>? Annotations { get; set; }
 

@@ -30,17 +30,14 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void HitTest_OnLayerBody_Selects()
+        public void Paste_AutoSelectsNewLayer()
         {
             StaTest.Run(() =>
             {
-                using var editor = PrepareEditorWithCenteredLayer(out var frame);
-                Assert.Equal(-1, editor.SelectedLayerIndexForTests);
-
-                var insidePoint = new Point((int)(frame.X + frame.Width / 2), (int)(frame.Y + frame.Height / 2));
-                Assert.True(editor.BeginLayerInteractionForTests(insidePoint));
+                using var editor = PrepareEditorWithCenteredLayer(out _);
+                // Figma model: paste leaves the new layer selected so the user can immediately
+                // drag/resize/delete without an extra click.
                 Assert.Equal(0, editor.SelectedLayerIndexForTests);
-                editor.EndLayerInteractionForTests();
             });
         }
 
@@ -49,8 +46,9 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = PrepareEditorWithCenteredLayer(out var frame);
-                var outsidePoint = new Point(2, 2); // top-left corner is outside a centered layer
+                using var editor = PrepareEditorWithCenteredLayer(out _);
+                editor.SetSelectedLayerForTests(-1);
+                var outsidePoint = new Point(2, 2);
                 Assert.False(editor.BeginLayerInteractionForTests(outsidePoint));
                 Assert.Equal(-1, editor.SelectedLayerIndexForTests);
             });
@@ -62,10 +60,12 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var editor = PrepareEditorWithCenteredLayer(out var frame);
-                var startPoint = new Point((int)(frame.X + 4), (int)(frame.Y + 4));
-                Assert.True(editor.BeginLayerInteractionForTests(startPoint));
+                // Click well inside the body (away from corner-handle tolerance) — paste pre-selects
+                // the layer, so a click within ~4 px of any corner is interpreted as a handle hit.
+                var bodyPoint = new Point((int)(frame.X + frame.Width / 2), (int)(frame.Y + frame.Height / 2));
+                Assert.True(editor.BeginLayerInteractionForTests(bodyPoint));
 
-                editor.UpdateLayerInteractionForTests(new Point(startPoint.X + 7, startPoint.Y + 5));
+                editor.UpdateLayerInteractionForTests(new Point(bodyPoint.X + 7, bodyPoint.Y + 5));
 
                 var movedFrame = editor.GetImageLayerFrameForTests(0);
                 Assert.Equal(frame.X + 7, movedFrame.X);
@@ -91,13 +91,7 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var editor = PrepareEditorWithCenteredLayer(out var frame);
-
-                // First select via body click...
-                var bodyPoint = new Point((int)(frame.X + frame.Width / 2), (int)(frame.Y + frame.Height / 2));
-                Assert.True(editor.BeginLayerInteractionForTests(bodyPoint));
-                editor.EndLayerInteractionForTests();
-
-                // ...then begin a fresh interaction at the bottom-right corner handle.
+                // Layer is pre-selected after paste; jump straight to a corner-handle drag.
                 var corner = new Point((int)frame.Right, (int)frame.Bottom);
                 Assert.True(editor.BeginLayerInteractionForTests(corner));
 
@@ -125,16 +119,13 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = PrepareEditorWithCenteredLayer(out var frame);
-                var insidePoint = new Point((int)(frame.X + 4), (int)(frame.Y + 4));
-                Assert.True(editor.BeginLayerInteractionForTests(insidePoint));
-                editor.EndLayerInteractionForTests();
+                using var editor = PrepareEditorWithCenteredLayer(out _);
                 Assert.Equal(0, editor.SelectedLayerIndexForTests);
 
                 var outside = new Point(2, 2);
                 Assert.False(editor.BeginLayerInteractionForTests(outside));
-                // Selection state itself is cleared by the host's MouseDown cascade
-                // (DeselectImageLayerIfAny). Assert the helper directly.
+                // The empty-click branch in pictureBox1_MouseDown calls DeselectImageLayerIfAny;
+                // the test-input partial bypasses that cascade so simulate the deselect directly.
                 editor.SetSelectedLayerForTests(-1);
                 Assert.Equal(-1, editor.SelectedLayerIndexForTests);
             });
@@ -148,9 +139,7 @@ namespace Screenzap.ViewportTests
                 using var editor = PrepareEditorWithCenteredLayer(out var frame);
 
                 var presenter = (IClipboardDocumentPresenter)editor;
-                // Paste already pushed an undo step. Track its current undoability.
-                var canUndoBefore = presenter.CanExecute(EditorCommandId.Undo);
-                Assert.True(canUndoBefore);
+                Assert.True(presenter.CanExecute(EditorCommandId.Undo));
                 Assert.True(presenter.TryExecute(EditorCommandId.Undo));
                 Assert.False(presenter.CanExecute(EditorCommandId.Undo));
                 Assert.True(presenter.TryExecute(EditorCommandId.Redo));
@@ -159,7 +148,6 @@ namespace Screenzap.ViewportTests
                 Assert.True(editor.BeginLayerInteractionForTests(bodyPoint));
                 editor.EndLayerInteractionForTests();
 
-                // No drag → no new undo step beyond the original paste step.
                 Assert.True(presenter.TryExecute(EditorCommandId.Undo));
                 Assert.False(presenter.CanExecute(EditorCommandId.Undo));
             });

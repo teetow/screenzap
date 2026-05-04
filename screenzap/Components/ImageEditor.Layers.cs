@@ -194,7 +194,23 @@ namespace screenzap
 
         private bool TryBeginLayerInteraction(Point pixelPoint)
         {
-            // Already-selected layer: handle hit takes priority over body.
+            // Hit-test priority (Figma-ish):
+            //  1. If the click is INSIDE the body of a layer that isn't the selected one,
+            //     switch selection to it. This wins over a selected layer's handle hit because
+            //     a body click on another layer is a clearer "I want that layer" gesture than
+            //     a fuzzy edge-tolerance match.
+            //  2. Otherwise, if the selected layer has a handle here, use it.
+            //  3. Otherwise, body hit on the selected layer (if any) starts a body drag.
+            var topMostBody = HitTestLayerBody(pixelPoint);
+
+            if (topMostBody != null && topMostBody.Value != selectedLayerIndex)
+            {
+                SelectImageLayer(topMostBody.Value);
+                activeLayerHandle = ImageLayerHandle.Body;
+                BeginInteraction(pixelPoint);
+                return true;
+            }
+
             var handle = HitTestSelectedLayerHandle(pixelPoint);
             if (handle != ImageLayerHandle.None)
             {
@@ -203,10 +219,10 @@ namespace screenzap
                 return true;
             }
 
-            var hit = HitTestLayerBody(pixelPoint);
-            if (hit != null)
+            if (topMostBody != null)
             {
-                SelectImageLayer(hit.Value);
+                // Body hit on the already-selected layer.
+                SelectImageLayer(topMostBody.Value);
                 activeLayerHandle = ImageLayerHandle.Body;
                 BeginInteraction(pixelPoint);
                 return true;
@@ -301,14 +317,21 @@ namespace screenzap
             }
 
             var layersAfter = CloneLayers();
-            // Layer-only undo step. PushUndoStep accepts null bitmaps when a layer change is supplied.
+
+            // Capture the base bitmap on every layer-only step too (ReplacesImage=true). This
+            // costs a bitmap clone per drag/resize but lets undo across a commit-flatten restore
+            // the unflattened baseline. Without it, undoing a layer-drag after commit shows the
+            // baked-in flattened layer plus the restored live layer (double render).
+            Bitmap? baseClone = pictureBox1?.Image is Bitmap b ? new Bitmap(b) : null;
+            Bitmap? baseClone2 = pictureBox1?.Image is Bitmap b2 ? new Bitmap(b2) : null;
+
             PushUndoStep(
                 Rectangle.Empty,
-                null,
-                null,
+                baseClone,
+                baseClone2,
                 Selection,
                 Selection,
-                replacesImage: false,
+                replacesImage: baseClone != null,
                 shapesBefore: null,
                 shapesAfter: null,
                 textsBefore: null,
@@ -406,13 +429,16 @@ namespace screenzap
             selectedLayerIndex = -1;
             var layersAfter = CloneLayers();
 
+            Bitmap? baseClone = pictureBox1?.Image is Bitmap b ? new Bitmap(b) : null;
+            Bitmap? baseClone2 = pictureBox1?.Image is Bitmap b2 ? new Bitmap(b2) : null;
+
             PushUndoStep(
                 Rectangle.Empty,
-                null,
-                null,
+                baseClone,
+                baseClone2,
                 Selection,
                 Selection,
-                replacesImage: false,
+                replacesImage: baseClone != null,
                 shapesBefore: null,
                 shapesAfter: null,
                 textsBefore: null,
