@@ -583,11 +583,26 @@ namespace screenzap
                 return;
             }
 
-            // Click landed on empty canvas in Move mode → deselect any selected layer
-            // and fall through to the existing rubber-band/resize/pan behavior.
+            // Click landed on empty canvas in Move mode → deselect any selected content
+            // (layer, text annotation, shape annotation) and fall through to the existing
+            // rubber-band/resize/pan behavior.
             if (e.Button == MouseButtons.Left)
             {
-                DeselectImageLayerIfAny();
+                bool changed = DeselectImageLayerIfAny();
+                if (selectedTextAnnotation != null)
+                {
+                    SelectTextAnnotation(null);
+                    changed = true;
+                }
+                if (selectedAnnotation != null)
+                {
+                    SelectAnnotation(null);
+                    changed = true;
+                }
+                if (changed)
+                {
+                    pictureBox1.Invalidate();
+                }
             }
 
             MouseInPixel = cursorPixel;

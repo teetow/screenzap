@@ -26,6 +26,8 @@ namespace screenzap.Testing
                 CaptureCommitAndUndoFlow(outputDir);
                 CaptureRubberBandFlow(outputDir);
                 CaptureHistorySwitchFlow(outputDir);
+                CaptureTextAnnotationMoveModeFlow(outputDir);
+                CaptureZoomedPasteFlow(outputDir);
             }
             catch (Exception ex)
             {
@@ -211,6 +213,80 @@ namespace screenzap.Testing
             kit.PumpUi();
             Save(kit, outputDir, "hs-03-back-to-first-expect-layer-restored");
             Logger.Log("Back on first: " + kit.Editor.TestDescribeState());
+        }
+
+        private static void CaptureTextAnnotationMoveModeFlow(string outputDir)
+        {
+            Logger.Log("--- Text annotation Move-mode flow ---");
+            using var kit = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+            kit.LoadCanvas(160, 100, Color.White);
+            Save(kit, outputDir, "tx-01-empty");
+
+            // Activate text tool, click in canvas, type some text.
+            kit.Editor.TestToggleTextTool();
+            Logger.Log($"After ToggleTextTool: isTextToolActive={kit.Editor.TestIsTextToolActive}");
+
+            // Click in middle of canvas to create text annotation.
+            kit.Click(new Point(40, 30));
+            Logger.Log("After click in text mode: " + kit.Editor.TestDescribeTextAnnotations());
+
+            kit.Type("HI");
+            Logger.Log("After typing 'HI': " + kit.Editor.TestDescribeTextAnnotations());
+            Save(kit, outputDir, "tx-02-after-typing");
+
+            // First Escape: finalize the current text annotation, stay in text tool (Figma-ish).
+            kit.Press(Keys.Escape);
+            Logger.Log($"After 1st Escape: isTextToolActive={kit.Editor.TestIsTextToolActive} annotations={kit.Editor.TestDescribeTextAnnotations()}");
+            Save(kit, outputDir, "tx-03-after-1st-escape");
+
+            // Second Escape: exit text tool entirely, return to Move mode.
+            kit.Press(Keys.Escape);
+            Logger.Log($"After 2nd Escape: isTextToolActive={kit.Editor.TestIsTextToolActive} annotations={kit.Editor.TestDescribeTextAnnotations()}");
+            Save(kit, outputDir, "tx-04-after-2nd-escape");
+
+            // CLICK ON EMPTY CANVAS in Move mode — should NOT create another text annotation.
+            kit.Click(new Point(120, 80));
+            Logger.Log($"After click empty in Move mode: isTextToolActive={kit.Editor.TestIsTextToolActive} annotations={kit.Editor.TestDescribeTextAnnotations()}");
+            Save(kit, outputDir, "tx-05-clicked-empty-move-mode");
+
+            // CLICK ON THE EXISTING TEXT in Move mode — should select, NOT auto-activate text tool.
+            kit.Click(new Point(45, 35));
+            Logger.Log($"After click on text in Move mode: isTextToolActive={kit.Editor.TestIsTextToolActive} annotations={kit.Editor.TestDescribeTextAnnotations()}");
+            Save(kit, outputDir, "tx-06-clicked-text-move-mode");
+
+            // CLICK EMPTY AGAIN — should still not create a new text (the slice 2 fix).
+            kit.Click(new Point(120, 80));
+            Logger.Log($"After 2nd click empty: isTextToolActive={kit.Editor.TestIsTextToolActive} annotations={kit.Editor.TestDescribeTextAnnotations()}");
+            Save(kit, outputDir, "tx-07-clicked-empty-again");
+        }
+
+        private static void CaptureZoomedPasteFlow(string outputDir)
+        {
+            Logger.Log("--- Zoomed paste flow ---");
+            using var kit = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+            kit.LoadCanvas(96, 64, Color.White);
+
+            // Zoom in 2x and paste.
+            kit.Editor.TestSetZoom(2m);
+            kit.PumpUi();
+            Logger.Log("After zoom 2x: " + kit.Editor.TestDescribeState());
+            Save(kit, outputDir, "zm-01-zoomed-empty");
+
+            using var pasted = MakeBitmap(20, 14, Color.OrangeRed);
+            kit.PasteImage(pasted);
+            Logger.Log("After paste at zoom 2x: " + kit.Editor.TestDescribeState());
+            Save(kit, outputDir, "zm-02-zoomed-after-paste");
+
+            // Click center of layer (in image coords).
+            var f = kit.Editor.GetImageLayerFrameForTests(0);
+            kit.Click(new Point((int)(f.X + f.Width / 2), (int)(f.Y + f.Height / 2)));
+            Save(kit, outputDir, "zm-03-zoomed-after-click");
+
+            // Drag at zoom 2x.
+            var center = new Point((int)(f.X + f.Width / 2), (int)(f.Y + f.Height / 2));
+            kit.Drag(center, new Point(center.X + 12, center.Y + 8));
+            Save(kit, outputDir, "zm-04-zoomed-after-drag");
+            Logger.Log("After drag at zoom 2x: " + kit.Editor.TestDescribeState());
         }
 
         private static Bitmap MakeBitmap(int width, int height, Color fill)

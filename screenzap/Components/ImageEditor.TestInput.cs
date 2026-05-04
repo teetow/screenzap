@@ -79,6 +79,16 @@ namespace screenzap
             ImageEditor_KeyDown(this, args);
         }
 
+        internal bool TestFireKeyPress(char ch)
+        {
+            var args = new KeyPressEventArgs(ch);
+            // Fire the protected OnKeyPress override directly via reflection (no friendlier path).
+            typeof(System.Windows.Forms.Form)
+                .GetMethod("OnKeyPress", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?.Invoke(this, new object[] { args });
+            return args.Handled;
+        }
+
         internal Point TestImagePixelToClient(Point imagePixel)
         {
             return pictureBox1?.PixelToClient(imagePixel) ?? imagePixel;
@@ -127,6 +137,31 @@ namespace screenzap
         internal void TestSetSize(int width, int height)
         {
             ClientSize = new Size(width, height);
+        }
+
+        internal void TestToggleTextTool() => ToggleTextTool();
+
+        internal bool TestIsTextToolActive => isTextToolActive;
+
+        internal int TestTextAnnotationCount => textAnnotations.Count;
+
+        internal string TestDescribeTextAnnotations()
+        {
+            if (textAnnotations.Count == 0) return "[]";
+            var sb = new System.Text.StringBuilder("[");
+            for (int i = 0; i < textAnnotations.Count; i++)
+            {
+                var t = textAnnotations[i];
+                if (i > 0) sb.Append(", ");
+                sb.Append($"#{i} pos={t.Position} text='{t.Text}' selected={t.Selected} editing={t.IsEditing}");
+            }
+            sb.Append("]");
+            return sb.ToString();
+        }
+
+        internal void TestSetZoom(decimal zoom)
+        {
+            if (pictureBox1 != null) pictureBox1.ZoomLevel = zoom;
         }
 
         internal string TestDescribeUndoStack()

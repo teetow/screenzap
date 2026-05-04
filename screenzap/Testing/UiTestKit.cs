@@ -154,6 +154,15 @@ namespace screenzap.Testing
             return handled;
         }
 
+        public void Type(string text)
+        {
+            foreach (var ch in text)
+            {
+                Editor.TestFireKeyPress(ch);
+                PumpUi();
+            }
+        }
+
         public void PasteImage(Bitmap source)
         {
             Editor.SetInternalClipboardImageForDiagnostics(source);

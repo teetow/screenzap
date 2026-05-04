@@ -1544,6 +1544,18 @@ namespace screenzap
                 {
                     SelectTextAnnotation(null);
                     activeTextAnnotation = null;
+
+                    // While the text tool is active and we just finalized a selected annotation,
+                    // a second Escape returns the editor to Move mode (Figma model: two Escapes
+                    // walk you all the way out — finalize, then exit the tool).
+                    if (isTextToolActive)
+                    {
+                        isTextToolActive = false;
+                        UpdateTextToolButtons();
+                        UpdateTextToolbarVisibility();
+                    }
+
+                    pictureBox1?.Invalidate();
                     e.Handled = true;
                     return true;
                 }
