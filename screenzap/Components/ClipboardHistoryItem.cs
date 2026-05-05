@@ -24,6 +24,12 @@ namespace screenzap.Components
         private const int DefaultThumbnailMaxWidth = 64;
         private const int DefaultThumbnailMaxHeight = 64;
         private const float TextThumbnailAspect = 2f / 3f; // 2:3 portrait (w:h)
+
+        // Last dimensions used when building the thumbnail, so that no-arg RebuildThumbnail()
+        // (called from SetPreviewComposite during item stash) uses the panel's current size
+        // rather than the hardcoded 64×64 default—avoiding shrunk thumbnails at non-100% DPI.
+        private int lastThumbMaxWidth = DefaultThumbnailMaxWidth;
+        private int lastThumbMaxHeight = DefaultThumbnailMaxHeight;
         private readonly HashSet<string> suppressedSystemHistoryIds = new(StringComparer.Ordinal);
 
         private ClipboardHistoryItem(ClipboardItemKind kind, Guid? id = null, DateTime? createdUtc = null)
@@ -338,13 +344,16 @@ namespace screenzap.Components
 
         public void RebuildThumbnail()
         {
-            RebuildThumbnail(DefaultThumbnailMaxWidth, DefaultThumbnailMaxHeight);
+            RebuildThumbnail(lastThumbMaxWidth, lastThumbMaxHeight);
         }
 
         public void RebuildThumbnail(int maxWidth, int maxHeight)
         {
             maxWidth = Math.Max(1, maxWidth);
             maxHeight = Math.Max(1, maxHeight);
+
+            lastThumbMaxWidth = maxWidth;
+            lastThumbMaxHeight = maxHeight;
 
             using var perf = LoggerPerfScope(maxWidth, maxHeight);
 

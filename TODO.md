@@ -1,33 +1,34 @@
 # Image Editor Backlog
 
-## Tasks
+## Done (Slice 2 — Move-tool model)
 
-[ ] Selection rect is drawn outside of image bounds
-[ ] After an action that alters the image dimensions, the viewport is visually corrupted and has to be restored by resizing the window.
+- [x] Layer selection: click body to select, click empty to deselect, dotted blue bounding box with 8 handles
+- [x] Drag-to-translate: move layer by dragging body; undo step pushed on mouse-up
+- [x] Drag-to-resize: 8 corner/edge handles, free aspect, min 1px
+- [x] Delete/Escape: Delete removes selected layer; Escape deselects
+- [x] Text-tool fix: clicking existing text in Move mode selects it (no auto-activation); Enter/F2 promotes to edit mode
+- [x] UI test kit: real WinForms input pipeline, screenshot capture, `--ui-capture` CLI mode
+- [x] 6 bugs fixed (see [ISSUES.md](ISSUES.md))
 
-## Test Automation Backlog
+## Next (Slice 3)
 
-[x] Replace BG edge-source exclusion unit tests
-[x] Undo/Redo stack behavior unit tests
-[x] Crop workflow automation (selection + image resize + undo/redo)
-[x] Save/Save As automation (file output + naming assertions)
-[x] Image clipboard reload automation (pending badge + dirty-state confirmation)
-[x] Clipboard text editor automation (load, find/replace, reload, save, copy-back)
+- [ ] Review and integrate unstaged changes from separate agent (`ClipboardHistoryItem.cs`, `ClipboardHistoryPanel.cs`, `ImageEditor.cs`, `ThumbnailActionRegressionTests.cs`)
+- [ ] Annotation Move-mode integration — Arrow/Rectangle click-to-select instead of click-to-create
+- [ ] Shift-to-preserve-aspect-ratio on layer resize handles
+- [ ] Exercise annotation drawing tools (Arrow, Rectangle) through the real input pipeline via `--ui-capture`
 
-## NOTES
+## Next (Slice 4)
 
-Unless specified otherwise, all actions are destructive, but undoable.
+- [ ] Rotation
 
-## Feature: Revert
+## Backlog — unexercised flows (wire through kit)
 
-Since the image editor now is no longer just showing the clipboard state, on launch, we copy the buffer to an "original" that can be recalled at any time. This will not be updated -- subsequent clipboard copy operations will not touch it as long as the Image Editor is open. This is so that the user can always Revert to this state at will.
-
-## Feature: Copy and paste (Ctrl+C, Ctrl+V)
-
-- Ctrl+C already copies the current selection to the clipboard buffer.
-- Implement Ctrl+V to paste the clipboard contents into the current selection, resizing to fit.
-- Add a **Paste Original Size** command that resizes the selection to fit the pasted content instead.
-- Keep freshly pasted content in a transient state until committed (Enter) or canceled (Esc).
+- [ ] ClipboardHistoryPanel thumbnail strip — click to switch items
+- [ ] Censor / Straighten / Crop tools
+- [ ] Color correction
+- [ ] Reload / Revert / Duplicate flows
+- [ ] Multi-monitor / DPI scaling
+- [ ] Persistence reload across app-restart
 
 ## Feature: Paste Toolbar
 
@@ -47,9 +48,3 @@ Variable fonts (OpenType 1.8+) support multiple design axes like weight, width, 
   - Use a library like HarfBuzzSharp or SkiaSharp
 - UI: Add a popout panel with sliders for each available axis
 - Common axes: `wght` (weight), `wdth` (width), `slnt` (slant), `ital` (italic), `opsz` (optical size)
-
-### Basic Bold/Italic first:
-
-- Add `FontStyle` property to `TextAnnotation` (Bold, Italic, Underline)
-- Add B/I/U toggle buttons to text toolbar
-- This works with standard fonts and is a prerequisite for variable font support

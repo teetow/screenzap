@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
+using System.Windows.Forms;
 using screenzap.Components;
 using screenzap.Components.Shared;
 using Xunit;
@@ -265,6 +266,92 @@ namespace Screenzap.ViewportTests
             {
                 throw new TargetInvocationException(failure);
             }
+        }
+
+        [Fact]
+        public void SwitchingActiveItem_DoesNotMutateExistingThumbnailButtonSizes()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var host = new Form
+                    {
+                        ClientSize = new Size(220, 420),
+                        ShowInTaskbar = false,
+                        StartPosition = FormStartPosition.Manual,
+                        Location = new Point(-32000, -32000)
+                    };
+
+                    using var panel = new ClipboardHistoryPanel
+                    {
+                        Dock = DockStyle.Fill
+                    };
+
+                    host.Controls.Add(panel);
+                    host.Show();
+                    Application.DoEvents();
+
+                    var store = new ClipboardHistoryStore();
+                    panel.AttachStore(store);
+
+                    using var wide = new Bitmap(320, 80);
+                    using var tall = new Bitmap(80, 320);
+                    using (var g = Graphics.FromImage(wide))
+                    {
+                        g.Clear(Color.DarkOrange);
+                    }
+
+                    using (var g = Graphics.FromImage(tall))
+                    {
+                        g.Clear(Color.CadetBlue);
+                    }
+
+                    var first = store.AddObservedImage(wide);
+                    var second = store.AddObservedImage(tall);
+                    store.AddObservedText("text item");
+
+                    Application.DoEvents();
+
+                    var buttonsField = typeof(ClipboardHistoryPanel).GetField("buttons", BindingFlags.Instance | BindingFlags.NonPublic);
+                    Assert.NotNull(buttonsField);
+                    var buttons = (System.Collections.IDictionary?)buttonsField!.GetValue(panel);
+                    Assert.NotNull(buttons);
+
+                    Size firstSizeBefore = GetButtonSize(buttons!, first.Id);
+                    Size secondSizeBefore = GetButtonSize(buttons!, second.Id);
+
+                    store.Activate(first);
+                    Application.DoEvents();
+                    store.Activate(second);
+                    Application.DoEvents();
+
+                    Size firstSizeAfter = GetButtonSize(buttons!, first.Id);
+                    Size secondSizeAfter = GetButtonSize(buttons!, second.Id);
+
+                    Assert.Equal(firstSizeBefore, firstSizeAfter);
+                    Assert.Equal(secondSizeBefore, secondSizeAfter);
+                    Assert.Equal(firstSizeAfter, secondSizeAfter);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        private static Size GetButtonSize(System.Collections.IDictionary buttons, Guid id)
+        {
+            var button = (Control?)buttons[id];
+            Assert.NotNull(button);
+            return button!.Size;
         }
 
         private static void RunInSta(ThreadStart action)

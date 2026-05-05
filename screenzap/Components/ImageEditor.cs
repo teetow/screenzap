@@ -3082,10 +3082,24 @@ namespace screenzap
             item.UndoSnapshot = undoStack.ExtractState();
 
             // Generate a flattened preview composite just for the thumbnail.
+            // Skip the expensive full-res copy when there is nothing to composite—the
+            // thumbnail will fall back to CurrentImage (just updated above), which is
+            // identical to the composite when no annotations or layers are present.
             if (HasEditableImage)
             {
-                using var composite = BuildCompositeImage();
-                item.SetPreviewComposite(composite);
+                bool needsComposite = annotationShapes.Count > 0
+                    || textAnnotations.Count > 0
+                    || imageLayers.Count > 0;
+
+                if (needsComposite)
+                {
+                    using var composite = BuildCompositeImage();
+                    item.SetPreviewComposite(composite);
+                }
+                else
+                {
+                    item.SetPreviewComposite(null);
+                }
             }
             else
             {

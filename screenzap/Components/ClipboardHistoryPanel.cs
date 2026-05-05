@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Reflection;
 using System.Windows.Forms;
 using FontAwesome.Sharp;
 
@@ -26,6 +27,7 @@ namespace screenzap.Components
         private int currentThumbMaxWidth = 64;
         private int currentThumbMaxHeight = 64;
         private bool suppressShowTextItemsEvents;
+        private Guid? lastActiveItemId;
 
         public event EventHandler<ClipboardHistoryItem>? ItemActivated;
         public event EventHandler<ClipboardHistoryItem>? ItemSetActive;
@@ -53,6 +55,7 @@ namespace screenzap.Components
                 Margin = Padding.Empty,
                 Padding = new Padding(4, 4, 17, 4)
             };
+            EnableDoubleBuffer(flow);
             Controls.Add(flow);
 
             refreshFromWindowsHistoryItem = new ToolStripMenuItem("Refresh from Windows History")
@@ -138,6 +141,7 @@ namespace screenzap.Components
             store.Changed += OnStoreChanged;
             store.ActiveItemChanged += OnActiveItemChanged;
             store.ItemUpdated += OnItemUpdated;
+            lastActiveItemId = store.ActiveItem?.Id;
             RebuildAll();
         }
 
@@ -177,8 +181,7 @@ namespace screenzap.Components
             item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
             if (buttons.TryGetValue(item.Id, out var btn))
             {
-                btn.Rebind(item, ReferenceEquals(store?.ActiveItem, item));
-                btn.Invalidate();
+                btn.Rebind(item, ReferenceEquals(store?.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
             }
         }
 
@@ -189,16 +192,31 @@ namespace screenzap.Components
                 return;
             }
 
-            foreach (var item in store.Items)
+            var newActiveId = store.ActiveItem?.Id;
+
+            flow.SuspendLayout();
+            try
             {
-                if (!buttons.TryGetValue(item.Id, out var btn))
+                if (lastActiveItemId.HasValue
+                    && buttons.TryGetValue(lastActiveItemId.Value, out var oldActiveButton)
+                    && oldActiveButton.Item != null)
                 {
-                    continue;
+                    oldActiveButton.Rebind(oldActiveButton.Item, false, currentThumbMaxWidth, currentThumbMaxHeight);
                 }
 
-                bool isActive = ReferenceEquals(store.ActiveItem, item);
-                btn.Rebind(item, isActive);
+                if (newActiveId.HasValue
+                    && buttons.TryGetValue(newActiveId.Value, out var newActiveButton)
+                    && newActiveButton.Item != null)
+                {
+                    newActiveButton.Rebind(newActiveButton.Item, true, currentThumbMaxWidth, currentThumbMaxHeight);
+                }
             }
+            finally
+            {
+                flow.ResumeLayout(false);
+            }
+
+            lastActiveItemId = newActiveId;
         }
 
         private void RebuildAll()
@@ -234,7 +252,7 @@ namespace screenzap.Components
                     }
 
                     item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
-                    btn.Rebind(item, ReferenceEquals(store.ActiveItem, item));
+                    btn.Rebind(item, ReferenceEquals(store.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
                     tooltip.SetToolTip(btn, BuildToolTip(item));
                     flow.Controls.Add(btn);
                 }
@@ -253,6 +271,8 @@ namespace screenzap.Components
             {
                 flow.ResumeLayout();
             }
+
+            lastActiveItemId = store.ActiveItem?.Id;
         }
 
         private void UpdateThumbnailSizing(bool force = false)
@@ -281,7 +301,7 @@ namespace screenzap.Components
                     item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
                     if (buttons.TryGetValue(item.Id, out var btn))
                     {
-                        btn.Rebind(item, ReferenceEquals(store.ActiveItem, item));
+                        btn.Rebind(item, ReferenceEquals(store.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
                     }
                 }
             }
@@ -314,6 +334,12 @@ namespace screenzap.Components
 
         private static Bitmap MakeIcon(IconChar icon, Color color)
             => FormsIconHelper.ToBitmap(icon, color, 16, 0, FlipOrientation.Normal);
+
+        private static void EnableDoubleBuffer(Control control)
+        {
+            var property = typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic);
+            property?.SetValue(control, true, null);
+        }
 
         private sealed class ThumbnailButton : Control
         {
@@ -365,24 +391,27 @@ namespace screenzap.Components
 
             public void Rebind(ClipboardHistoryItem item, bool active)
             {
+                Rebind(item, active, 64, 64);
+            }
+
+            public void Rebind(ClipboardHistoryItem item, bool active, int maxThumbWidth, int maxThumbHeight)
+            {
                 bool changed = !ReferenceEquals(Item, item) || isActive != active;
                 Item = item;
                 isActive = active;
+
+                var newSize = new Size(Math.Max(1, maxThumbWidth) + 8, Math.Max(1, maxThumbHeight) + 8);
+                if (Size != newSize)
+                {
+                    Size = newSize;
+                    changed = true;
+                }
+
                 var currentThumb = item.Thumbnail;
                 if (!ReferenceEquals(lastThumbnail, currentThumb))
                 {
                     lastThumbnail = currentThumb;
                     changed = true;
-                }
-
-                if (item.Thumbnail is Bitmap thumb)
-                {
-                    var newSize = new Size(thumb.Width + 8, thumb.Height + 8);
-                    if (Size != newSize)
-                    {
-                        Size = newSize;
-                        changed = true;
-                    }
                 }
 
                 if (changed)
@@ -399,9 +428,11 @@ namespace screenzap.Components
 
                 if (Item?.Thumbnail is Bitmap thumb)
                 {
-                    g.DrawImage(thumb, new Rectangle(4, 4, thumb.Width, thumb.Height));
+                    int thumbX = 4 + Math.Max(0, (Width - 8 - thumb.Width) / 2);
+                    int thumbY = 4 + Math.Max(0, (Height - 8 - thumb.Height) / 2);
+                    g.DrawImage(thumb, new Rectangle(thumbX, thumbY, thumb.Width, thumb.Height));
                     using var borderPen = new Pen(isActive ? ActiveBorder : IdleBorder, isActive ? 2f : 1f);
-                    g.DrawRectangle(borderPen, new Rectangle(3, 3, thumb.Width + 1, thumb.Height + 1));
+                    g.DrawRectangle(borderPen, new Rectangle(thumbX - 1, thumbY - 1, thumb.Width + 1, thumb.Height + 1));
                 }
 
                 if (Item?.IsDirty == true)
