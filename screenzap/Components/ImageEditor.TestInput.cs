@@ -145,6 +145,36 @@ namespace screenzap
 
         internal int TestTextAnnotationCount => textAnnotations.Count;
 
+        internal void TestToggleArrowTool() => ToggleDrawingTool(DrawingTool.Arrow);
+
+        internal void TestToggleRectTool() => ToggleDrawingTool(DrawingTool.Rectangle);
+
+        internal void TestDeactivateDrawingTool()
+        {
+            if (activeDrawingTool != DrawingTool.None)
+                ToggleDrawingTool(activeDrawingTool); // toggle same tool off
+        }
+
+        internal DrawingTool TestActiveDrawingTool => activeDrawingTool;
+
+        internal int TestAnnotationShapeCount => annotationShapes.Count;
+
+        internal AnnotationShape? TestSelectedAnnotation => selectedAnnotation;
+
+        internal string TestDescribeAnnotationShapes()
+        {
+            if (annotationShapes.Count == 0) return "[]";
+            var sb = new System.Text.StringBuilder("[");
+            for (int i = 0; i < annotationShapes.Count; i++)
+            {
+                var a = annotationShapes[i];
+                if (i > 0) sb.Append(", ");
+                sb.Append($"#{i} type={a.Type} start={a.Start} end={a.End} selected={a.Selected}");
+            }
+            sb.Append("]");
+            return sb.ToString();
+        }
+
         internal string TestDescribeTextAnnotations()
         {
             if (textAnnotations.Count == 0) return "[]";

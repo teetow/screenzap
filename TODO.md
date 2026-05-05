@@ -10,9 +10,11 @@
 - [x] UI test kit: real WinForms input pipeline, screenshot capture, `--ui-capture` CLI mode
 - [x] 6 bugs fixed (see [ISSUES.md](ISSUES.md))
 
-## Next (Slice 3)
+## Done (thumbnail panel + stash perf — `6d3bc89`)
 
-- [ ] Review and integrate unstaged changes from separate agent (`ClipboardHistoryItem.cs`, `ClipboardHistoryPanel.cs`, `ImageEditor.cs`, `ThumbnailActionRegressionTests.cs`)
+- [x] Reviewed and committed separate-agent changes: thumbnail button sizing, stash performance, `ThumbnailActionRegressionTests`
+
+## Next (Slice 3)
 - [ ] Annotation Move-mode integration — Arrow/Rectangle click-to-select instead of click-to-create
 - [ ] Shift-to-preserve-aspect-ratio on layer resize handles
 - [ ] Exercise annotation drawing tools (Arrow, Rectangle) through the real input pipeline via `--ui-capture`

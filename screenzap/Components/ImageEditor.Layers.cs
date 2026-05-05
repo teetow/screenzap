@@ -192,6 +192,10 @@ namespace screenzap
             return System.Math.Abs(p.X - target.X) <= tol && System.Math.Abs(p.Y - target.Y) <= tol;
         }
 
+        private static bool IsCornerHandle(ImageLayerHandle h) =>
+            h == ImageLayerHandle.TopLeft || h == ImageLayerHandle.TopRight ||
+            h == ImageLayerHandle.BottomLeft || h == ImageLayerHandle.BottomRight;
+
         private bool TryBeginLayerInteraction(Point pixelPoint)
         {
             // Hit-test priority (Figma-ish):
@@ -279,6 +283,35 @@ namespace screenzap
                 case ImageLayerHandle.Left:
                     next = RectangleF.FromLTRB(start.Left + dx, start.Top, start.Right, start.Bottom);
                     break;
+            }
+
+            // Shift-key: preserve aspect ratio for corner handles.
+            if (activeLayerHandle != ImageLayerHandle.Body && IsCornerHandle(activeLayerHandle)
+                && System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift)
+                && start.Width > 0f && start.Height > 0f)
+            {
+                float scaleByW = next.Width / start.Width;
+                float scaleByH = next.Height / start.Height;
+                float scale = (System.Math.Abs(scaleByW - 1f) >= System.Math.Abs(scaleByH - 1f)) ? scaleByW : scaleByH;
+                if (scale <= 0f) scale = 0.001f;
+                float targetW = start.Width * scale;
+                float targetH = start.Height * scale;
+                // Anchor at the fixed corner (opposite to the dragged corner).
+                switch (activeLayerHandle)
+                {
+                    case ImageLayerHandle.TopLeft:
+                        next = RectangleF.FromLTRB(next.Right - targetW, next.Bottom - targetH, next.Right, next.Bottom);
+                        break;
+                    case ImageLayerHandle.TopRight:
+                        next = RectangleF.FromLTRB(next.Left, next.Bottom - targetH, next.Left + targetW, next.Bottom);
+                        break;
+                    case ImageLayerHandle.BottomLeft:
+                        next = RectangleF.FromLTRB(next.Right - targetW, next.Top, next.Right, next.Top + targetH);
+                        break;
+                    case ImageLayerHandle.BottomRight:
+                        next = RectangleF.FromLTRB(next.Left, next.Top, next.Left + targetW, next.Top + targetH);
+                        break;
+                }
             }
 
             // Disallow zero/negative dimensions; clamp to a 1px minimum.

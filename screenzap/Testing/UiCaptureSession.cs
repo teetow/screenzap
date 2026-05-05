@@ -29,6 +29,7 @@ namespace screenzap.Testing
                 CaptureTextAnnotationMoveModeFlow(outputDir);
                 CaptureZoomedPasteFlow(outputDir);
                 CaptureMultiCommitCycleFlow(outputDir);
+                CaptureAnnotationToolFlow(outputDir);
             }
             catch (Exception ex)
             {
@@ -331,6 +332,91 @@ namespace screenzap.Testing
             using var g = Graphics.FromImage(bmp);
             g.Clear(fill);
             return bmp;
+        }
+
+        private static void CaptureAnnotationToolFlow(string outputDir)
+        {
+            Logger.Log("--- Annotation tool flow ---");
+            using var kit = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+            kit.LoadCanvas(120, 80, Color.White);
+
+            // ── Arrow: draw, select in Move mode, drag, delete ──────────────────────
+            kit.Editor.TestToggleArrowTool();
+            Logger.Log($"Arrow tool active: {kit.Editor.TestActiveDrawingTool}");
+
+            // Draw an arrow from (20,20) to (60,50).
+            kit.Drag(new Point(20, 20), new Point(60, 50));
+            Save(kit, outputDir, "an-01-after-draw-arrow");
+            Logger.Log($"After draw arrow: {kit.Editor.TestDescribeAnnotationShapes()}");
+
+            // Switch back to Move mode (deactivate drawing tool).
+            kit.Editor.TestDeactivateDrawingTool();
+            Logger.Log($"Drawing tool after deactivate: {kit.Editor.TestActiveDrawingTool}");
+
+            // Click somewhere else first to deselect.
+            kit.Click(new Point(100, 10));
+            Logger.Log($"After click empty: {kit.Editor.TestDescribeAnnotationShapes()}");
+
+            // Click on the arrow midpoint to select it.
+            kit.Click(new Point(40, 35));
+            Save(kit, outputDir, "an-02-arrow-selected-in-move-mode");
+            Logger.Log($"After click arrow: {kit.Editor.TestDescribeAnnotationShapes()} selectedAnnotation={kit.Editor.TestSelectedAnnotation?.Type.ToString() ?? "null"}");
+
+            // Drag the arrow via the Move handle.
+            kit.Drag(new Point(40, 35), new Point(50, 45));
+            Save(kit, outputDir, "an-03-after-drag-arrow");
+            Logger.Log($"After drag arrow: {kit.Editor.TestDescribeAnnotationShapes()}");
+
+            // Delete via keyboard.
+            kit.Press(Keys.Delete);
+            Save(kit, outputDir, "an-04-after-delete-arrow");
+            Logger.Log($"After delete arrow: {kit.Editor.TestDescribeAnnotationShapes()}");
+
+            // ── Rectangle: draw, select, drag endpoint, Escape deselect ────────────
+            kit.Editor.TestToggleRectTool();
+            kit.Drag(new Point(15, 15), new Point(55, 45));
+            Save(kit, outputDir, "an-05-after-draw-rect");
+            Logger.Log($"After draw rect: {kit.Editor.TestDescribeAnnotationShapes()}");
+
+            kit.Editor.TestDeactivateDrawingTool();
+            kit.Click(new Point(100, 10));  // deselect
+            kit.Click(new Point(35, 30));   // select rect by body hit
+            Save(kit, outputDir, "an-06-rect-selected-in-move-mode");
+            Logger.Log($"After click rect: selected={kit.Editor.TestSelectedAnnotation?.Type.ToString() ?? "null"}");
+
+            // Drag the rect (body drag via Move handle).
+            kit.Drag(new Point(35, 30), new Point(45, 38));
+            Save(kit, outputDir, "an-07-after-drag-rect");
+            Logger.Log($"After drag rect: {kit.Editor.TestDescribeAnnotationShapes()}");
+
+            // Escape deselects.
+            kit.Press(Keys.Escape);
+            Save(kit, outputDir, "an-08-after-escape-rect");
+            Logger.Log($"After escape: selected={kit.Editor.TestSelectedAnnotation?.Type.ToString() ?? "null"}");
+
+            // ── Shift-aspect resize on image layer ───────────────────────────────────
+            Logger.Log("--- Shift-aspect-preserve resize ---");
+            using var kit2 = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+            kit2.LoadCanvas(120, 80, Color.White);
+
+            // Paste a 40×20 layer (2:1 aspect).
+            using var layer40x20 = MakeBitmap(40, 20, Color.Cyan);
+            kit2.PasteImage(layer40x20);
+            var f = kit2.Editor.GetImageLayerFrameForTests(0);
+            Logger.Log($"Layer frame before resize: {f} (aspect={f.Width / f.Height:F2})");
+
+            // Drag the BottomRight handle with Shift (simulate by reading ModifierKeys through
+            // TestFireMouseDown with a simulated Shift key state isn't directly possible, so we
+            // call UpdateLayerInteractionForTests after manually setting up the interaction and
+            // note ModifierKeys can't be set from tests — log the free-resize as baseline and
+            // document that Shift path is validated interactively).
+            // Free resize without Shift for comparison:
+            kit2.Editor.BeginLayerInteractionForTests(new Point((int)f.Right, (int)f.Bottom));
+            kit2.Editor.UpdateLayerInteractionForTests(new Point((int)f.Right + 20, (int)f.Bottom + 20));
+            kit2.Editor.EndLayerInteractionForTests();
+            var fFree = kit2.Editor.GetImageLayerFrameForTests(0);
+            Logger.Log($"Layer frame after free resize (+20,+20): {fFree} (aspect={fFree.Width / fFree.Height:F2}, was 2.00)");
+            Save(kit2, outputDir, "sr-01-free-resize-baseline");
         }
 
         private static void Save(UiTestKit kit, string dir, string label)
