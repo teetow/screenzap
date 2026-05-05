@@ -84,7 +84,6 @@ namespace Screenzap.ViewportTests
                 using var editor = PrepareEditorWithArrow();
                 Assert.Equal(1, editor.TestAnnotationShapeCount);
 
-                var msg = new Message();
                 editor.TestFireKeyDown(Keys.Delete);
 
                 Assert.Equal(0, editor.TestAnnotationShapeCount);

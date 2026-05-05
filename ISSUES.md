@@ -18,7 +18,7 @@
 | L1 | Layer handles | Hit-tolerance is always 8px screen-pixels regardless of zoom level — at high zoom, handles become very hard to hit |
 | L2 | Layer selection | No multi-layer selection; only one layer at a time |
 | L3 | Layer resize | No Shift-to-preserve-aspect-ratio |
-| L4 | Annotation tools | Arrow/Rectangle still use click-to-create semantics; no Move-mode integration (Slice 3 work) |
+| L4 | Annotation tools | ~~Arrow/Rectangle still use click-to-create semantics; no Move-mode integration (Slice 3 work)~~ **Fixed in `7cdb845`** — click-to-select/drag/delete/Escape all work in Move mode; 6 unit tests added |
 | L5 | Rendering | Handle/box rendering was verified via offscreen `Graphics` only; pixel-snapping at fractional zoom was not eyeballed in live GUI before the kit was built |
 
 ## Open — Unexercised flows (potential bugs unknown)

@@ -194,6 +194,12 @@ namespace screenzap
             if (pictureBox1 != null) pictureBox1.ZoomLevel = zoom;
         }
 
+        internal float TestGetLayerRotationDeg(int index) => imageLayers[index].RotationDeg;
+
+        internal void TestSetLayerRotationDeg(int index, float deg) => imageLayers[index].RotationDeg = deg;
+
+        internal ImageLayerHandle TestActiveLayerHandle => activeLayerHandle;
+
         internal string TestDescribeUndoStack()
         {
             var sb = new System.Text.StringBuilder();

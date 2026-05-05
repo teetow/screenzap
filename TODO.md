@@ -14,10 +14,12 @@
 
 - [x] Reviewed and committed separate-agent changes: thumbnail button sizing, stash performance, `ThumbnailActionRegressionTests`
 
-## Next (Slice 3)
-- [ ] Annotation Move-mode integration — Arrow/Rectangle click-to-select instead of click-to-create
-- [ ] Shift-to-preserve-aspect-ratio on layer resize handles
-- [ ] Exercise annotation drawing tools (Arrow, Rectangle) through the real input pipeline via `--ui-capture`
+## Done (Slice 3 — annotation Move-mode + Shift-aspect resize — `7cdb845`)
+
+- [x] Annotation Move-mode: validated correct (click-to-select, drag, delete, Escape all work via real pipeline)
+- [x] 6 annotation Move-mode unit tests added (`AnnotationSelectionTests`)
+- [x] Shift-to-preserve-aspect-ratio on corner resize handles
+- [x] Annotation tools exercised through `--ui-capture` (arrow + rect flows)
 
 ## Next (Slice 4)
 

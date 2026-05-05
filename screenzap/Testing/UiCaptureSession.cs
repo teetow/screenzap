@@ -30,6 +30,7 @@ namespace screenzap.Testing
                 CaptureZoomedPasteFlow(outputDir);
                 CaptureMultiCommitCycleFlow(outputDir);
                 CaptureAnnotationToolFlow(outputDir);
+                CaptureLayerRotationFlow(outputDir);
             }
             catch (Exception ex)
             {
@@ -332,6 +333,79 @@ namespace screenzap.Testing
             using var g = Graphics.FromImage(bmp);
             g.Clear(fill);
             return bmp;
+        }
+
+        private static void CaptureLayerRotationFlow(string outputDir)
+        {
+            Logger.Log("--- Layer rotation flow ---");
+            using var kit = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+            kit.LoadCanvas(120, 80, Color.White);
+
+            using var layerBmp = MakeBitmap(40, 20, Color.OrangeRed);
+            kit.PasteImage(layerBmp);
+            Save(kit, outputDir, "rot-01-no-rotation");
+            Logger.Log($"rot-01: {kit.Editor.TestDescribeState()}");
+
+            // Set 45° via test helper (simulating what drag-rotate would produce).
+            kit.Editor.TestSetLayerRotationDeg(0, 45f);
+            kit.Editor.TestFireMouseDownAtImagePixel(new Point(60, 30), MouseButtons.Left); // keep selected
+            kit.Editor.TestFireMouseUpAtImagePixel(new Point(60, 30), MouseButtons.Left);
+            pictureBox1Invalidate(kit);
+            Save(kit, outputDir, "rot-02-45deg");
+            Logger.Log($"rot-02: rotation={kit.Editor.TestGetLayerRotationDeg(0):F1}°");
+
+            // Set -30°
+            kit.Editor.TestSetLayerRotationDeg(0, -30f);
+            pictureBox1Invalidate(kit);
+            Save(kit, outputDir, "rot-03-minus30deg");
+            Logger.Log($"rot-03: rotation={kit.Editor.TestGetLayerRotationDeg(0):F1}°");
+
+            // Test rotation handle interaction: simulate drag from the layer center
+            // at a fixed angle to +90° rotation, using BeginLayerInteractionForTests.
+            kit.Editor.TestSetLayerRotationDeg(0, 0f);
+            var f = kit.Editor.GetImageLayerFrameForTests(0);
+            int cx = (int)(f.X + f.Width / 2);
+            int cy = (int)(f.Y + f.Height / 2);
+            // Rotation handle is ~28px above the top-center in screen px (zoom=1 → same in image px).
+            var rotHandlePixel = new Point(cx, (int)(f.Y - 28));
+            kit.Editor.BeginLayerInteractionForTests(rotHandlePixel); // hits Rotate handle
+            Logger.Log($"rot-04: activeHandle after begin={kit.Editor.TestActiveLayerHandle}");
+            // Drag from top-center direction to the right (90° = pointing right from center).
+            kit.Editor.UpdateLayerInteractionForTests(new Point(cx + (int)(f.Height / 2 + 28), cy));
+            kit.Editor.EndLayerInteractionForTests();
+            Save(kit, outputDir, "rot-04-dragged-to-90deg");
+            Logger.Log($"rot-04: rotation after drag={kit.Editor.TestGetLayerRotationDeg(0):F1}°");
+
+            // Undo should restore 0°.
+            kit.Editor.TestFireKeyDown(System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Z);
+            Save(kit, outputDir, "rot-05-after-undo");
+            Logger.Log($"rot-05: rotation after undo={kit.Editor.TestGetLayerRotationDeg(0):F1}°");
+
+            // Verify hit-test on rotated layer: paste fresh layer, rotate 90°, click
+            // what would be the body in the rotated position.
+            using var kit2 = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+            kit2.LoadCanvas(120, 80, Color.White);
+            using var layerBmp2 = MakeBitmap(40, 10, Color.Blue);
+            kit2.PasteImage(layerBmp2);
+            kit2.Editor.TestSetLayerRotationDeg(0, 90f);
+            // Deselect and then try to click on the layer body (which is now rotated).
+            kit2.Click(new Point(100, 5)); // deselect
+            // The layer center is at approximately (60, 40) for a 120x80 canvas with a 40x10 layer pasted center.
+            var f2 = kit2.Editor.GetImageLayerFrameForTests(0);
+            int cx2 = (int)(f2.X + f2.Width / 2);
+            int cy2 = (int)(f2.Y + f2.Height / 2);
+            // At 90° rotation, the 40-wide extent is now vertical, 10-tall extent is horizontal.
+            // A point (cx2, cy2+5) should be inside the rotated body.
+            kit2.Click(new Point(cx2, cy2 + 5));
+            Logger.Log($"rot-06: selected after rotated-body click = {kit2.Editor.SelectedLayerIndexForTests}");
+            Save(kit2, outputDir, "rot-06-rotated-hit-test");
+        }
+
+        private static void pictureBox1Invalidate(UiTestKit kit)
+        {
+            // Force a paint-pass so the screenshot reflects the changed rotation.
+            // We use the same trick as the existing tests: just re-fire a no-op mouse move.
+            kit.Editor.TestFireMouseMoveAtImagePixel(new Point(0, 0), MouseButtons.None);
         }
 
         private static void CaptureAnnotationToolFlow(string outputDir)

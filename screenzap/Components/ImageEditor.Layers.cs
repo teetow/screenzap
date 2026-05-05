@@ -17,7 +17,8 @@ namespace screenzap
         BottomRight,
         Bottom,
         BottomLeft,
-        Left
+        Left,
+        Rotate
     }
 
     public partial class ImageEditor
@@ -28,11 +29,13 @@ namespace screenzap
         private ImageLayerHandle activeLayerHandle = ImageLayerHandle.None;
         private Point layerInteractionOriginPixel;
         private RectangleF layerInteractionStartFrame;
+        private float layerInteractionStartRotation;
         private List<ImageLayer>? layerInteractionLayersBefore;
         private bool layerChangedDuringInteraction;
 
         // Handle dimensions in screen pixels (constant regardless of zoom).
         private const float LayerHandleScreenSize = 8f;
+        private const float LayerRotationHandleScreenOffset = 28f;
 
         internal int ImageLayerCountForTests => imageLayers.Count;
 
@@ -139,12 +142,34 @@ namespace screenzap
             // Top-most first.
             for (int i = imageLayers.Count - 1; i >= 0; i--)
             {
-                if (imageLayers[i].Frame.Contains(pixelPoint.X, pixelPoint.Y))
-                {
+                if (PointIsInLayerBody(pixelPoint, imageLayers[i]))
                     return i;
-                }
             }
             return null;
+        }
+
+        private static bool PointIsInLayerBody(Point pixelPoint, ImageLayer layer)
+        {
+            if (layer.RotationDeg == 0f)
+                return layer.Frame.Contains(pixelPoint.X, pixelPoint.Y);
+
+            // Rotate the point into the layer's local (unrotated) space.
+            var local = RotatePointAroundCenter(pixelPoint, layer.Frame, -layer.RotationDeg);
+            return layer.Frame.Contains(local.X, local.Y);
+        }
+
+        private static PointF RotatePointAroundCenter(PointF pt, RectangleF frame, float deg)
+        {
+            float cx = frame.X + frame.Width / 2f;
+            float cy = frame.Y + frame.Height / 2f;
+            double rad = deg * System.Math.PI / 180.0;
+            double cos = System.Math.Cos(rad);
+            double sin = System.Math.Sin(rad);
+            float dx = pt.X - cx;
+            float dy = pt.Y - cy;
+            return new PointF(
+                (float)(dx * cos - dy * sin) + cx,
+                (float)(dx * sin + dy * cos) + cy);
         }
 
         private ImageLayerHandle HitTestSelectedLayerHandle(Point pixelPoint)
@@ -155,27 +180,35 @@ namespace screenzap
             }
 
             var layer = imageLayers[selectedLayerIndex];
-            float tol = HandleHitToleranceImagePixels();
-
-            // Convert the pixel point to screen for handle testing — handles are screen-sized,
-            // not image-sized, so a fixed image-pixel tolerance grows/shrinks inversely with zoom.
             float zoom = pictureBox1 != null ? (float)pictureBox1.ZoomLevel : 1f;
             if (zoom <= 0f) zoom = 1f;
             float screenTol = LayerHandleScreenSize / 2f;
-            tol = screenTol / zoom;
+            float tol = screenTol / zoom;
 
+            // Rotate the test point into the layer's local (unrotated) space for resize handles.
             var f = layer.Frame;
-            // Order: corners first (smaller bullseye), then edges.
-            if (IsNear(pixelPoint, new PointF(f.Left, f.Top), tol)) return ImageLayerHandle.TopLeft;
-            if (IsNear(pixelPoint, new PointF(f.Right, f.Top), tol)) return ImageLayerHandle.TopRight;
-            if (IsNear(pixelPoint, new PointF(f.Right, f.Bottom), tol)) return ImageLayerHandle.BottomRight;
-            if (IsNear(pixelPoint, new PointF(f.Left, f.Bottom), tol)) return ImageLayerHandle.BottomLeft;
+            var localPt = layer.RotationDeg == 0f
+                ? (PointF)pixelPoint
+                : RotatePointAroundCenter(pixelPoint, f, -layer.RotationDeg);
 
-            // Edge midpoints — we accept hits along the edge, not just at the midpoint.
-            if (System.Math.Abs(pixelPoint.Y - f.Top) <= tol && pixelPoint.X >= f.Left && pixelPoint.X <= f.Right) return ImageLayerHandle.Top;
-            if (System.Math.Abs(pixelPoint.Y - f.Bottom) <= tol && pixelPoint.X >= f.Left && pixelPoint.X <= f.Right) return ImageLayerHandle.Bottom;
-            if (System.Math.Abs(pixelPoint.X - f.Left) <= tol && pixelPoint.Y >= f.Top && pixelPoint.Y <= f.Bottom) return ImageLayerHandle.Left;
-            if (System.Math.Abs(pixelPoint.X - f.Right) <= tol && pixelPoint.Y >= f.Top && pixelPoint.Y <= f.Bottom) return ImageLayerHandle.Right;
+            // Corners first (smaller bullseye), then edges.
+            if (IsNearF(localPt, new PointF(f.Left, f.Top), tol)) return ImageLayerHandle.TopLeft;
+            if (IsNearF(localPt, new PointF(f.Right, f.Top), tol)) return ImageLayerHandle.TopRight;
+            if (IsNearF(localPt, new PointF(f.Right, f.Bottom), tol)) return ImageLayerHandle.BottomRight;
+            if (IsNearF(localPt, new PointF(f.Left, f.Bottom), tol)) return ImageLayerHandle.BottomLeft;
+
+            if (System.Math.Abs(localPt.Y - f.Top) <= tol && localPt.X >= f.Left && localPt.X <= f.Right) return ImageLayerHandle.Top;
+            if (System.Math.Abs(localPt.Y - f.Bottom) <= tol && localPt.X >= f.Left && localPt.X <= f.Right) return ImageLayerHandle.Bottom;
+            if (System.Math.Abs(localPt.X - f.Left) <= tol && localPt.Y >= f.Top && localPt.Y <= f.Bottom) return ImageLayerHandle.Left;
+            if (System.Math.Abs(localPt.X - f.Right) <= tol && localPt.Y >= f.Top && localPt.Y <= f.Bottom) return ImageLayerHandle.Right;
+
+            // Rotation handle: located LayerRotationHandleScreenOffset pixels above the
+            // top-center in the layer's local space (same point regardless of rotation because
+            // the test point has already been unrotated above).
+            float rotHandleImageY = f.Top - LayerRotationHandleScreenOffset / zoom;
+            float rotHandleTol = screenTol * 1.5f / zoom;
+            if (IsNearF(localPt, new PointF(f.Left + f.Width / 2f, rotHandleImageY), rotHandleTol))
+                return ImageLayerHandle.Rotate;
 
             return ImageLayerHandle.None;
         }
@@ -188,6 +221,11 @@ namespace screenzap
         }
 
         private static bool IsNear(Point p, PointF target, float tol)
+        {
+            return System.Math.Abs(p.X - target.X) <= tol && System.Math.Abs(p.Y - target.Y) <= tol;
+        }
+
+        private static bool IsNearF(PointF p, PointF target, float tol)
         {
             return System.Math.Abs(p.X - target.X) <= tol && System.Math.Abs(p.Y - target.Y) <= tol;
         }
@@ -240,6 +278,7 @@ namespace screenzap
             isLayerInteractionActive = true;
             layerInteractionOriginPixel = pixelPoint;
             layerInteractionStartFrame = imageLayers[selectedLayerIndex].Frame;
+            layerInteractionStartRotation = imageLayers[selectedLayerIndex].RotationDeg;
             layerInteractionLayersBefore = CloneLayers();
             layerChangedDuringInteraction = false;
             pictureBox1?.Invalidate();
@@ -248,6 +287,31 @@ namespace screenzap
         private void UpdateLayerInteraction(Point pixelPoint)
         {
             if (!isLayerInteractionActive || selectedLayerIndex < 0) return;
+
+            // Rotation is handled separately — it only updates RotationDeg, not Frame.
+            if (activeLayerHandle == ImageLayerHandle.Rotate)
+            {
+                float lx = layerInteractionStartFrame.X + layerInteractionStartFrame.Width / 2f;
+                float ly = layerInteractionStartFrame.Y + layerInteractionStartFrame.Height / 2f;
+                double startAngle = System.Math.Atan2(layerInteractionOriginPixel.Y - ly, layerInteractionOriginPixel.X - lx) * 180.0 / System.Math.PI;
+                double currentAngle = System.Math.Atan2(pixelPoint.Y - ly, pixelPoint.X - lx) * 180.0 / System.Math.PI;
+                float newRotation = layerInteractionStartRotation + (float)(currentAngle - startAngle);
+                // Normalize to (-180, 180].
+                while (newRotation > 180f) newRotation -= 360f;
+                while (newRotation <= -180f) newRotation += 360f;
+                // Shift: snap to 15° increments.
+                if (System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift))
+                    newRotation = (float)(System.Math.Round(newRotation / 15.0) * 15.0);
+
+                var rotLayer = imageLayers[selectedLayerIndex];
+                if (rotLayer.RotationDeg != newRotation)
+                {
+                    rotLayer.RotationDeg = newRotation;
+                    layerChangedDuringInteraction = true;
+                    pictureBox1?.Invalidate();
+                }
+                return;
+            }
 
             float dx = pixelPoint.X - layerInteractionOriginPixel.X;
             float dy = pixelPoint.Y - layerInteractionOriginPixel.Y;
@@ -388,26 +452,49 @@ namespace screenzap
             PointF pan = pictureBox1 != null ? pictureBox1.Metrics.PanOffset : PointF.Empty;
 
             var f = imageLayers[selectedLayerIndex].Frame;
-            var screenRect = new RectangleF(
-                pan.X + f.X * zoom,
-                pan.Y + f.Y * zoom,
-                f.Width * zoom,
-                f.Height * zoom);
+            float rotDeg = imageLayers[selectedLayerIndex].RotationDeg;
+
+            // Screen-space center of the layer
+            float cx = pan.X + (f.X + f.Width / 2f) * zoom;
+            float cy = pan.Y + (f.Y + f.Height / 2f) * zoom;
+            float hw = f.Width * zoom / 2f;
+            float hh = f.Height * zoom / 2f;
+
+            var state = graphics.Save();
+            graphics.TranslateTransform(cx, cy);
+            if (rotDeg != 0f) graphics.RotateTransform(rotDeg);
 
             using (var pen = new Pen(Color.DodgerBlue, 1.25f))
             {
-                pen.DashStyle = DashStyle.Solid;
-                graphics.DrawRectangle(pen, screenRect.X, screenRect.Y, screenRect.Width, screenRect.Height);
+                graphics.DrawRectangle(pen, -hw, -hh, hw * 2f, hh * 2f);
             }
 
-            DrawLayerHandle(graphics, screenRect.Left, screenRect.Top);
-            DrawLayerHandle(graphics, screenRect.Left + screenRect.Width / 2f, screenRect.Top);
-            DrawLayerHandle(graphics, screenRect.Right, screenRect.Top);
-            DrawLayerHandle(graphics, screenRect.Right, screenRect.Top + screenRect.Height / 2f);
-            DrawLayerHandle(graphics, screenRect.Right, screenRect.Bottom);
-            DrawLayerHandle(graphics, screenRect.Left + screenRect.Width / 2f, screenRect.Bottom);
-            DrawLayerHandle(graphics, screenRect.Left, screenRect.Bottom);
-            DrawLayerHandle(graphics, screenRect.Left, screenRect.Top + screenRect.Height / 2f);
+            // 8 resize handles (coords relative to layer center after rotation applied)
+            DrawLayerHandle(graphics, -hw, -hh);
+            DrawLayerHandle(graphics, 0f, -hh);
+            DrawLayerHandle(graphics, hw, -hh);
+            DrawLayerHandle(graphics, hw, 0f);
+            DrawLayerHandle(graphics, hw, hh);
+            DrawLayerHandle(graphics, 0f, hh);
+            DrawLayerHandle(graphics, -hw, hh);
+            DrawLayerHandle(graphics, -hw, 0f);
+
+            // Rotation handle: stem from top-center to a circle above it
+            float stemEndY = -hh - LayerRotationHandleScreenOffset;
+            using (var stemPen = new Pen(Color.DodgerBlue, 1f))
+                graphics.DrawLine(stemPen, 0f, -hh, 0f, stemEndY);
+            DrawRotationHandle(graphics, 0f, stemEndY);
+
+            graphics.Restore(state);
+        }
+
+        private static void DrawRotationHandle(Graphics graphics, float cx, float cy)
+        {
+            const float r = 5f;
+            using var fill = new SolidBrush(Color.White);
+            using var stroke = new Pen(Color.DodgerBlue, 1f);
+            graphics.FillEllipse(fill, cx - r, cy - r, r * 2f, r * 2f);
+            graphics.DrawEllipse(stroke, cx - r, cy - r, r * 2f, r * 2f);
         }
 
         private static void DrawLayerHandle(Graphics graphics, float cx, float cy)
@@ -445,7 +532,22 @@ namespace screenzap
                     layer.Frame.Width * zoom,
                     layer.Frame.Height * zoom);
 
-                graphics.DrawImage(layer.Source, dest, layer.Fill, GraphicsUnit.Pixel);
+                if (layer.RotationDeg != 0f)
+                {
+                    float cx = dest.X + dest.Width / 2f;
+                    float cy = dest.Y + dest.Height / 2f;
+                    var state = graphics.Save();
+                    graphics.TranslateTransform(cx, cy);
+                    graphics.RotateTransform(layer.RotationDeg);
+                    graphics.DrawImage(layer.Source,
+                        new RectangleF(-dest.Width / 2f, -dest.Height / 2f, dest.Width, dest.Height),
+                        layer.Fill, GraphicsUnit.Pixel);
+                    graphics.Restore(state);
+                }
+                else
+                {
+                    graphics.DrawImage(layer.Source, dest, layer.Fill, GraphicsUnit.Pixel);
+                }
             }
         }
 
@@ -504,6 +606,7 @@ namespace screenzap
                 ImageLayerHandle.Bottom => Cursors.SizeNS,
                 ImageLayerHandle.Left => Cursors.SizeWE,
                 ImageLayerHandle.Right => Cursors.SizeWE,
+                ImageLayerHandle.Rotate => Cursors.Cross,
                 _ => Cursors.Default,
             };
         }
