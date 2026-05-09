@@ -15,6 +15,7 @@ namespace screenzap.Components
         public const int MaxItems = 128;
 
         private readonly List<ClipboardHistoryItem> items = new();
+        private readonly HashSet<string> suppressedSystemHistoryIds = new(StringComparer.Ordinal);
         private ClipboardHistoryItem? activeItem;
 
         public IReadOnlyList<ClipboardHistoryItem> Items => new ReadOnlyCollection<ClipboardHistoryItem>(items);
@@ -150,7 +151,16 @@ namespace screenzap.Components
                 return false;
             }
 
-            return items.Any(item => item.ContainsSuppressedSystemHistoryId(systemHistoryId));
+            return suppressedSystemHistoryIds.Contains(systemHistoryId)
+                || items.Any(item => item.ContainsSuppressedSystemHistoryId(systemHistoryId));
+        }
+
+        internal void SuppressSystemHistoryId(string? systemHistoryId)
+        {
+            if (!string.IsNullOrWhiteSpace(systemHistoryId))
+            {
+                suppressedSystemHistoryIds.Add(systemHistoryId);
+            }
         }
 
         internal void LoadPersisted(IEnumerable<ClipboardHistoryItem> restoredItems, Guid? activeItemId)

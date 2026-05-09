@@ -1,8 +1,10 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Threading;
 using screenzap;
 using screenzap.Components;
+using screenzap.Testing;
 using Xunit;
 
 namespace Screenzap.ViewportTests
@@ -115,6 +117,59 @@ namespace Screenzap.ViewportTests
             Assert.NotNull(item.UndoSnapshot);
             Assert.Single(item.UndoSnapshot!.Steps);
             Assert.Equal(0, item.UndoSnapshot.Index);
+        }
+
+        [Fact]
+        public void HistoryThumbnailClick_StashesAndRestoresImageLayerState()
+        {
+            Exception? failure = null;
+
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    using var kit = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
+                    kit.Host!.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+
+                    var first = kit.LoadCanvas(96, 64, Color.LightCyan);
+                    using var pasted = new Bitmap(20, 14);
+                    using (var g = Graphics.FromImage(pasted))
+                    {
+                        g.Clear(Color.Purple);
+                    }
+
+                    kit.PasteImage(pasted);
+                    Assert.Equal(1, kit.Editor.ImageLayerCountForTests);
+
+                    using var secondImage = new Bitmap(96, 64);
+                    using (var g = Graphics.FromImage(secondImage))
+                    {
+                        g.Clear(Color.LightSalmon);
+                    }
+
+                    var second = kit.Host.HistoryStore.AddObservedImage(secondImage);
+                    Assert.True(kit.ClickHistoryThumbnail(second));
+                    Assert.Same(second, kit.Host.HistoryStore.ActiveItem);
+                    Assert.Equal(0, kit.Editor.ImageLayerCountForTests);
+
+                    Assert.True(kit.ClickHistoryThumbnail(first));
+                    Assert.Same(first, kit.Host.HistoryStore.ActiveItem);
+                    Assert.Equal(1, kit.Editor.ImageLayerCountForTests);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            if (failure != null)
+            {
+                throw failure;
+            }
         }
     }
 }

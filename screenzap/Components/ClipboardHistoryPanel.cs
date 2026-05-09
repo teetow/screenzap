@@ -15,6 +15,7 @@ namespace screenzap.Components
     internal sealed class ClipboardHistoryPanel : Panel
     {
         private const int ThumbnailOuterPadding = 8;
+        private const int FallbackScrollbarWidth = 17;
         private readonly FlowLayoutPanel flow;
         private readonly ToolTip tooltip = new ToolTip();
         private readonly Dictionary<Guid, ThumbnailButton> buttons = new();
@@ -223,7 +224,7 @@ namespace screenzap.Components
         {
             if (store == null) return;
 
-            UpdateThumbnailSizing(force: true);
+            UpdateThumbnailSizing();
 
             flow.SuspendLayout();
             try
@@ -236,7 +237,8 @@ namespace screenzap.Components
                 foreach (var item in store.Items)
                 {
                     liveIds.Add(item.Id);
-                    if (!buttons.TryGetValue(item.Id, out var btn))
+                    bool isNewButton = !buttons.TryGetValue(item.Id, out var btn);
+                    if (isNewButton)
                     {
                         btn = new ThumbnailButton();
                         btn.Click += (s, e) =>
@@ -251,8 +253,11 @@ namespace screenzap.Components
                         buttons[item.Id] = btn;
                     }
 
-                    item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
-                    btn.Rebind(item, ReferenceEquals(store.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
+                    if (isNewButton || item.Thumbnail == null)
+                    {
+                        item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
+                    }
+                    btn!.Rebind(item, ReferenceEquals(store.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
                     tooltip.SetToolTip(btn, BuildToolTip(item));
                     flow.Controls.Add(btn);
                 }
@@ -277,7 +282,7 @@ namespace screenzap.Components
 
         private void UpdateThumbnailSizing(bool force = false)
         {
-            int availableWidth = Math.Max(1, flow.ClientSize.Width - flow.Padding.Horizontal - ThumbnailOuterPadding);
+            int availableWidth = CalculateThumbnailMaxWidth();
             int availableHeight = availableWidth;
 
             if (!force && availableWidth == currentThumbMaxWidth && availableHeight == currentThumbMaxHeight)
@@ -332,6 +337,36 @@ namespace screenzap.Components
             }
         }
 
+        private int CalculateThumbnailMaxWidth()
+        {
+            int scrollbarReserve = SystemInformation.VerticalScrollBarWidth;
+            if (scrollbarReserve <= 0)
+            {
+                scrollbarReserve = FallbackScrollbarWidth;
+            }
+
+            int reservedPadding = flow.Padding.Left + scrollbarReserve + ThumbnailOuterPadding;
+            return Math.Max(1, flow.Width - reservedPadding);
+        }
+
+        internal bool ClickItemForDiagnostics(Guid itemId)
+        {
+            if (!buttons.TryGetValue(itemId, out var btn))
+            {
+                return false;
+            }
+
+            btn.ClickForDiagnostics();
+            return true;
+        }
+
+        internal Size GetItemButtonSizeForDiagnostics(Guid itemId)
+        {
+            return buttons.TryGetValue(itemId, out var btn)
+                ? btn.Size
+                : Size.Empty;
+        }
+
         private static Bitmap MakeIcon(IconChar icon, Color color)
             => FormsIconHelper.ToBitmap(icon, color, 16, 0, FlipOrientation.Normal);
 
@@ -343,6 +378,8 @@ namespace screenzap.Components
 
         private sealed class ThumbnailButton : Control
         {
+            private const int ChromePadding = 8;
+            private const int MinButtonHeight = 24;
             private static readonly Color ActiveBorder = Color.DeepSkyBlue;
             private static readonly Color IdleBorder = Color.FromArgb(70, 70, 75);
             private bool isActive;
@@ -400,14 +437,18 @@ namespace screenzap.Components
                 Item = item;
                 isActive = active;
 
-                var newSize = new Size(Math.Max(1, maxThumbWidth) + 8, Math.Max(1, maxThumbHeight) + 8);
+                var thumb = item.Thumbnail;
+                int buttonWidth = Math.Max(1, maxThumbWidth) + ChromePadding;
+                int contentHeight = thumb?.Height ?? Math.Max(1, maxThumbHeight);
+                int buttonHeight = Math.Max(MinButtonHeight, contentHeight + ChromePadding);
+                var newSize = new Size(buttonWidth, buttonHeight);
                 if (Size != newSize)
                 {
                     Size = newSize;
                     changed = true;
                 }
 
-                var currentThumb = item.Thumbnail;
+                var currentThumb = thumb;
                 if (!ReferenceEquals(lastThumbnail, currentThumb))
                 {
                     lastThumbnail = currentThumb;
@@ -420,6 +461,11 @@ namespace screenzap.Components
                 }
             }
 
+            internal void ClickForDiagnostics()
+            {
+                OnClick(EventArgs.Empty);
+            }
+
             protected override void OnPaint(PaintEventArgs e)
             {
                 base.OnPaint(e);
@@ -428,8 +474,8 @@ namespace screenzap.Components
 
                 if (Item?.Thumbnail is Bitmap thumb)
                 {
-                    int thumbX = 4 + Math.Max(0, (Width - 8 - thumb.Width) / 2);
-                    int thumbY = 4 + Math.Max(0, (Height - 8 - thumb.Height) / 2);
+                    int thumbX = (Width - thumb.Width) / 2;
+                    int thumbY = (Height - thumb.Height) / 2;
                     g.DrawImage(thumb, new Rectangle(thumbX, thumbY, thumb.Width, thumb.Height));
                     using var borderPen = new Pen(isActive ? ActiveBorder : IdleBorder, isActive ? 2f : 1f);
                     g.DrawRectangle(borderPen, new Rectangle(thumbX - 1, thumbY - 1, thumb.Width + 1, thumb.Height + 1));

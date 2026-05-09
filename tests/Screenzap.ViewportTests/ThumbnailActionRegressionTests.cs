@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using screenzap.Components;
 using screenzap.Components.Shared;
@@ -54,7 +55,7 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubTextPresenter();
-                    using var host = new ClipboardEditorHostForm(presenter)
+                    using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
                         ShowInTaskbar = false
@@ -102,7 +103,7 @@ namespace Screenzap.ViewportTests
                 {
                     using var imagePresenter = new screenzap.ImageEditor();
                     using var textPresenter = new screenzap.TextEditor();
-                    using var host = new ClipboardEditorHostForm(imagePresenter, textPresenter)
+                    using var host = new ClipboardEditorHostForm(true, imagePresenter, textPresenter)
                     {
                         SuppressActivation = true,
                         ShowInTaskbar = false
@@ -173,7 +174,7 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubTextPresenter();
-                    using var host = new ClipboardEditorHostForm(presenter)
+                    using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
                         ShowInTaskbar = false
@@ -198,6 +199,67 @@ namespace Screenzap.ViewportTests
                     Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, second));
                     Assert.Same(first, host.HistoryStore.ActiveItem);
                     Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, third));
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void DeleteSystemHistoryItem_RemovesLocalItemBeforeSystemDeleteCompletes()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubTextPresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.CreateControl();
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+
+                    var first = host.HistoryStore.AddObservedText("first");
+                    var second = host.HistoryStore.AddObservedText("second");
+                    second.AssignSystemHistoryId("{TEST-SYSTEM-ID}");
+
+                    Assert.True(host.ActivateHistoryItem(second));
+                    Assert.Same(second, host.HistoryStore.ActiveItem);
+
+                    var releaseSystemDelete = new TaskCompletionSource<bool>();
+                    bool systemDeleteStarted = false;
+                    host.TryDeleteFromSystemHistoryAsync = async item =>
+                    {
+                        systemDeleteStarted = true;
+                        Assert.Equal("{TEST-SYSTEM-ID}", item.SystemHistoryId);
+                        await releaseSystemDelete.Task;
+                        return true;
+                    };
+
+                    var deleteMethod = typeof(ClipboardEditorHostForm).GetMethod("DeleteItemAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+                    Assert.NotNull(deleteMethod);
+                    var task = (Task?)deleteMethod!.Invoke(host, new object[] { second });
+                    Assert.NotNull(task);
+                    Assert.True(task!.IsCompleted);
+
+                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, second));
+                    Assert.Same(first, host.HistoryStore.ActiveItem);
+                    Assert.True(host.HistoryStore.ContainsSuppressedSystemHistoryId("{TEST-SYSTEM-ID}"));
+                    Assert.True(systemDeleteStarted);
+
+                    releaseSystemDelete.SetResult(true);
                 }
                 catch (Exception ex)
                 {
@@ -333,7 +395,63 @@ namespace Screenzap.ViewportTests
 
                     Assert.Equal(firstSizeBefore, firstSizeAfter);
                     Assert.Equal(secondSizeBefore, secondSizeAfter);
-                    Assert.Equal(firstSizeAfter, secondSizeAfter);
+                    Assert.Equal(firstSizeAfter.Width, secondSizeAfter.Width);
+                    Assert.True(firstSizeAfter.Height < secondSizeAfter.Height);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void ThumbnailSizing_DoesNotChange_WhenScrollbarAppears()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var hostWithoutScroll = CreatePanelHost(out var panelWithoutScroll);
+                    using var hostWithScroll = CreatePanelHost(out var panelWithScroll);
+
+                    using var wide = new Bitmap(320, 80);
+                    using var filler = new Bitmap(80, 320);
+                    using (var g = Graphics.FromImage(wide))
+                    {
+                        g.Clear(Color.DarkOrange);
+                    }
+
+                    using (var g = Graphics.FromImage(filler))
+                    {
+                        g.Clear(Color.CadetBlue);
+                    }
+
+                    var storeWithoutScroll = new ClipboardHistoryStore();
+                    panelWithoutScroll.AttachStore(storeWithoutScroll);
+                    var singleWide = storeWithoutScroll.AddObservedImage(wide);
+
+                    var storeWithScroll = new ClipboardHistoryStore();
+                    panelWithScroll.AttachStore(storeWithScroll);
+                    var wideAmongOverflow = storeWithScroll.AddObservedImage(wide);
+                    for (int i = 0; i < 8; i++)
+                    {
+                        storeWithScroll.AddObservedImage(filler);
+                    }
+
+                    Application.DoEvents();
+
+                    var sizeWithoutScroll = panelWithoutScroll.GetItemButtonSizeForDiagnostics(singleWide.Id);
+                    var sizeWithScroll = panelWithScroll.GetItemButtonSizeForDiagnostics(wideAmongOverflow.Id);
+
+                    Assert.Equal(sizeWithoutScroll, sizeWithScroll);
                 }
                 catch (Exception ex)
                 {
@@ -352,6 +470,27 @@ namespace Screenzap.ViewportTests
             var button = (Control?)buttons[id];
             Assert.NotNull(button);
             return button!.Size;
+        }
+
+        private static Form CreatePanelHost(out ClipboardHistoryPanel panel)
+        {
+            var host = new Form
+            {
+                ClientSize = new Size(93, 180),
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.Manual,
+                Location = new Point(-32000, -32000)
+            };
+
+            panel = new ClipboardHistoryPanel
+            {
+                Dock = DockStyle.Fill
+            };
+
+            host.Controls.Add(panel);
+            host.Show();
+            Application.DoEvents();
+            return host;
         }
 
         private static void RunInSta(ThreadStart action)

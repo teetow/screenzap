@@ -206,15 +206,15 @@ namespace screenzap.Testing
             using var second = new Bitmap(96, 64);
             using (var g = Graphics.FromImage(second)) { g.Clear(Color.LightSalmon); }
             var secondItem = kit.Host!.HistoryStore.AddObservedImage(second);
-            kit.Host.ActivateHistoryItem(secondItem);
-            kit.PumpUi();
+            var clickedSecond = kit.ClickHistoryThumbnail(secondItem);
             Save(kit, outputDir, "hs-02-switched-to-second");
+            Logger.Log($"Clicked second thumbnail: {clickedSecond}, active={kit.Host.HistoryStore.ActiveItem?.Id == secondItem.Id}");
             Logger.Log("On second item: " + kit.Editor.TestDescribeState());
 
             // Switch back to first — the layer should still be there.
-            kit.Host.ActivateHistoryItem(firstItem);
-            kit.PumpUi();
+            var clickedFirst = kit.ClickHistoryThumbnail(firstItem);
             Save(kit, outputDir, "hs-03-back-to-first-expect-layer-restored");
+            Logger.Log($"Clicked first thumbnail: {clickedFirst}, active={kit.Host.HistoryStore.ActiveItem?.Id == firstItem.Id}");
             Logger.Log("Back on first: " + kit.Editor.TestDescribeState());
         }
 

@@ -20,7 +20,7 @@ namespace screenzap.Testing
             Logger.Log("Editor harness starting...");
             using var imagePresenter = new ImagePresenter();
             using var textPresenter = new TextPresenter();
-            using var host = new ClipboardEditorHostForm(imagePresenter, textPresenter)
+            using var host = new ClipboardEditorHostForm(true, imagePresenter, textPresenter)
             {
                 SuppressActivation = true,
                 ShowInTaskbar = false
@@ -495,7 +495,7 @@ namespace screenzap.Testing
         private static void ValidateHostServices(List<string> failures)
         {
             using var stub = new StubPresenter();
-            using var host = new ClipboardEditorHostForm(stub)
+            using var host = new ClipboardEditorHostForm(true, stub)
             {
                 SuppressActivation = true,
                 ShowInTaskbar = false

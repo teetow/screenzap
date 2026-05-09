@@ -35,7 +35,9 @@ namespace screenzap.Testing
 
             if (withHost)
             {
-                Host = new ClipboardEditorHostForm(Editor)
+                Host = new ClipboardEditorHostForm(
+                    disablePersistenceForDiagnostics: true,
+                    Editor)
                 {
                     SuppressActivation = true,
                     ShowInTaskbar = false,
@@ -168,6 +170,18 @@ namespace screenzap.Testing
             Editor.SetInternalClipboardImageForDiagnostics(source);
             // Fire Ctrl+V through the real key pipeline.
             Press(Keys.Control | Keys.V);
+        }
+
+        public bool ClickHistoryThumbnail(ClipboardHistoryItem item)
+        {
+            if (Host == null)
+            {
+                return false;
+            }
+
+            var clicked = Host.ClickHistoryItemForDiagnostics(item);
+            PumpUi();
+            return clicked;
         }
 
         // ─── rendering / sampling ──────────────────────────────────────────────────────

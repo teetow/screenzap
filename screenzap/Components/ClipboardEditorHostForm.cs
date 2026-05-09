@@ -24,9 +24,13 @@ namespace screenzap.Components
         private readonly EditorHostServices hostServices;
         private readonly ClipboardHistoryStore historyStore;
         private readonly ClipboardHistoryPersistence historyPersistence;
+        private readonly bool persistHistoryChanges;
+        private readonly bool allowSystemClipboardWrites;
+        private readonly System.Windows.Forms.Timer persistenceSaveTimer;
         private readonly ClipboardHistoryPanel historyPanel;
         private IClipboardDocumentPresenter? activePresenter;
         private bool hasPendingReloadIndicator;
+        private bool hasPendingPersistenceSave;
         private DateTime? suppressExternalClipboardUntilUtc;
         private Guid? pendingCommittedItemId;
         private DateTime? pendingCommittedItemUntilUtc;
@@ -56,6 +60,31 @@ namespace screenzap.Components
         }
 
         public ClipboardEditorHostForm(IEnumerable<IClipboardDocumentPresenter>? presentersToHost)
+            : this(
+                presentersToHost,
+                null,
+                restorePersistedHistory: true,
+                persistHistoryChanges: true,
+                allowSystemClipboardWrites: true)
+        {
+        }
+
+        internal ClipboardEditorHostForm(bool disablePersistenceForDiagnostics, params IClipboardDocumentPresenter[] presenters)
+            : this(
+                (presenters ?? Array.Empty<IClipboardDocumentPresenter>()).AsEnumerable(),
+                null,
+                restorePersistedHistory: !disablePersistenceForDiagnostics,
+                persistHistoryChanges: !disablePersistenceForDiagnostics,
+                allowSystemClipboardWrites: !disablePersistenceForDiagnostics)
+        {
+        }
+
+        internal ClipboardEditorHostForm(
+            IEnumerable<IClipboardDocumentPresenter>? presentersToHost,
+            ClipboardHistoryPersistence? persistence,
+            bool restorePersistedHistory,
+            bool persistHistoryChanges = true,
+            bool allowSystemClipboardWrites = true)
         {
             toolbar = CreateToolbar();
             reloadIndicatorLabel = CreateReloadIndicatorLabel();
@@ -63,8 +92,18 @@ namespace screenzap.Components
             presenterHostPanel = CreatePresenterHostPanel();
             statusStrip = CreateStatusStrip(out statusLabel);
             historyStore = new ClipboardHistoryStore();
-            historyPersistence = new ClipboardHistoryPersistence();
-            RestorePersistedHistory();
+            historyPersistence = persistence ?? new ClipboardHistoryPersistence();
+            this.persistHistoryChanges = persistHistoryChanges;
+            this.allowSystemClipboardWrites = allowSystemClipboardWrites;
+            persistenceSaveTimer = new System.Windows.Forms.Timer
+            {
+                Interval = 350
+            };
+            persistenceSaveTimer.Tick += OnPersistenceSaveTimerTick;
+            if (restorePersistedHistory)
+            {
+                RestorePersistedHistory();
+            }
             historyPanel = new ClipboardHistoryPanel();
             historyPanel.Width = HistoryPanelDefaultWidth;
             historyPanel.MinimumSize = new Size(HistoryPanelMinWidth, 0);
@@ -185,6 +224,9 @@ namespace screenzap.Components
             {
                 Application.Idle -= OnApplicationIdle;
                 FormClosed -= OnHostFormClosed;
+                persistenceSaveTimer.Stop();
+                FlushPersistedHistorySave();
+                persistenceSaveTimer.Dispose();
                 foreach (var presenter in presenters)
                 {
                     presenter.Dispose();
@@ -443,6 +485,16 @@ namespace screenzap.Components
 
         internal bool ExecuteCommandForDiagnostics(EditorCommandId commandId) => ExecuteCommand(commandId);
 
+        internal bool ClickHistoryItemForDiagnostics(ClipboardHistoryItem item)
+        {
+            if (item == null)
+            {
+                return false;
+            }
+
+            return historyPanel.ClickItemForDiagnostics(item.Id);
+        }
+
         private bool ExecuteCommand(EditorCommandId commandId)
         {
             switch (commandId)
@@ -531,11 +583,17 @@ namespace screenzap.Components
             {
                 if (flattened != null)
                 {
-                    Clipboard.SetImage(flattened);
+                    if (allowSystemClipboardWrites)
+                    {
+                        Clipboard.SetImage(flattened);
+                    }
                 }
                 else if (flattenedText != null)
                 {
-                    Clipboard.SetText(flattenedText);
+                    if (allowSystemClipboardWrites)
+                    {
+                        Clipboard.SetText(flattenedText);
+                    }
                 }
             }
             catch (Exception ex)
@@ -637,7 +695,7 @@ namespace screenzap.Components
                 return;
             }
             UpdateCommandStates();
-            SavePersistedHistory();
+            SchedulePersistedHistorySave();
         }
 
         private void OnStoreChanged(object? sender, EventArgs e)
@@ -648,7 +706,7 @@ namespace screenzap.Components
                 return;
             }
 
-            SavePersistedHistory();
+            SchedulePersistedHistorySave();
         }
 
         private void OnActiveItemChanged(object? sender, EventArgs e)
@@ -659,7 +717,7 @@ namespace screenzap.Components
                 return;
             }
 
-            historyPersistence.SaveActiveItemOnly(historyStore.ActiveItem?.Id);
+            SchedulePersistedHistorySave();
         }
 
         private void OnHistoryItemActivated(object? sender, ClipboardHistoryItem item)
@@ -688,7 +746,10 @@ namespace screenzap.Components
                         }
                         else
                         {
-                            Clipboard.SetImage(imageToWrite);
+                            if (allowSystemClipboardWrites)
+                            {
+                                Clipboard.SetImage(imageToWrite);
+                            }
                         }
                     }
                 }
@@ -700,7 +761,10 @@ namespace screenzap.Components
                     }
                     else
                     {
-                        Clipboard.SetText(item.CurrentText);
+                        if (allowSystemClipboardWrites)
+                        {
+                            Clipboard.SetText(item.CurrentText);
+                        }
                     }
                 }
             }
@@ -738,19 +802,10 @@ namespace screenzap.Components
             UpdateStatusText("Reverted to original.");
         }
 
-        private async Task DeleteItemAsync(ClipboardHistoryItem item)
+        private Task DeleteItemAsync(ClipboardHistoryItem item)
         {
-            if (!string.IsNullOrEmpty(item.SystemHistoryId))
-            {
-                bool removedFromSystem = TryDeleteFromSystemHistoryAsync != null
-                    && await TryDeleteFromSystemHistoryAsync(item);
-                if (!removedFromSystem)
-                {
-                    UpdateStatusText("Could not delete this Windows clipboard history item.");
-                    return;
-                }
-            }
-
+            var systemHistoryId = item.SystemHistoryId;
+            historyStore.SuppressSystemHistoryId(systemHistoryId);
             bool wasActive = ReferenceEquals(historyStore.ActiveItem, item);
             var items = historyStore.Items;
             int idx = -1;
@@ -774,6 +829,13 @@ namespace screenzap.Components
             }
 
             UpdateStatusText("Deleted from history.");
+
+            if (!string.IsNullOrEmpty(systemHistoryId))
+            {
+                _ = DeleteSystemHistoryItemInBackgroundAsync(systemHistoryId);
+            }
+
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -950,8 +1012,9 @@ namespace screenzap.Components
         private void OnHostFormClosed(object? sender, FormClosedEventArgs e)
         {
             Application.Idle -= OnApplicationIdle;
+            persistenceSaveTimer.Stop();
             SaveHistoryPanelWidth();
-            SavePersistedHistory();
+            FlushPersistedHistorySave();
         }
 
         internal ClipboardHistoryItem? TryBindPendingCommittedSystemItem(ClipboardHistoryItem incomingSystemItem)
@@ -1001,7 +1064,66 @@ namespace screenzap.Components
 
         private void SavePersistedHistory()
         {
+            if (!persistHistoryChanges)
+            {
+                return;
+            }
+
             historyPersistence.Save(historyStore.Items, historyStore.ActiveItem);
+        }
+
+        private void SchedulePersistedHistorySave()
+        {
+            if (!persistHistoryChanges)
+            {
+                return;
+            }
+
+            hasPendingPersistenceSave = true;
+            persistenceSaveTimer.Stop();
+            persistenceSaveTimer.Start();
+        }
+
+        private void OnPersistenceSaveTimerTick(object? sender, EventArgs e)
+        {
+            persistenceSaveTimer.Stop();
+            FlushPersistedHistorySave();
+        }
+
+        private void FlushPersistedHistorySave()
+        {
+            if (!hasPendingPersistenceSave)
+            {
+                return;
+            }
+
+            hasPendingPersistenceSave = false;
+            SavePersistedHistory();
+        }
+
+        private async Task DeleteSystemHistoryItemInBackgroundAsync(string systemHistoryId)
+        {
+            if (TryDeleteFromSystemHistoryAsync == null)
+            {
+                return;
+            }
+
+            bool removedFromSystem = false;
+            try
+            {
+                using var deletionItem = ClipboardHistoryItem.FromText(string.Empty);
+                deletionItem.AssignSystemHistoryId(systemHistoryId);
+                removedFromSystem = await TryDeleteFromSystemHistoryAsync(deletionItem);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Delete system history item failed: {ex.Message}");
+            }
+
+            if (!removedFromSystem && !IsDisposed)
+            {
+                UpdateStatusText("Could not delete this Windows clipboard history item.");
+            }
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

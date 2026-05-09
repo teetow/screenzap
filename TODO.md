@@ -21,13 +21,24 @@
 - [x] Shift-to-preserve-aspect-ratio on corner resize handles
 - [x] Annotation tools exercised through `--ui-capture` (arrow + rect flows)
 
-## Next (Slice 4)
+## Done (Slice 4 — Layer rotation — `db32c89`)
 
-- [ ] Rotation
+- [x] Rotation handle (circle + stem) above top-center of selected layer overlay
+- [x] Drag rotation handle to rotate layer (atan2-based, Shift snaps to 15°)
+- [x] Render: rotation applied in both screen paint and composite/export flatten
+- [x] Hit-test: rotated body click-selects correctly; AABB-only clicks outside the rotated image do not
+- [x] Undo/redo: same step pattern as translate/resize, fully reversible
+- [x] 6 unit tests (`ImageLayerRotationTests`, 58 total)
+
+## Done (Slice 5 — History thumbnail click coverage)
+
+- [x] ClipboardHistoryPanel thumbnail strip is wired through `UiTestKit`
+- [x] `--ui-capture` history switch flow clicks thumbnails instead of calling host activation directly
+- [x] Regression test verifies thumbnail click stashes/restores image layer state
 
 ## Backlog — unexercised flows (wire through kit)
 
-- [ ] ClipboardHistoryPanel thumbnail strip — click to switch items
+- [x] ClipboardHistoryPanel thumbnail strip — click to switch items
 - [ ] Censor / Straighten / Crop tools
 - [ ] Color correction
 - [ ] Reload / Revert / Duplicate flows
