@@ -12,6 +12,7 @@ namespace screenzap
     {
         private Point MouseInPixel;
         private Point MouseOutPixel;
+        private Point rubberBandStartClient;
         private bool isDrawingRubberBand;
         private bool isMovingSelection;
         private Point MoveInPixel;
@@ -620,6 +621,7 @@ namespace screenzap
                 else
                 {
                     isDrawingRubberBand = true;
+                    rubberBandStartClient = e.Location;
                 }
 
             }
@@ -843,7 +845,10 @@ namespace screenzap
 
             if (e.Button == MouseButtons.Left && isDrawingRubberBand)
             {
-                Selection = ClampToImage(GetNormalizedRect(MouseInPixel, MouseOutPixel));
+                var dx = Math.Abs(e.Location.X - rubberBandStartClient.X);
+                var dy = Math.Abs(e.Location.Y - rubberBandStartClient.Y);
+                var candidate = ClampToImage(GetNormalizedRect(MouseInPixel, MouseOutPixel));
+                Selection = (dx >= 4 || dy >= 4) ? candidate : Rectangle.Empty;
                 isDrawingRubberBand = false;
                 pictureBox1.Invalidate();
                 UpdateCommandUI();

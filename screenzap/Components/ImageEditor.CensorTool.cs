@@ -16,19 +16,20 @@ namespace screenzap
         private readonly List<CensorRegion> censorRegions = new List<CensorRegion>();
         private bool isCensorToolActive;
         private bool suppressConfidenceEvents;
+        private bool suppressCensorParamEvents;
         private float currentConfidenceThreshold;
         private Bitmap? censorPreviewBuffer;
-        private struct RowRange
+
+        private enum CensorDirection
         {
-            public int Start;
-            public int End;
+            X = 0,
+            Y = 1,
+            Both = 2,
         }
 
-        private struct ColumnRange
-        {
-            public int Start;
-            public int End;
-        }
+        private CensorDirection censorDirection = CensorDirection.X;
+        private int censorIterations = 30;
+        private int censorSmear = 20;
 
         private sealed class CensorRegion
         {
@@ -250,6 +251,7 @@ namespace screenzap
             }
 
             isCensorToolActive = true;
+            SyncCensorParamControlsFromState();
             currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Maximum ?? 100);
             suppressConfidenceEvents = true;
 
@@ -428,6 +430,16 @@ namespace screenzap
                 confidenceValueLabel.Text = "≥ " + thresholdPercent.ToString(CultureInfo.InvariantCulture) + "%";
             }
 
+            if (iterationsValueLabel != null)
+            {
+                iterationsValueLabel.Text = censorIterations.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (smearValueLabel != null)
+            {
+                smearValueLabel.Text = censorSmear.ToString(CultureInfo.InvariantCulture);
+            }
+
             bool anyRegions = censorRegions.Count > 0;
             bool anySelected = censorRegions.Any(r => r.Selected);
 
@@ -455,6 +467,145 @@ namespace screenzap
             {
                 confidenceToolStripHost.Enabled = isCensorToolActive && anyRegions;
             }
+
+            bool paramsEnabled = isCensorToolActive && anyRegions;
+            if (directionToolStripCombo != null)
+            {
+                directionToolStripCombo.Enabled = paramsEnabled;
+            }
+            if (iterationsToolStripHost != null)
+            {
+                iterationsToolStripHost.Enabled = paramsEnabled;
+            }
+            if (iterationsTrackBar != null)
+            {
+                iterationsTrackBar.Enabled = paramsEnabled;
+            }
+            if (smearToolStripHost != null)
+            {
+                smearToolStripHost.Enabled = paramsEnabled;
+            }
+            if (smearTrackBar != null)
+            {
+                smearTrackBar.Enabled = paramsEnabled;
+            }
+        }
+
+        private void SyncCensorParamControlsFromState()
+        {
+            suppressCensorParamEvents = true;
+            try
+            {
+                if (directionToolStripCombo != null)
+                {
+                    directionToolStripCombo.SelectedIndex = (int)censorDirection;
+                }
+                if (iterationsTrackBar != null)
+                {
+                    int value = Math.Clamp(censorIterations, iterationsTrackBar.Minimum, iterationsTrackBar.Maximum);
+                    iterationsTrackBar.Value = value;
+                    censorIterations = value;
+                }
+                if (smearTrackBar != null)
+                {
+                    int value = Math.Clamp(censorSmear, smearTrackBar.Minimum, smearTrackBar.Maximum);
+                    smearTrackBar.Value = value;
+                    censorSmear = value;
+                }
+            }
+            finally
+            {
+                suppressCensorParamEvents = false;
+            }
+        }
+
+        private void RebuildCensorPreviewAfterParamChange()
+        {
+            if (!isCensorToolActive || censorRegions.Count == 0)
+            {
+                return;
+            }
+
+            ShowCensorProgressIndicator();
+            try
+            {
+                BuildCensorPreviewBuffer();
+            }
+            finally
+            {
+                HideCensorProgressIndicator();
+            }
+
+            pictureBox1.Invalidate();
+        }
+
+        private void directionToolStripCombo_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (directionToolStripCombo == null || suppressCensorParamEvents)
+            {
+                return;
+            }
+
+            int index = directionToolStripCombo.SelectedIndex;
+            if (index < 0)
+            {
+                return;
+            }
+
+            var next = (CensorDirection)index;
+            if (next == censorDirection)
+            {
+                return;
+            }
+
+            censorDirection = next;
+            RebuildCensorPreviewAfterParamChange();
+        }
+
+        private void iterationsTrackBar_ValueChanged(object? sender, EventArgs e)
+        {
+            if (iterationsTrackBar == null)
+            {
+                return;
+            }
+
+            int value = iterationsTrackBar.Value;
+            if (iterationsValueLabel != null)
+            {
+                iterationsValueLabel.Text = value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (suppressCensorParamEvents || value == censorIterations)
+            {
+                censorIterations = value;
+                return;
+            }
+
+            censorIterations = value;
+            RebuildCensorPreviewAfterParamChange();
+        }
+
+        private void smearTrackBar_ValueChanged(object? sender, EventArgs e)
+        {
+            if (smearTrackBar == null)
+            {
+                return;
+            }
+
+            int value = smearTrackBar.Value;
+            if (smearValueLabel != null)
+            {
+                smearValueLabel.Text = value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (suppressCensorParamEvents || value == censorSmear)
+            {
+                censorSmear = value;
+                return;
+            }
+
+            censorSmear = value;
+            RebuildCensorPreviewAfterParamChange();
         }
 
         private CensorRegion? FindRegionAtPixel(Point pixel)
@@ -751,7 +902,7 @@ namespace screenzap
         {
             using var perf = PerfTrace.Scope(
                 "ImageEditor.GenerateCensoredBitmap",
-                () => $"size={source.Width}x{source.Height} selection={selectionBounds.Width}x{selectionBounds.Height}@{selectionBounds.X},{selectionBounds.Y}",
+                () => $"size={source.Width}x{source.Height} dir={censorDirection} iter={censorIterations} smear={censorSmear}",
                 slowMs: 40);
 
             var target = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
@@ -767,27 +918,23 @@ namespace screenzap
                 int height = source.Height;
                 int totalPixels = stride * height;
 
-                int[] sourcePixels = new int[totalPixels];
-                Marshal.Copy(sourceData.Scan0, sourcePixels, 0, totalPixels);
+                int[] pixels = new int[totalPixels];
+                Marshal.Copy(sourceData.Scan0, pixels, 0, totalPixels);
 
-                int[] resultPixels = new int[totalPixels];
-                Array.Copy(sourcePixels, resultPixels, totalPixels);
-
-                var lines = IdentifyTextLines(sourcePixels, width, height, stride);
-                if (lines.Count == 0)
-                {
-                    lines.Add(new RowRange { Start = 0, End = height });
-                }
-
-                int rngSeed = HashCode.Combine(selectionBounds.Left, selectionBounds.Top, selectionBounds.Width, selectionBounds.Height);
+                int rngSeed = HashCode.Combine(
+                    selectionBounds.Left, selectionBounds.Top,
+                    selectionBounds.Width, selectionBounds.Height,
+                    (int)censorDirection, censorIterations, censorSmear);
                 var rng = new Random(rngSeed);
 
-                foreach (var line in lines)
+                ScrambleByNeighborSwap(pixels, width, height, stride, censorDirection, censorIterations, rng);
+
+                if (censorSmear > 0)
                 {
-                    ScrambleLineColumns(sourcePixels, resultPixels, width, stride, line, rng);
+                    ApplyDirectionalSmear(pixels, width, height, stride, censorDirection, censorSmear);
                 }
 
-                Marshal.Copy(resultPixels, 0, targetData.Scan0, totalPixels);
+                Marshal.Copy(pixels, 0, targetData.Scan0, totalPixels);
             }
             finally
             {
@@ -798,303 +945,260 @@ namespace screenzap
             return target;
         }
 
-        private List<RowRange> IdentifyTextLines(int[] pixels, int width, int height, int stride)
+        private static int ComputeScrambleRadius(int sliderValue, int dim)
         {
-            var lines = new List<RowRange>();
-            const int separatorHeight = 5;
-            int activityThreshold = Math.Max(2, width / 40);
+            if (sliderValue <= 0 || dim <= 1)
+            {
+                return 0;
+            }
 
-            bool inLine = false;
-            int lineStart = 0;
-            int whitespaceRun = 0;
+            float t = sliderValue / 100f;
+            int radius = (int)Math.Round(t * t * dim);
+            radius = Math.Max(1, radius);
+            return Math.Min(radius, dim - 1);
+        }
+
+        private static int ComputeSmearRadius(int sliderValue, int dim)
+        {
+            if (sliderValue <= 0 || dim <= 1)
+            {
+                return 0;
+            }
+
+            float t = sliderValue / 100f;
+            int radius = (int)Math.Round(t * t * (dim - 1));
+            return Math.Min(radius, dim - 1);
+        }
+
+        private static void ScrambleByNeighborSwap(int[] pixels, int width, int height, int stride, CensorDirection direction, int sliderValue, Random rng)
+        {
+            if (sliderValue <= 0 || width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            int dim = direction switch
+            {
+                CensorDirection.X => width,
+                CensorDirection.Y => height,
+                _ => Math.Max(width, height),
+            };
+
+            int radius = ComputeScrambleRadius(sliderValue, dim);
+            if (radius <= 0)
+            {
+                return;
+            }
+
+            const int passes = 2;
+            for (int pass = 0; pass < passes; pass++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    int rowOffset = y * stride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int dx = 0;
+                        int dy = 0;
+
+                        switch (direction)
+                        {
+                            case CensorDirection.X:
+                                dx = rng.Next(-radius, radius + 1);
+                                break;
+                            case CensorDirection.Y:
+                                dy = rng.Next(-radius, radius + 1);
+                                break;
+                            case CensorDirection.Both:
+                                dx = rng.Next(-radius, radius + 1);
+                                dy = rng.Next(-radius, radius + 1);
+                                break;
+                        }
+
+                        int nx = Math.Clamp(x + dx, 0, width - 1);
+                        int ny = Math.Clamp(y + dy, 0, height - 1);
+                        int idx = rowOffset + x;
+                        int neighborIdx = ny * stride + nx;
+
+                        int tmp = pixels[idx];
+                        pixels[idx] = pixels[neighborIdx];
+                        pixels[neighborIdx] = tmp;
+                    }
+                }
+            }
+        }
+
+        private static void ApplyDirectionalSmear(int[] pixels, int width, int height, int stride, CensorDirection direction, int smearPercent)
+        {
+            if (smearPercent <= 0 || width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            if (direction != CensorDirection.Y)
+            {
+                int rx = ComputeSmearRadius(smearPercent, width);
+                if (rx > 0)
+                {
+                    BoxBlurHorizontal(pixels, width, height, stride, rx);
+                }
+            }
+
+            if (direction != CensorDirection.X)
+            {
+                int ry = ComputeSmearRadius(smearPercent, height);
+                if (ry > 0)
+                {
+                    BoxBlurVertical(pixels, width, height, stride, ry);
+                }
+            }
+        }
+
+        private static void BoxBlurHorizontal(int[] pixels, int width, int height, int stride, int radius)
+        {
+            if (radius >= width - 1)
+            {
+                int[] rowAverage = new int[height];
+                for (int y = 0; y < height; y++)
+                {
+                    rowAverage[y] = ComputeRangeAverage(pixels, y * stride, width, 1);
+                }
+                for (int y = 0; y < height; y++)
+                {
+                    int rowStart = y * stride;
+                    int avg = rowAverage[y];
+                    for (int x = 0; x < width; x++)
+                    {
+                        pixels[rowStart + x] = avg;
+                    }
+                }
+                return;
+            }
+
+            int windowSize = 2 * radius + 1;
+            int[] rowBuffer = new int[width];
 
             for (int y = 0; y < height; y++)
             {
-                int activity = MeasureRowActivity(pixels, y, width, stride);
-                bool isWhitespace = activity <= activityThreshold;
+                int rowStart = y * stride;
+                Array.Copy(pixels, rowStart, rowBuffer, 0, width);
 
-                if (!isWhitespace)
+                long sumA = 0, sumR = 0, sumG = 0, sumB = 0;
+                for (int k = -radius; k <= radius; k++)
                 {
-                    if (!inLine)
-                    {
-                        inLine = true;
-                        lineStart = y;
-                    }
-
-                    whitespaceRun = 0;
+                    int sx = Math.Clamp(k, 0, width - 1);
+                    int p = rowBuffer[sx];
+                    sumA += (p >> 24) & 0xFF;
+                    sumR += (p >> 16) & 0xFF;
+                    sumG += (p >> 8) & 0xFF;
+                    sumB += p & 0xFF;
                 }
-                else if (inLine)
-                {
-                    whitespaceRun++;
-                    if (whitespaceRun >= separatorHeight)
-                    {
-                        int lineEnd = y - whitespaceRun + 1;
-                        if (lineEnd > lineStart)
-                        {
-                            lines.Add(new RowRange { Start = lineStart, End = lineEnd });
-                        }
 
-                        inLine = false;
-                    }
+                for (int x = 0; x < width; x++)
+                {
+                    int a = (int)(sumA / windowSize);
+                    int r = (int)(sumR / windowSize);
+                    int g = (int)(sumG / windowSize);
+                    int b = (int)(sumB / windowSize);
+                    pixels[rowStart + x] = (a << 24) | (r << 16) | (g << 8) | b;
+
+                    int leavingX = Math.Clamp(x - radius, 0, width - 1);
+                    int enteringX = Math.Clamp(x + radius + 1, 0, width - 1);
+                    int leaving = rowBuffer[leavingX];
+                    int entering = rowBuffer[enteringX];
+
+                    sumA += ((entering >> 24) & 0xFF) - ((leaving >> 24) & 0xFF);
+                    sumR += ((entering >> 16) & 0xFF) - ((leaving >> 16) & 0xFF);
+                    sumG += ((entering >> 8) & 0xFF) - ((leaving >> 8) & 0xFF);
+                    sumB += (entering & 0xFF) - (leaving & 0xFF);
                 }
             }
-
-            if (inLine)
-            {
-                lines.Add(new RowRange { Start = lineStart, End = height });
-            }
-
-            return lines;
         }
 
-        private List<ColumnRange> IdentifyTextColumns(int[] pixels, int width, int stride, RowRange lineRange)
+        private static void BoxBlurVertical(int[] pixels, int width, int height, int stride, int radius)
         {
-            var columns = new List<ColumnRange>();
-            const int separatorWidth = 3;
-            int startRow = Math.Max(0, lineRange.Start);
-            int endRow = Math.Max(startRow + 1, lineRange.End);
-            int lineHeight = Math.Max(1, endRow - startRow);
-            int activityThreshold = Math.Max(2, lineHeight / 6);
+            if (radius >= height - 1)
+            {
+                int[] colAverage = new int[width];
+                for (int x = 0; x < width; x++)
+                {
+                    colAverage[x] = ComputeRangeAverage(pixels, x, height, stride);
+                }
+                for (int y = 0; y < height; y++)
+                {
+                    int rowStart = y * stride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        pixels[rowStart + x] = colAverage[x];
+                    }
+                }
+                return;
+            }
 
-            bool inRegion = false;
-            int regionStart = 0;
-            int whitespaceRun = 0;
+            int windowSize = 2 * radius + 1;
+            int[] colBuffer = new int[height];
 
             for (int x = 0; x < width; x++)
             {
-                int activity = MeasureColumnActivity(pixels, x, stride, startRow, endRow);
-                bool isWhitespace = activity <= activityThreshold;
-
-                if (!isWhitespace)
+                for (int y = 0; y < height; y++)
                 {
-                    if (!inRegion)
-                    {
-                        inRegion = true;
-                        regionStart = x;
-                    }
-
-                    whitespaceRun = 0;
+                    colBuffer[y] = pixels[y * stride + x];
                 }
-                else if (inRegion)
-                {
-                    whitespaceRun++;
-                    if (whitespaceRun >= separatorWidth)
-                    {
-                        int regionEnd = x - whitespaceRun + 1;
-                        if (regionEnd > regionStart)
-                        {
-                            columns.Add(new ColumnRange { Start = regionStart, End = regionEnd });
-                        }
 
-                        inRegion = false;
-                    }
+                long sumA = 0, sumR = 0, sumG = 0, sumB = 0;
+                for (int k = -radius; k <= radius; k++)
+                {
+                    int sy = Math.Clamp(k, 0, height - 1);
+                    int p = colBuffer[sy];
+                    sumA += (p >> 24) & 0xFF;
+                    sumR += (p >> 16) & 0xFF;
+                    sumG += (p >> 8) & 0xFF;
+                    sumB += p & 0xFF;
+                }
+
+                for (int y = 0; y < height; y++)
+                {
+                    int a = (int)(sumA / windowSize);
+                    int r = (int)(sumR / windowSize);
+                    int g = (int)(sumG / windowSize);
+                    int b = (int)(sumB / windowSize);
+                    pixels[y * stride + x] = (a << 24) | (r << 16) | (g << 8) | b;
+
+                    int leavingY = Math.Clamp(y - radius, 0, height - 1);
+                    int enteringY = Math.Clamp(y + radius + 1, 0, height - 1);
+                    int leaving = colBuffer[leavingY];
+                    int entering = colBuffer[enteringY];
+
+                    sumA += ((entering >> 24) & 0xFF) - ((leaving >> 24) & 0xFF);
+                    sumR += ((entering >> 16) & 0xFF) - ((leaving >> 16) & 0xFF);
+                    sumG += ((entering >> 8) & 0xFF) - ((leaving >> 8) & 0xFF);
+                    sumB += (entering & 0xFF) - (leaving & 0xFF);
                 }
             }
-
-            if (inRegion)
-            {
-                columns.Add(new ColumnRange { Start = regionStart, End = width });
-            }
-
-            return columns;
         }
 
-        private int MeasureRowActivity(int[] pixels, int row, int width, int stride)
+        private static int ComputeRangeAverage(int[] pixels, int startIndex, int count, int step)
         {
-            int rowOffset = row * stride;
-            int ink = 0;
-            int transitions = 0;
-
-            int previousLuma = GetLuminance(pixels[rowOffset]);
-
-            for (int x = 0; x < width; x++)
+            if (count <= 0)
             {
-                int argb = pixels[rowOffset + x];
-                int alpha = (argb >> 24) & 0xFF;
-                if (alpha < 16)
-                {
-                    continue;
-                }
-
-                int luminance = GetLuminance(argb);
-                if (luminance < 200)
-                {
-                    ink++;
-                }
-
-                if (x > 0 && Math.Abs(luminance - previousLuma) > 24)
-                {
-                    transitions++;
-                }
-
-                previousLuma = luminance;
+                return 0;
             }
 
-            return Math.Max(ink, transitions);
-        }
-
-        private int MeasureColumnActivity(int[] pixels, int column, int stride, int startRow, int endRow)
-        {
-            int ink = 0;
-            int transitions = 0;
-            bool hasPrevious = false;
-            int previousLuma = 0;
-
-            for (int y = startRow; y < endRow; y++)
+            long sumA = 0, sumR = 0, sumG = 0, sumB = 0;
+            for (int i = 0; i < count; i++)
             {
-                int idx = y * stride + column;
-                int argb = pixels[idx];
-                int alpha = (argb >> 24) & 0xFF;
-                if (alpha < 16)
-                {
-                    continue;
-                }
-
-                int luminance = GetLuminance(argb);
-                if (luminance < 200)
-                {
-                    ink++;
-                }
-
-                if (hasPrevious && Math.Abs(luminance - previousLuma) > 24)
-                {
-                    transitions++;
-                }
-
-                previousLuma = luminance;
-                hasPrevious = true;
+                int p = pixels[startIndex + i * step];
+                sumA += (p >> 24) & 0xFF;
+                sumR += (p >> 16) & 0xFF;
+                sumG += (p >> 8) & 0xFF;
+                sumB += p & 0xFF;
             }
 
-            return Math.Max(ink, transitions);
-        }
-
-        private static int GetLuminance(int argb)
-        {
-            int r = (argb >> 16) & 0xFF;
-            int g = (argb >> 8) & 0xFF;
-            int b = argb & 0xFF;
-            return (r * 299 + g * 587 + b * 114) / 1000;
-        }
-
-        private void ScrambleLineColumns(int[] sourcePixels, int[] targetPixels, int width, int stride, RowRange line, Random rng)
-        {
-            int lineHeight = Math.Max(1, line.End - line.Start);
-
-            var columnRegions = IdentifyTextColumns(sourcePixels, width, stride, line);
-            if (columnRegions.Count == 0)
-            {
-                columnRegions.Add(new ColumnRange { Start = 0, End = width });
-            }
-
-            foreach (var range in columnRegions)
-            {
-                int regionStartX = Math.Max(0, range.Start);
-                int regionEndX = Math.Min(width, range.End);
-                int regionWidth = regionEndX - regionStartX;
-
-                if (regionWidth <= 1)
-                {
-                    continue;
-                }
-
-                int blockSize = Math.Max(2, regionWidth / 24);
-                blockSize = Math.Min(blockSize, 16);
-                if (blockSize > regionWidth)
-                {
-                    blockSize = Math.Max(1, regionWidth);
-                }
-
-                int blockCount = (regionWidth + blockSize - 1) / blockSize;
-                int[] order = new int[blockCount];
-                for (int i = 0; i < blockCount; i++)
-                {
-                    order[i] = i;
-                }
-
-                for (int i = blockCount - 1; i > 0; i--)
-                {
-                    int swapIndex = rng.Next(i + 1);
-                    int tmp = order[i];
-                    order[i] = order[swapIndex];
-                    order[swapIndex] = tmp;
-                }
-
-                int[] segmentBuffer = new int[lineHeight * regionWidth];
-                for (int row = 0; row < lineHeight; row++)
-                {
-                    int sourceIndex = (line.Start + row) * stride + regionStartX;
-                    Array.Copy(sourcePixels, sourceIndex, segmentBuffer, row * regionWidth, regionWidth);
-                }
-
-                int[] scrambled = new int[segmentBuffer.Length];
-
-                for (int destBlock = 0; destBlock < blockCount; destBlock++)
-                {
-                    int srcBlock = order[destBlock];
-                    int destStartX = destBlock * blockSize;
-                    int srcStartX = srcBlock * blockSize;
-
-                    int destWidth = Math.Min(blockSize, regionWidth - destStartX);
-                    int srcWidth = Math.Min(blockSize, regionWidth - srcStartX);
-                    int copyWidth = Math.Min(destWidth, srcWidth);
-
-                    for (int row = 0; row < lineHeight; row++)
-                    {
-                        int destRowOffset = row * regionWidth + destStartX;
-                        int srcRowOffset = row * regionWidth + srcStartX;
-
-                        if (copyWidth > 0)
-                        {
-                            Array.Copy(segmentBuffer, srcRowOffset, scrambled, destRowOffset, copyWidth);
-                        }
-
-                        if (destWidth > copyWidth && srcWidth > 0)
-                        {
-                            int fillPixel = segmentBuffer[srcRowOffset + srcWidth - 1];
-                            for (int x = copyWidth; x < destWidth; x++)
-                            {
-                                scrambled[destRowOffset + x] = fillPixel;
-                            }
-                        }
-                    }
-                }
-
-                int maxJitter = regionWidth > 10 ? 2 : 0;
-                if (maxJitter > 0)
-                {
-                    int[] tempRow = new int[regionWidth];
-                    for (int row = 0; row < lineHeight; row++)
-                    {
-                        Array.Copy(scrambled, row * regionWidth, tempRow, 0, regionWidth);
-                        int jitter = rng.Next(-maxJitter, maxJitter + 1);
-                        if (jitter == 0)
-                        {
-                            continue;
-                        }
-
-                        for (int x = 0; x < regionWidth; x++)
-                        {
-                            int srcX = x + jitter;
-                            if (srcX < 0)
-                            {
-                                srcX = 0;
-                            }
-                            else if (srcX >= regionWidth)
-                            {
-                                srcX = regionWidth - 1;
-                            }
-
-                            scrambled[row * regionWidth + x] = tempRow[srcX];
-                        }
-                    }
-                }
-
-                for (int row = 0; row < lineHeight; row++)
-                {
-                    int targetIndex = (line.Start + row) * stride + regionStartX;
-                    Array.Copy(scrambled, row * regionWidth, targetPixels, targetIndex, regionWidth);
-                }
-            }
+            int a = (int)(sumA / count);
+            int r = (int)(sumR / count);
+            int g = (int)(sumG / count);
+            int b = (int)(sumB / count);
+            return (a << 24) | (r << 16) | (g << 8) | b;
         }
 
 

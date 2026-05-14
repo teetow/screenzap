@@ -76,6 +76,17 @@
             this.confidenceTrackBar = new System.Windows.Forms.TrackBar();
             this.confidenceToolStripHost = new System.Windows.Forms.ToolStripControlHost(this.confidenceTrackBar);
             this.confidenceValueLabel = new System.Windows.Forms.ToolStripLabel();
+            this.censorParamsSeparator = new System.Windows.Forms.ToolStripSeparator();
+            this.directionToolStripLabel = new System.Windows.Forms.ToolStripLabel();
+            this.directionToolStripCombo = new System.Windows.Forms.ToolStripComboBox();
+            this.iterationsToolStripLabel = new System.Windows.Forms.ToolStripLabel();
+            this.iterationsTrackBar = new System.Windows.Forms.TrackBar();
+            this.iterationsToolStripHost = new System.Windows.Forms.ToolStripControlHost(this.iterationsTrackBar);
+            this.iterationsValueLabel = new System.Windows.Forms.ToolStripLabel();
+            this.smearToolStripLabel = new System.Windows.Forms.ToolStripLabel();
+            this.smearTrackBar = new System.Windows.Forms.TrackBar();
+            this.smearToolStripHost = new System.Windows.Forms.ToolStripControlHost(this.smearTrackBar);
+            this.smearValueLabel = new System.Windows.Forms.ToolStripLabel();
             this.censorProgressBar = new System.Windows.Forms.ToolStripProgressBar();
             this.censorToolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.applyCensorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -96,6 +107,8 @@
             this.canvasPanel.SuspendLayout();
             this.statusStrip.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.iterationsTrackBar)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.smearTrackBar)).BeginInit();
             this.SuspendLayout();
             // 
             // mainToolStrip
@@ -115,12 +128,12 @@
             this.rotateToolStripButton,
             this.replaceToolStripButton,
             this.optimizeTextToolStripButton,
+            this.censorToolStripButton,
             this.straightenToolStripButton,
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
             this.textToolStripButton,
             this.traceToolStripDropDown,
-            this.censorToolStripButton,
             this.textColorButton,
             this.outlineColorButton,
             this.outlineThicknessComboBox,
@@ -261,6 +274,15 @@
             this.confidenceToolStripLabel,
             this.confidenceToolStripHost,
             this.confidenceValueLabel,
+            this.censorParamsSeparator,
+            this.directionToolStripLabel,
+            this.directionToolStripCombo,
+            this.iterationsToolStripLabel,
+            this.iterationsToolStripHost,
+            this.iterationsValueLabel,
+            this.smearToolStripLabel,
+            this.smearToolStripHost,
+            this.smearValueLabel,
             this.censorProgressBar,
             this.censorToolStripSeparator2,
             this.applyCensorToolStripButton,
@@ -319,13 +341,103 @@
             this.confidenceToolStripHost.Name = "confidenceToolStripHost";
             this.confidenceToolStripHost.Size = new System.Drawing.Size(146, 23);
             this.confidenceToolStripHost.Text = "confidenceToolStripHost";
-            // 
+            //
             // confidenceValueLabel
-            // 
+            //
             this.confidenceValueLabel.Name = "confidenceValueLabel";
             this.confidenceValueLabel.Size = new System.Drawing.Size(29, 23);
             this.confidenceValueLabel.Text = "0%";
-            // 
+            //
+            // censorParamsSeparator
+            //
+            this.censorParamsSeparator.Name = "censorParamsSeparator";
+            this.censorParamsSeparator.Size = new System.Drawing.Size(6, 23);
+            //
+            // directionToolStripLabel
+            //
+            this.directionToolStripLabel.Name = "directionToolStripLabel";
+            this.directionToolStripLabel.Size = new System.Drawing.Size(58, 23);
+            this.directionToolStripLabel.Text = "Direction";
+            //
+            // directionToolStripCombo
+            //
+            this.directionToolStripCombo.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.directionToolStripCombo.Items.AddRange(new object[] {
+            "X",
+            "Y",
+            "Both"});
+            this.directionToolStripCombo.Name = "directionToolStripCombo";
+            this.directionToolStripCombo.Size = new System.Drawing.Size(70, 23);
+            this.directionToolStripCombo.SelectedIndexChanged += new System.EventHandler(this.directionToolStripCombo_SelectedIndexChanged);
+            //
+            // iterationsToolStripLabel
+            //
+            this.iterationsToolStripLabel.Name = "iterationsToolStripLabel";
+            this.iterationsToolStripLabel.Size = new System.Drawing.Size(58, 23);
+            this.iterationsToolStripLabel.Text = "Iterations";
+            //
+            // iterationsTrackBar
+            //
+            this.iterationsTrackBar.AutoSize = false;
+            this.iterationsTrackBar.LargeChange = 10;
+            this.iterationsTrackBar.Location = new System.Drawing.Point(0, 0);
+            this.iterationsTrackBar.Minimum = 0;
+            this.iterationsTrackBar.Maximum = 100;
+            this.iterationsTrackBar.Name = "iterationsTrackBar";
+            this.iterationsTrackBar.Size = new System.Drawing.Size(120, 24);
+            this.iterationsTrackBar.TabIndex = 0;
+            this.iterationsTrackBar.TickFrequency = 10;
+            this.iterationsTrackBar.Value = 30;
+            this.iterationsTrackBar.ValueChanged += new System.EventHandler(this.iterationsTrackBar_ValueChanged);
+            //
+            // iterationsToolStripHost
+            //
+            this.iterationsToolStripHost.AutoSize = false;
+            this.iterationsToolStripHost.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
+            this.iterationsToolStripHost.Name = "iterationsToolStripHost";
+            this.iterationsToolStripHost.Size = new System.Drawing.Size(126, 23);
+            this.iterationsToolStripHost.Text = "iterationsToolStripHost";
+            //
+            // iterationsValueLabel
+            //
+            this.iterationsValueLabel.Name = "iterationsValueLabel";
+            this.iterationsValueLabel.Size = new System.Drawing.Size(25, 23);
+            this.iterationsValueLabel.Text = "30";
+            //
+            // smearToolStripLabel
+            //
+            this.smearToolStripLabel.Name = "smearToolStripLabel";
+            this.smearToolStripLabel.Size = new System.Drawing.Size(40, 23);
+            this.smearToolStripLabel.Text = "Smear";
+            //
+            // smearTrackBar
+            //
+            this.smearTrackBar.AutoSize = false;
+            this.smearTrackBar.LargeChange = 10;
+            this.smearTrackBar.Location = new System.Drawing.Point(0, 0);
+            this.smearTrackBar.Minimum = 0;
+            this.smearTrackBar.Maximum = 100;
+            this.smearTrackBar.Name = "smearTrackBar";
+            this.smearTrackBar.Size = new System.Drawing.Size(120, 24);
+            this.smearTrackBar.TabIndex = 0;
+            this.smearTrackBar.TickFrequency = 10;
+            this.smearTrackBar.Value = 20;
+            this.smearTrackBar.ValueChanged += new System.EventHandler(this.smearTrackBar_ValueChanged);
+            //
+            // smearToolStripHost
+            //
+            this.smearToolStripHost.AutoSize = false;
+            this.smearToolStripHost.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
+            this.smearToolStripHost.Name = "smearToolStripHost";
+            this.smearToolStripHost.Size = new System.Drawing.Size(126, 23);
+            this.smearToolStripHost.Text = "smearToolStripHost";
+            //
+            // smearValueLabel
+            //
+            this.smearValueLabel.Name = "smearValueLabel";
+            this.smearValueLabel.Size = new System.Drawing.Size(25, 23);
+            this.smearValueLabel.Text = "20";
+            //
             // censorProgressBar
             // 
             this.censorProgressBar.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
@@ -606,11 +718,11 @@
             // 
             // censorToolStripButton
             // 
-            this.censorToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.censorToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.ImageAndText;
             this.censorToolStripButton.Enabled = false;
             this.censorToolStripButton.Name = "censorToolStripButton";
-            this.censorToolStripButton.Size = new System.Drawing.Size(92, 23);
-            this.censorToolStripButton.Text = "Censor Tool";
+            this.censorToolStripButton.Size = new System.Drawing.Size(70, 23);
+            this.censorToolStripButton.Text = "Censor";
             this.censorToolStripButton.ToolTipText = "Detect text and censor selections (Ctrl+E)";
             this.censorToolStripButton.Click += new System.EventHandler(this.censorToolStripButton_Click);
             // 
@@ -732,6 +844,8 @@
             this.mainToolStrip.ResumeLayout(false);
             this.mainToolStrip.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.iterationsTrackBar)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.smearTrackBar)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -777,6 +891,17 @@
         private System.Windows.Forms.TrackBar confidenceTrackBar;
         private System.Windows.Forms.ToolStripControlHost confidenceToolStripHost;
         private System.Windows.Forms.ToolStripLabel confidenceValueLabel;
+        private System.Windows.Forms.ToolStripSeparator censorParamsSeparator;
+        private System.Windows.Forms.ToolStripLabel directionToolStripLabel;
+        private System.Windows.Forms.ToolStripComboBox directionToolStripCombo;
+        private System.Windows.Forms.ToolStripLabel iterationsToolStripLabel;
+        private System.Windows.Forms.TrackBar iterationsTrackBar;
+        private System.Windows.Forms.ToolStripControlHost iterationsToolStripHost;
+        private System.Windows.Forms.ToolStripLabel iterationsValueLabel;
+        private System.Windows.Forms.ToolStripLabel smearToolStripLabel;
+        private System.Windows.Forms.TrackBar smearTrackBar;
+        private System.Windows.Forms.ToolStripControlHost smearToolStripHost;
+        private System.Windows.Forms.ToolStripLabel smearValueLabel;
         private System.Windows.Forms.ToolStripProgressBar censorProgressBar;
         private System.Windows.Forms.ToolStripSeparator censorToolStripSeparator2;
         private FontAwesome.Sharp.IconToolStripButton applyCensorToolStripButton;

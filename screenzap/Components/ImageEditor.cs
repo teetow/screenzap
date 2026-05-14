@@ -282,7 +282,7 @@ namespace screenzap
 
         private void ConfigureToolRailButtons()
         {
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, straightenToolStripButton })
             {
                 if (button == null)
                 {
@@ -750,10 +750,9 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, toolsToolStrip, arrowToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, rectangleToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, textToolStripButton);
-            MoveToolStripItem(mainToolStrip, toolsToolStrip, censorToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, straightenToolStripButton);
 
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, straightenToolStripButton })
             {
                 if (button != null)
                 {
@@ -761,6 +760,13 @@ namespace screenzap
                     button.TextImageRelation = TextImageRelation.ImageBeforeText;
                     button.AutoToolTip = true;
                 }
+            }
+
+            if (censorToolStripButton != null)
+            {
+                censorToolStripButton.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+                censorToolStripButton.TextImageRelation = TextImageRelation.ImageBeforeText;
+                censorToolStripButton.AutoToolTip = true;
             }
 
             textOptionsToolStrip = new ToolStrip
