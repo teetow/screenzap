@@ -18,7 +18,8 @@ namespace screenzap.Components.Shared
             { EditorCommandId.Duplicate, new EditorCommandDescriptor { Id = EditorCommandId.Duplicate, Label = "Duplicate", ToolTip = "Duplicate this item as a new history entry", Icon = IconChar.Clone } },
             { EditorCommandId.Revert, new EditorCommandDescriptor { Id = EditorCommandId.Revert, Label = "Revert", ToolTip = "Revert to the original clipboard content", Icon = IconChar.ArrowRotateLeft } },
             { EditorCommandId.CommitEdits, new EditorCommandDescriptor { Id = EditorCommandId.CommitEdits, Label = "Commit", ToolTip = "Accept edits: push to clipboard and mark clean (undo stack preserved)", Icon = IconChar.Check } },
-            { EditorCommandId.Delete, new EditorCommandDescriptor { Id = EditorCommandId.Delete, Label = "Delete", ToolTip = "Remove this item from history", Icon = IconChar.Trash } }
+            { EditorCommandId.Delete, new EditorCommandDescriptor { Id = EditorCommandId.Delete, Label = "Delete", ToolTip = "Remove this item from history", Icon = IconChar.Trash } },
+            { EditorCommandId.ApplyFloatingPaste, new EditorCommandDescriptor { Id = EditorCommandId.ApplyFloatingPaste, Label = "Apply", ToolTip = "Apply floating paste: burn layer(s) into the pixel buffer (Enter)", Icon = IconChar.Stamp } }
         };
 
         public static IReadOnlyDictionary<EditorCommandId, EditorCommandDescriptor> All => Commands;

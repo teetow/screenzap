@@ -55,6 +55,8 @@ namespace screenzap
 
         internal void SetSelectedLayerForTests(int index) => SelectImageLayer(index);
 
+        internal bool ApplyFloatingPasteForTests() => ApplyFloatingPaste();
+
         internal bool BeginLayerInteractionForTests(Point pixelPoint)
         {
             return TryBeginLayerInteraction(pixelPoint);
@@ -549,6 +551,46 @@ namespace screenzap
                     graphics.DrawImage(layer.Source, dest, layer.Fill, GraphicsUnit.Pixel);
                 }
             }
+        }
+
+        private bool ApplyFloatingPaste()
+        {
+            if (imageLayers.Count == 0) return false;
+            if (pictureBox1?.Image == null) return false;
+
+            var beforeImage = new Bitmap(pictureBox1.Image);
+            var layersBefore = CloneLayers();
+            var selectionBefore = Selection;
+
+            using var composite = BuildCompositeImage();
+            var afterImage = new Bitmap(composite);
+
+            var currentZoom = ZoomLevel;
+            pictureBox1.Image?.Dispose();
+            pictureBox1.Image = afterImage;
+            ZoomLevel = currentZoom;
+            pictureBox1.ClampPan();
+
+            ClearImageLayers();
+            var layersAfter = CloneLayers(); // empty list
+
+            PushUndoStep(
+                Rectangle.Empty,
+                beforeImage,
+                new Bitmap(afterImage),
+                selectionBefore,
+                Selection,
+                replacesImage: true,
+                shapesBefore: null,
+                shapesAfter: null,
+                textsBefore: null,
+                textsAfter: null,
+                layersBefore: layersBefore,
+                layersAfter: layersAfter);
+
+            UpdateCommandUI();
+            pictureBox1.Invalidate();
+            return true;
         }
 
         private bool HasSelectedLayer => selectedLayerIndex >= 0 && selectedLayerIndex < imageLayers.Count;
