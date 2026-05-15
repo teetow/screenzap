@@ -14,7 +14,7 @@ namespace screenzap
     public partial class ImageEditor
     {
         private readonly List<CensorRegion> censorRegions = new List<CensorRegion>();
-        private bool isCensorToolActive;
+        // isCensorToolActive lives on ImageEditor.Tool.cs as a computed accessor.
         private bool suppressConfidenceEvents;
         private bool suppressCensorParamEvents;
         private float currentConfidenceThreshold;

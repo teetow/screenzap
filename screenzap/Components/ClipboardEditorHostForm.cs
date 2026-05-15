@@ -465,7 +465,7 @@ namespace screenzap.Components
                 IconColor = SystemColors.ControlText,
                 IconFont = IconFont.Auto,
                 IconSize = 18,
-                ToolTipText = descriptor.ToolTip,
+                ToolTipText = EditorCommandCatalog.FormatTooltip(descriptor),
                 AutoSize = false,
                 Width = 32,
                 Height = 32,

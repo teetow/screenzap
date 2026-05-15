@@ -76,7 +76,6 @@ namespace screenzap
     public partial class ImageEditor
     {
         private readonly List<AnnotationShape> annotationShapes = new List<AnnotationShape>();
-        private DrawingTool activeDrawingTool = DrawingTool.None;
         private bool isDrawingAnnotation;
         private AnnotationShape? workingAnnotation;
         private AnnotationShape? selectedAnnotation;
@@ -110,6 +109,7 @@ namespace screenzap
 
             selectedAnnotation = target;
             UpdateAnnotationToolbarFromSelection();
+            UpdateAnnotationToolbarVisibility();
             pictureBox1?.Invalidate();
         }
 
@@ -146,32 +146,38 @@ namespace screenzap
         private void UpdateAnnotationToolbarVisibility()
         {
             bool isAnnotationToolActive = activeDrawingTool != DrawingTool.None;
-            bool isArrowTool = activeDrawingTool == DrawingTool.Arrow;
+            bool hasArrowOrRectSelection =
+                selectedAnnotation != null &&
+                (selectedAnnotation.Type == AnnotationType.Arrow || selectedAnnotation.Type == AnnotationType.Rectangle);
+            bool showPanel = isAnnotationToolActive || hasArrowOrRectSelection;
+            bool showArrowControls =
+                activeDrawingTool == DrawingTool.Arrow ||
+                (selectedAnnotation != null && selectedAnnotation.Type == AnnotationType.Arrow);
 
             if (annotationToolSeparator != null)
             {
-                annotationToolSeparator.Visible = isAnnotationToolActive;
+                annotationToolSeparator.Visible = showPanel;
             }
             if (lineThicknessLabel != null)
             {
-                lineThicknessLabel.Visible = isAnnotationToolActive;
+                lineThicknessLabel.Visible = showPanel;
             }
             if (lineThicknessComboBox != null)
             {
-                lineThicknessComboBox.Visible = isAnnotationToolActive;
+                lineThicknessComboBox.Visible = showPanel;
             }
             if (arrowSizeLabel != null)
             {
-                arrowSizeLabel.Visible = isArrowTool;
+                arrowSizeLabel.Visible = showArrowControls;
             }
             if (arrowSizeComboBox != null)
             {
-                arrowSizeComboBox.Visible = isArrowTool;
+                arrowSizeComboBox.Visible = showArrowControls;
             }
 
             if (annotationOptionsToolStrip != null)
             {
-                annotationOptionsToolStrip.Visible = isAnnotationToolActive;
+                annotationOptionsToolStrip.Visible = showPanel;
                 PositionOverlayToolStrips();
             }
         }

@@ -282,7 +282,7 @@ namespace screenzap
 
         private void ConfigureToolRailButtons()
         {
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
             {
                 if (button == null)
                 {
@@ -750,9 +750,10 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, toolsToolStrip, arrowToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, rectangleToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, textToolStripButton);
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, censorToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, straightenToolStripButton);
 
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
             {
                 if (button != null)
                 {
@@ -760,13 +761,6 @@ namespace screenzap
                     button.TextImageRelation = TextImageRelation.ImageBeforeText;
                     button.AutoToolTip = true;
                 }
-            }
-
-            if (censorToolStripButton != null)
-            {
-                censorToolStripButton.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
-                censorToolStripButton.TextImageRelation = TextImageRelation.ImageBeforeText;
-                censorToolStripButton.AutoToolTip = true;
             }
 
             textOptionsToolStrip = new ToolStrip
@@ -2064,6 +2058,16 @@ namespace screenzap
                 }
 
                 return;
+            }
+
+            if (e.KeyCode == Keys.Enter && e.Modifiers == Keys.None && imageLayers.Count > 0)
+            {
+                if (ApplyFloatingPaste())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
             }
 
             else if (e.KeyCode == Keys.C && e.Control == true)

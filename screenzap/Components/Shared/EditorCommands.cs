@@ -1,4 +1,5 @@
 using System;
+using System.Windows.Forms;
 
 namespace screenzap.Components.Shared
 {
@@ -25,5 +26,6 @@ namespace screenzap.Components.Shared
         public string Label { get; init; } = string.Empty;
         public string ToolTip { get; init; } = string.Empty;
         public FontAwesome.Sharp.IconChar Icon { get; init; }
+        public Keys? Shortcut { get; init; }
     }
 }

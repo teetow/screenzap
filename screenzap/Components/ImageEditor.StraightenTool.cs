@@ -7,7 +7,7 @@ namespace screenzap
 {
     public partial class ImageEditor
     {
-        private bool isStraightenToolActive;
+        // isStraightenToolActive lives on ImageEditor.Tool.cs as a computed accessor.
         private Point? straightenLineStartPixel;
         private Point? straightenLineEndPixel;
         private bool isStraightenLineDragging;

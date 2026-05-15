@@ -619,7 +619,7 @@ namespace screenzap
     public partial class ImageEditor
     {
         private readonly List<TextAnnotation> textAnnotations = new List<TextAnnotation>();
-        private bool isTextToolActive;
+        // isTextToolActive lives on ImageEditor.Tool.cs as a computed accessor.
         private TextAnnotation? activeTextAnnotation;
         private TextAnnotation? selectedTextAnnotation;
         private TextAnnotation? hoveredTextAnnotation;
@@ -1298,19 +1298,23 @@ namespace screenzap
                 return false;
             }
 
-            // Handle dragging when actively editing
-            if (isTextToolActive && buttons == MouseButtons.Left && isTextAnnotationDragging && activeTextAnnotation != null)
+            // Handle dragging a selected text annotation (works whether tool is active or not).
+            if (buttons == MouseButtons.Left && isTextAnnotationDragging)
             {
-                var delta = pixelPoint.Subtract(textDragOriginPixel);
-                if (delta.X != 0 || delta.Y != 0)
+                var target = activeTextAnnotation ?? selectedTextAnnotation;
+                if (target != null)
                 {
-                    var newPos = activeTextAnnotation.Position.Add(delta);
-                    activeTextAnnotation.Position = ClampPointToImage(newPos);
-                    textDragOriginPixel = pixelPoint;
-                    textAnnotationChangedDuringDrag = true;
-                    pictureBox1?.Invalidate();
+                    var delta = pixelPoint.Subtract(textDragOriginPixel);
+                    if (delta.X != 0 || delta.Y != 0)
+                    {
+                        var newPos = target.Position.Add(delta);
+                        target.Position = ClampPointToImage(newPos);
+                        textDragOriginPixel = pixelPoint;
+                        textAnnotationChangedDuringDrag = true;
+                        pictureBox1?.Invalidate();
+                    }
+                    return true;
                 }
-                return true;
             }
 
             // Show cursor when hovering over text (even when tool isn't active)
@@ -1357,9 +1361,22 @@ namespace screenzap
             if (isTextAnnotationDragging)
             {
                 isTextAnnotationDragging = false;
-                if (textAnnotationChangedDuringDrag && activeTextAnnotation != null)
+                if (textAnnotationChangedDuringDrag)
                 {
-                    // Movement will be committed when text is finalized
+                    // If the text tool is active, the move will be committed when the
+                    // annotation is finalized (editor exits). Otherwise we're in the
+                    // object-mode select/drag flow and the move must be committed now,
+                    // since there's no edit session to wrap it up.
+                    if (!isTextToolActive && activeTextAnnotation == null)
+                    {
+                        CommitTextAnnotationUndo();
+                    }
+                }
+                else if (!isTextToolActive && activeTextAnnotation == null)
+                {
+                    // No movement → discard the snapshot we took in mouse-down so it
+                    // can't leak into a later edit and produce a misleading undo step.
+                    textAnnotationSnapshotBeforeEdit = null;
                 }
                 return true;
             }
