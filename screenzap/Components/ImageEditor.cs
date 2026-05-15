@@ -2064,6 +2064,20 @@ namespace screenzap
             {
                 CopySelectionToClipboard();
             }
+            else if (e.KeyCode == Keys.A && e.Modifiers == Keys.Control)
+            {
+                if (isCensorToolActive)
+                {
+                    selectAllToolStripButton_Click(null, EventArgs.Empty);
+                }
+                else if (HasEditableImage)
+                {
+                    Selection = GetImageBounds();
+                    pictureBox1?.Invalidate();
+                }
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+            }
             else if (e.KeyCode == Keys.V && e.Control == true)
             {
                 if (TryPasteImageFromClipboard())
