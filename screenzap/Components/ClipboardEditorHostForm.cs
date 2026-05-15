@@ -254,6 +254,8 @@ namespace screenzap.Components
             AddCommandButton(EditorCommandId.Undo);
             AddCommandButton(EditorCommandId.Redo);
             toolbar.Items.Add(new ToolStripSeparator());
+            AddCommandButton(EditorCommandId.ApplyFloatingPaste);
+            toolbar.Items.Add(new ToolStripSeparator());
             AddCommandButton(EditorCommandId.Find);
             toolbar.Items.Add(new ToolStripSeparator());
             AddCommandButton(EditorCommandId.CommitEdits);

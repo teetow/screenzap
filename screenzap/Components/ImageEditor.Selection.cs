@@ -26,6 +26,10 @@ namespace screenzap
         private Bitmap? selectionCloneBeforeImage;
         private Rectangle selectionCloneSelectionBefore;
         private bool selectionCloneApplied;
+        private bool isCtrlResizingSelection;
+        private Bitmap? selectionResizeSource;
+        private Bitmap? selectionResizeBeforeImage;
+        private Rectangle selectionResizeSelectionBefore;
 
         private Rectangle _selection;
         private SelectionMetrics _selectionMetrics = SelectionMetrics.Empty;
@@ -350,6 +354,71 @@ namespace screenzap
             selectionCloneSource = null;
             selectionCloneApplied = false;
             isAltCloningSelection = false;
+            pictureBox1.Invalidate();
+            UpdateCommandUI();
+        }
+
+        private void BeginCtrlResizeGesture()
+        {
+            if (isCtrlResizingSelection || !HasEditableImage || Selection.IsEmpty || pictureBox1.Image == null)
+                return;
+
+            var sourceRegion = ClampToImage(Selection);
+            if (sourceRegion.Width <= 0 || sourceRegion.Height <= 0)
+                return;
+
+            selectionResizeSource = CaptureRegion(sourceRegion);
+            if (selectionResizeSource == null)
+                return;
+
+            selectionResizeBeforeImage = new Bitmap(pictureBox1.Image);
+            selectionResizeSelectionBefore = Selection;
+            isCtrlResizingSelection = true;
+        }
+
+        private void EndCtrlResizeGesture()
+        {
+            if (!isCtrlResizingSelection)
+            {
+                selectionResizeSource?.Dispose();
+                selectionResizeSource = null;
+                selectionResizeBeforeImage?.Dispose();
+                selectionResizeBeforeImage = null;
+                return;
+            }
+
+            if (selectionResizeSource != null && pictureBox1.Image != null && Selection != selectionResizeSelectionBefore)
+            {
+                var dest = ClampToImage(Selection);
+                if (dest.Width > 0 && dest.Height > 0)
+                {
+                    using (var g = Graphics.FromImage(pictureBox1.Image))
+                    {
+                        g.CompositingMode = CompositingMode.SourceCopy;
+                        g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                        g.PixelOffsetMode = PixelOffsetMode.Half;
+                        g.DrawImage(selectionResizeSource, dest);
+                    }
+
+                    var afterSnapshot = new Bitmap(pictureBox1.Image);
+                    PushUndoStep(Rectangle.Empty, selectionResizeBeforeImage, afterSnapshot, selectionResizeSelectionBefore, Selection, true);
+                    selectionResizeBeforeImage = null;
+                }
+                else
+                {
+                    selectionResizeBeforeImage?.Dispose();
+                    selectionResizeBeforeImage = null;
+                }
+            }
+            else
+            {
+                selectionResizeBeforeImage?.Dispose();
+                selectionResizeBeforeImage = null;
+            }
+
+            selectionResizeSource?.Dispose();
+            selectionResizeSource = null;
+            isCtrlResizingSelection = false;
             pictureBox1.Invalidate();
             UpdateCommandUI();
         }
@@ -711,6 +780,11 @@ namespace screenzap
                         BeginSelectionCloneGesture();
                     }
 
+                    if (rzMode != ResizeMode.Move && IsCtrlModifierDown() && !isCtrlResizingSelection)
+                    {
+                        BeginCtrlResizeGesture();
+                    }
+
                     SetSelectionEdge(ApplyCloneStampAxisLock(cursorPixel));
 
                     if (rzMode == ResizeMode.Move)
@@ -852,6 +926,7 @@ namespace screenzap
             {
                 EndSelectionStampGesture();
                 EndSelectionCloneGesture();
+                EndCtrlResizeGesture();
             }
             else if (e.Button == MouseButtons.Middle)
             {
@@ -886,6 +961,17 @@ namespace screenzap
                     );
 
                     e.Graphics.DrawImage(selectionCloneSource, PixelToFormCoord(destination), sourceRect, GraphicsUnit.Pixel);
+                }
+            }
+
+            if (isCtrlResizingSelection && selectionResizeSource != null && !Selection.IsEmpty)
+            {
+                var dest = PixelToFormCoord(ClampToImage(Selection));
+                if (dest.Width > 0 && dest.Height > 0)
+                {
+                    e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+                    e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                    e.Graphics.DrawImage(selectionResizeSource, dest);
                 }
             }
 

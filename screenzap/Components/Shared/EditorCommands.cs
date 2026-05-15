@@ -15,7 +15,8 @@ namespace screenzap.Components.Shared
         Duplicate,
         Revert,
         CommitEdits,
-        Delete
+        Delete,
+        ApplyFloatingPaste
     }
 
     internal sealed class EditorCommandDescriptor

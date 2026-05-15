@@ -2982,6 +2982,7 @@ namespace screenzap
                 EditorCommandId.Undo => undoStack.CanUndo,
                 EditorCommandId.Redo => undoStack.CanRedo,
                 EditorCommandId.Find => false,
+                EditorCommandId.ApplyFloatingPaste => imageLayers.Count > 0,
                 _ => false
             };
         }
@@ -3025,6 +3026,8 @@ namespace screenzap
                         UpdateCommandUI();
                         return true;
                     }
+                case EditorCommandId.ApplyFloatingPaste:
+                    return ApplyFloatingPaste();
                 default:
                     return false;
             }
