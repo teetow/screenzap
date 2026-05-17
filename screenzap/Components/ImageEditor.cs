@@ -277,7 +277,26 @@ namespace screenzap
             InitializeTextToolbar();
             InitializeAnnotationToolbar();
             ConfigureToolRailButtons();
+            ApplyCommandTooltips();
             InitColorCorrector();
+        }
+
+        private void ApplyCommandTooltips()
+        {
+            SetCommandTooltip(saveToolStripButton, EditorCommandId.Save);
+            SetCommandTooltip(saveAsToolStripButton, EditorCommandId.SaveAs);
+            SetCommandTooltip(copyClipboardToolStripButton, EditorCommandId.Copy);
+            SetCommandTooltip(reloadToolStripButton, EditorCommandId.Reload);
+            SetCommandTooltip(expandCanvasToolStripButton, EditorCommandId.ExpandCanvas);
+        }
+
+        private static void SetCommandTooltip(ToolStripItem? item, EditorCommandId id)
+        {
+            if (item == null) return;
+            if (EditorCommandCatalog.All.TryGetValue(id, out var descriptor))
+            {
+                item.ToolTipText = EditorCommandCatalog.FormatTooltip(descriptor);
+            }
         }
 
         private void ConfigureToolRailButtons()

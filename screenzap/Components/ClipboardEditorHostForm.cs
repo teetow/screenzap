@@ -732,6 +732,17 @@ namespace screenzap.Components
             // Activate in the editor first, then write to the system clipboard.
             ActivateHistoryItem(item);
 
+            // The pending write will spawn a new system-history entry. Track this item
+            // so the incoming snapshot re-binds to it instead of inserting a duplicate
+            // row, and suppress the old SystemHistoryId so it doesn't linger as a
+            // separate entry beneath the new top.
+            if (!string.IsNullOrEmpty(item.SystemHistoryId))
+            {
+                item.AddSuppressedSystemHistoryId(item.SystemHistoryId);
+                item.SystemHistoryId = null;
+            }
+            TrackPendingCommittedItem(item.Id);
+
             BeginInternalClipboardWrite();
             try
             {

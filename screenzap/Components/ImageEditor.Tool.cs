@@ -19,6 +19,7 @@ namespace screenzap
     public partial class ImageEditor
     {
         private ActiveTool activeTool = ActiveTool.None;
+        private bool insideSetActiveTool;
 
         internal ActiveTool CurrentTool => activeTool;
 
@@ -87,19 +88,68 @@ namespace screenzap
         }
 
         /// <summary>
-        /// Central tool switcher. Just flips the state; per-tool cleanup (finalizing
-        /// in-flight edits, hiding overlay toolstrips, refreshing button checked-state)
-        /// is the responsibility of the existing per-tool Toggle/Activate/Deactivate
-        /// methods. This keeps the existing call-site contracts intact.
+        /// Central tool switcher. Tears down the previously active tool (finalizing
+        /// in-flight edits, hiding overlay toolstrips) before flipping the flag, so
+        /// activating tool B from tool A always leaves A's UI consistent — even when
+        /// the new tool was engaged via an Activate*() that doesn't know about A.
         /// </summary>
         private void SetActiveTool(ActiveTool next)
         {
+            if (insideSetActiveTool)
+            {
+                // Re-entrant call from a deactivator clearing its own flag — just
+                // record the value and let the outer call finish the transition.
+                activeTool = next;
+                return;
+            }
+
             if (activeTool == next)
             {
                 return;
             }
 
-            activeTool = next;
+            insideSetActiveTool = true;
+            try
+            {
+                var previous = activeTool;
+
+                // Run the previous tool's deactivator while its flag is still set
+                // (deactivators may guard on it).
+                switch (previous)
+                {
+                    case ActiveTool.Text:
+                        FinalizeActiveTextAnnotation();
+                        break;
+                    case ActiveTool.Arrow:
+                    case ActiveTool.Rectangle:
+                        CancelAnnotationPreview();
+                        break;
+                    case ActiveTool.Censor:
+                        DeactivateCensorTool(false);
+                        break;
+                    case ActiveTool.Straighten:
+                        DeactivateStraightenTool(false);
+                        break;
+                }
+
+                activeTool = next;
+
+                switch (previous)
+                {
+                    case ActiveTool.Text:
+                        UpdateTextToolButtons();
+                        UpdateTextToolbarVisibility();
+                        break;
+                    case ActiveTool.Arrow:
+                    case ActiveTool.Rectangle:
+                        UpdateDrawingToolButtons();
+                        break;
+                }
+            }
+            finally
+            {
+                insideSetActiveTool = false;
+            }
         }
     }
 }
