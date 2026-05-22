@@ -108,6 +108,13 @@ namespace screenzap
         private bool IsMultiSelectModifierDown =>
             isShiftHeld_TestOverride || ModifierKeys.HasFlag(Keys.Shift);
 
+        // True while UpdateAnnotationToolbarFromSelection is programmatically pushing
+        // values into the comboboxes so SelectedIndexChanged handlers don't write the
+        // displayed value back into the selection (would create no-op undo steps and,
+        // when the displayed value is a "Mixed" blank, would clobber the real per-shape
+        // values).
+        private bool isSyncingAnnotationToolbarControls;
+
         private List<AnnotationShape> CloneAnnotations()
         {
             return annotationShapes.Select(a => a.Clone()).ToList();
@@ -204,13 +211,13 @@ namespace screenzap
         private void UpdateAnnotationToolbarVisibility()
         {
             bool isAnnotationToolActive = activeDrawingTool != DrawingTool.None;
-            bool hasArrowOrRectSelection =
-                selectedAnnotation != null &&
-                (selectedAnnotation.Type == AnnotationType.Arrow || selectedAnnotation.Type == AnnotationType.Rectangle);
-            bool showPanel = isAnnotationToolActive || hasArrowOrRectSelection;
+            // Any selected shape (arrow or rect) keeps the options panel up. With multi-
+            // selection this is "are there any shapes in the selection?" — texts alone
+            // don't need the line-width / arrow controls visible.
+            bool hasShapeSelection = selectedShapes.Count > 0;
+            bool showPanel = isAnnotationToolActive || hasShapeSelection;
             bool showArrowControls =
-                activeDrawingTool == DrawingTool.Arrow ||
-                (selectedAnnotation != null && selectedAnnotation.Type == AnnotationType.Arrow);
+                activeDrawingTool == DrawingTool.Arrow || AnyArrowInSelection();
 
             if (annotationToolSeparator != null)
             {
@@ -1252,56 +1259,150 @@ namespace screenzap
 
         private void lineThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            if (lineThicknessComboBox?.SelectedItem is string thicknessStr && 
+            if (isSyncingAnnotationToolbarControls)
+            {
+                return;
+            }
+            if (lineThicknessComboBox?.SelectedItem is string thicknessStr &&
                 float.TryParse(thicknessStr, out float thickness) && thickness > 0)
             {
                 annotationLineThickness = thickness;
-                if (selectedAnnotation != null)
-                {
-                    selectedAnnotation.LineThickness = thickness;
-                    pictureBox1?.Invalidate();
-                }
+                ApplyLineThicknessToSelection(thickness);
             }
         }
 
         private void arrowSizeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            if (arrowSizeComboBox?.SelectedItem is string sizeStr && 
+            if (isSyncingAnnotationToolbarControls)
+            {
+                return;
+            }
+            if (arrowSizeComboBox?.SelectedItem is string sizeStr &&
                 float.TryParse(sizeStr, out float size) && size > 0)
             {
                 annotationArrowSize = size;
-                if (selectedAnnotation != null && selectedAnnotation.Type == AnnotationType.Arrow)
-                {
-                    selectedAnnotation.ArrowSize = size;
-                    pictureBox1?.Invalidate();
-                }
+                ApplyArrowSizeToSelection(size);
             }
+        }
+
+        /// <summary>
+        /// Write the line thickness to every selected shape (text annotations don't have
+        /// a line-width slot and are silently skipped). Shapes that already match the
+        /// requested value are excluded so the undo step records a real change.
+        /// </summary>
+        private void ApplyLineThicknessToSelection(float thickness)
+        {
+            var targets = selectedShapes.Where(s => s.LineThickness != thickness).ToList();
+            if (targets.Count == 0)
+            {
+                return;
+            }
+
+            var before = CloneAnnotations();
+            foreach (var shape in targets)
+            {
+                shape.LineThickness = thickness;
+            }
+            var after = CloneAnnotations();
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
+            pictureBox1?.Invalidate();
+        }
+
+        /// <summary>
+        /// Write the arrow head size to every selected arrow shape (rects and texts are
+        /// silently skipped). Arrows that already match the requested value are excluded.
+        /// </summary>
+        private void ApplyArrowSizeToSelection(float size)
+        {
+            var targets = selectedShapes
+                .Where(s => s.Type == AnnotationType.Arrow && s.ArrowSize != size)
+                .ToList();
+            if (targets.Count == 0)
+            {
+                return;
+            }
+
+            var before = CloneAnnotations();
+            foreach (var shape in targets)
+            {
+                shape.ArrowSize = size;
+            }
+            var after = CloneAnnotations();
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
+            pictureBox1?.Invalidate();
         }
 
         private void UpdateAnnotationToolbarFromSelection()
         {
-            if (selectedAnnotation != null)
+            // Programmatic pushes — the handlers must not interpret these as user edits
+            // and write them back into the selection.
+            isSyncingAnnotationToolbarControls = true;
+            try
             {
-                if (lineThicknessComboBox != null)
+                if (lineThicknessComboBox != null && selectedShapes.Count > 0)
                 {
-                    int index = lineThicknessComboBox.Items.IndexOf(selectedAnnotation.LineThickness.ToString());
-                    if (index >= 0)
+                    float? unanimous = GetUnanimousLineThickness();
+                    if (unanimous.HasValue)
                     {
-                        lineThicknessComboBox.SelectedIndex = index;
+                        int index = lineThicknessComboBox.Items.IndexOf(unanimous.Value.ToString());
+                        lineThicknessComboBox.SelectedIndex = index >= 0 ? index : -1;
+                    }
+                    else
+                    {
+                        // Mixed thicknesses across the selection — show the combobox blank
+                        // (no value) as the indeterminate state. Picking a value from the
+                        // dropdown will apply it to every selected shape.
+                        lineThicknessComboBox.SelectedIndex = -1;
                     }
                 }
-                if (arrowSizeComboBox != null && selectedAnnotation.Type == AnnotationType.Arrow)
+
+                if (arrowSizeComboBox != null && AnyArrowInSelection())
                 {
-                    int index = arrowSizeComboBox.Items.IndexOf(selectedAnnotation.ArrowSize.ToString());
-                    if (index >= 0)
+                    float? unanimous = GetUnanimousArrowSize();
+                    if (unanimous.HasValue)
                     {
-                        arrowSizeComboBox.SelectedIndex = index;
+                        int index = arrowSizeComboBox.Items.IndexOf(unanimous.Value.ToString());
+                        arrowSizeComboBox.SelectedIndex = index >= 0 ? index : -1;
+                    }
+                    else
+                    {
+                        arrowSizeComboBox.SelectedIndex = -1;
                     }
                 }
+            }
+            finally
+            {
+                isSyncingAnnotationToolbarControls = false;
             }
 
             UpdateAnnotationColorButtonAppearance();
         }
+
+        private float? GetUnanimousLineThickness()
+        {
+            float? candidate = null;
+            foreach (var shape in selectedShapes)
+            {
+                if (candidate == null) candidate = shape.LineThickness;
+                else if (candidate.Value != shape.LineThickness) return null;
+            }
+            return candidate;
+        }
+
+        private float? GetUnanimousArrowSize()
+        {
+            float? candidate = null;
+            foreach (var shape in selectedShapes)
+            {
+                if (shape.Type != AnnotationType.Arrow) continue;
+                if (candidate == null) candidate = shape.ArrowSize;
+                else if (candidate.Value != shape.ArrowSize) return null;
+            }
+            return candidate;
+        }
+
+        private bool AnyArrowInSelection() =>
+            selectedShapes.Any(s => s.Type == AnnotationType.Arrow);
 
     }
 }

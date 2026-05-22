@@ -234,6 +234,24 @@ namespace screenzap
             lineThicknessComboBox.SelectedIndex = idx;
         }
 
+        internal void TestSetAnnotationArrowSize(float size)
+        {
+            if (arrowSizeComboBox == null)
+                throw new System.InvalidOperationException("arrowSizeComboBox not initialized");
+            int idx = arrowSizeComboBox.Items.IndexOf(size.ToString());
+            if (idx < 0)
+                throw new System.ArgumentException($"arrow size {size} not in combobox items");
+            arrowSizeComboBox.SelectedIndex = idx;
+        }
+
+        internal int TestLineThicknessComboBoxSelectedIndex => lineThicknessComboBox?.SelectedIndex ?? -2;
+        internal int TestArrowSizeComboBoxSelectedIndex => arrowSizeComboBox?.SelectedIndex ?? -2;
+        // .Visible reflects effective visibility (including parent visibility), so it's
+        // unreliable in tests where the form isn't shown. .Available is the explicit
+        // intent the editor sets — checking that lets tests verify visibility logic
+        // without instantiating a real top-level form.
+        internal bool TestArrowSizeComboBoxAvailable => arrowSizeComboBox?.Available ?? false;
+
         internal string TestDescribeAnnotationShapes()
         {
             if (annotationShapes.Count == 0) return "[]";

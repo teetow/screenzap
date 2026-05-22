@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using Xunit;
 
@@ -300,6 +301,141 @@ namespace Screenzap.ViewportTests
 
                 foreach (var s in editor.TestSelectedShapes)
                     Assert.Equal(Color.Red.ToArgb(), s.Color.ToArgb());
+            });
+        }
+
+        [Fact]
+        public void MultiLineThickness_AppliesToAllSelectedShapes()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectArrowAndText();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestShiftClickAtImagePixel(new Point(85, 67));
+                Assert.Equal(2, editor.TestSelectedShapeCount);
+
+                editor.TestSetAnnotationLineThickness(6f);
+
+                foreach (var shape in editor.TestSelectedShapes)
+                {
+                    Assert.Equal(6f, shape.LineThickness);
+                }
+            });
+        }
+
+        [Fact]
+        public void MultiLineThickness_IsUndoable_AsSingleStep()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectArrowAndText();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestShiftClickAtImagePixel(new Point(85, 67));
+                // Both shapes start with default 2.0.
+                editor.TestSetAnnotationLineThickness(6f);
+
+                editor.TestFireKeyDown(Keys.Control | Keys.Z);
+
+                foreach (var shape in editor.TestSelectedShapes)
+                {
+                    Assert.Equal(2f, shape.LineThickness);
+                }
+            });
+        }
+
+        [Fact]
+        public void LineThicknessCombo_ShowsBlank_WhenSelectionIsMixed()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectArrowAndText();
+
+                // Select rect, set thickness 6, then add arrow (still default 2) → mixed.
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestSetAnnotationLineThickness(6f);
+                editor.TestShiftClickAtImagePixel(new Point(85, 67));
+                Assert.Equal(2, editor.TestSelectedShapeCount);
+
+                Assert.Equal(-1, editor.TestLineThicknessComboBoxSelectedIndex);
+            });
+        }
+
+        [Fact]
+        public void LineThicknessCombo_ShowsValue_WhenSelectionIsUnanimous()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectArrowAndText();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestShiftClickAtImagePixel(new Point(85, 67));
+                editor.TestSetAnnotationLineThickness(6f);
+
+                // After the unanimous apply, the combo should be selecting "6" (index 5
+                // for items {"1","2","3","4","5","6","8","10"}).
+                Assert.NotEqual(-1, editor.TestLineThicknessComboBoxSelectedIndex);
+            });
+        }
+
+        [Fact]
+        public void MultiArrowSize_AppliesOnlyToArrows()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectArrowAndText();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestShiftClickAtImagePixel(new Point(85, 67));
+                Assert.Equal(2, editor.TestSelectedShapeCount);
+
+                var rect = editor.TestSelectedShapes.First(s => s.Type == screenzap.AnnotationType.Rectangle);
+                var arrow = editor.TestSelectedShapes.First(s => s.Type == screenzap.AnnotationType.Arrow);
+                var rectArrowSizeBefore = rect.ArrowSize;
+
+                editor.TestSetAnnotationArrowSize(2f);
+
+                Assert.Equal(2f, arrow.ArrowSize);
+                // Rect's ArrowSize field is unused by rendering but should be untouched.
+                Assert.Equal(rectArrowSizeBefore, rect.ArrowSize);
+            });
+        }
+
+        [Fact]
+        public void ArrowSizeCombo_HiddenWhen_NoArrowInSelection()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectArrowAndText();
+
+                // Select only the rect.
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                Assert.Equal(1, editor.TestSelectedShapeCount);
+                Assert.Equal(screenzap.AnnotationType.Rectangle, editor.TestSelectedShapes[0].Type);
+
+                Assert.False(editor.TestArrowSizeComboBoxAvailable);
+            });
+        }
+
+        [Fact]
+        public void ArrowSizeCombo_Visible_WhenSelectionContainsAnArrow()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectArrowAndText();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestShiftClickAtImagePixel(new Point(85, 67));
+
+                Assert.True(editor.TestArrowSizeComboBoxAvailable);
             });
         }
     }
