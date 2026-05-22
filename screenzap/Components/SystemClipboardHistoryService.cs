@@ -349,12 +349,13 @@ namespace screenzap.Components
             // Merge: if translated item exists in our store, keep the existing one; otherwise insert new.
             // We rebuild the full ordered list inside the store.
             var finalOrder = new List<ClipboardHistoryItem>();
+            var finalTimestamps = new Dictionary<Guid, DateTimeOffset>();
             var handled = new HashSet<Guid>();
 
             foreach (var maybe in translated)
             {
                 if (!maybe.HasValue) continue;
-                var (sysId, _, built) = maybe.Value;
+                var (sysId, timestamp, built) = maybe.Value;
 
                 if (store.ContainsSuppressedSystemHistoryId(sysId))
                 {
@@ -367,6 +368,7 @@ namespace screenzap.Components
                     if (!handled.Contains(rebound.Id))
                     {
                         finalOrder.Add(rebound);
+                        finalTimestamps[rebound.Id] = timestamp;
                         handled.Add(rebound.Id);
                     }
                     built.Dispose();
@@ -376,16 +378,19 @@ namespace screenzap.Components
                 if (existingById.TryGetValue(sysId, out var existing))
                 {
                     finalOrder.Add(existing);
+                    finalTimestamps[existing.Id] = timestamp;
                     handled.Add(existing.Id);
                     built.Dispose();
                 }
                 else
                 {
                     finalOrder.Add(built);
+                    finalTimestamps[built.Id] = timestamp;
                 }
             }
 
-            // Preserve dirty items that have no system id (user-created duplicates etc.), appending at top priority.
+            // Preserve local-only items (user-created duplicates, fallback seed, dirty edits) without
+            // pinning stale local screenshots above the newest Windows clipboard history item.
             foreach (var item in store.Items)
             {
                 if (handled.Contains(item.Id)) continue;
@@ -399,7 +404,7 @@ namespace screenzap.Components
                         continue;
                     }
 
-                    finalOrder.Insert(0, item);
+                    InsertByTimestamp(finalOrder, finalTimestamps, item, ToHistoryTimestamp(item));
                     handled.Add(item.Id);
                 }
                 else if (item.IsDirty)
@@ -457,6 +462,39 @@ namespace screenzap.Components
             }
 
             return false;
+        }
+
+        private static void InsertByTimestamp(
+            List<ClipboardHistoryItem> items,
+            Dictionary<Guid, DateTimeOffset> timestamps,
+            ClipboardHistoryItem item,
+            DateTimeOffset timestamp)
+        {
+            int index = 0;
+            while (index < items.Count)
+            {
+                var existingTimestamp = timestamps.TryGetValue(items[index].Id, out var value)
+                    ? value
+                    : ToHistoryTimestamp(items[index]);
+
+                if (existingTimestamp < timestamp)
+                {
+                    break;
+                }
+
+                index++;
+            }
+
+            items.Insert(index, item);
+            timestamps[item.Id] = timestamp;
+        }
+
+        private static DateTimeOffset ToHistoryTimestamp(ClipboardHistoryItem item)
+        {
+            var createdUtc = item.CreatedUtc.Kind == DateTimeKind.Utc
+                ? item.CreatedUtc
+                : DateTime.SpecifyKind(item.CreatedUtc, DateTimeKind.Utc);
+            return new DateTimeOffset(createdUtc);
         }
 
         private static bool AreImagesEquivalent(Bitmap? a, Bitmap? b)

@@ -579,6 +579,8 @@ namespace Screenzap.ViewportTests
                 return CurrentText;
             }
 
+            public System.Drawing.Size? GetNaturalContentSize() => null;
+
             public void Dispose()
             {
                 view.Dispose();

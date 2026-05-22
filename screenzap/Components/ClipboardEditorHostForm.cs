@@ -931,6 +931,39 @@ namespace screenzap.Components
             statusLabel.Text = text ?? string.Empty;
         }
 
+        /// <summary>
+        /// Resize the host so the active presenter's content fits at native size. No-op when the
+        /// presenter doesn't expose a natural content size (e.g. text). When the natural size
+        /// would overflow the working area we shrink to fit — the picture box will then
+        /// zoom-to-fit the image into the available space. The window position is preserved
+        /// (only Size changes) so the window stays where the user expects it.
+        /// </summary>
+        public void FitToContent()
+        {
+            var presenter = activePresenter;
+            if (presenter == null) return;
+            var natural = presenter.GetNaturalContentSize();
+            if (natural == null) return;
+
+            // Chrome the host adds around the presenter view.
+            var hostChromeW = Math.Max(0, ClientSize.Width - presenterHostPanel.ClientSize.Width);
+            var hostChromeH = Math.Max(0, ClientSize.Height - presenterHostPanel.ClientSize.Height);
+
+            var desiredClient = new Size(
+                Math.Max(MinimumSize.Width, natural.Value.Width + hostChromeW),
+                Math.Max(MinimumSize.Height, natural.Value.Height + hostChromeH));
+
+            var nonClientW = Math.Max(0, Size.Width - ClientSize.Width);
+            var nonClientH = Math.Max(0, Size.Height - ClientSize.Height);
+            var desiredOuter = new Size(desiredClient.Width + nonClientW, desiredClient.Height + nonClientH);
+
+            // Clamp to working area. Anchor on the current top-left so position is preserved
+            // when possible; ClampToWorkingArea will nudge inward if the new size overflows.
+            var proposed = new Rectangle(Location, desiredOuter);
+            var clamped = screenzap.lib.WindowLayoutHelper.ClampToWorkingArea(proposed);
+            Bounds = clamped;
+        }
+
         private void FocusHostWindow()
         {
             if (InvokeRequired)

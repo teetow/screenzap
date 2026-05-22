@@ -138,6 +138,193 @@ namespace Screenzap.ViewportTests
             });
         }
 
+        /// <summary>
+        /// Set up two annotations (rect then arrow), each drawn through the real pipeline and
+        /// then deactivated → Move mode. The rect sits at (15,15)–(55,45) (interior (35,30)),
+        /// the arrow runs from (60,60) to (110,75) (midpoint ~(85,67)). They don't overlap, so
+        /// hit-tests for each are unambiguous.
+        /// </summary>
+        private static screenzap.ImageEditor PrepareEditorWithRectThenArrow()
+        {
+            var editor = new screenzap.ImageEditor();
+            var canvas = new Bitmap(140, 100);
+            using (var g = Graphics.FromImage(canvas))
+                g.Clear(Color.White);
+            editor.LoadImage(canvas);
+            canvas.Dispose();
+
+            editor.TestToggleRectTool();
+            editor.TestFireMouseDownAtImagePixel(new Point(15, 15), MouseButtons.Left);
+            editor.TestFireMouseMoveAtImagePixel(new Point(55, 45), MouseButtons.Left);
+            editor.TestFireMouseUpAtImagePixel(new Point(55, 45), MouseButtons.Left);
+            editor.TestDeactivateDrawingTool();
+
+            editor.TestToggleArrowTool();
+            editor.TestFireMouseDownAtImagePixel(new Point(60, 60), MouseButtons.Left);
+            editor.TestFireMouseMoveAtImagePixel(new Point(110, 75), MouseButtons.Left);
+            editor.TestFireMouseUpAtImagePixel(new Point(110, 75), MouseButtons.Left);
+            editor.TestDeactivateDrawingTool();
+
+            Assert.Equal(2, editor.TestAnnotationShapeCount);
+            return editor;
+        }
+
+        /// <summary>
+        /// Variant: user never explicitly exits the drawing tool — they just switch tools.
+        /// Mirrors what likely happens in the running app: pick rect tool, drag rect, pick
+        /// arrow tool, drag arrow. After step 2 activeTool is still Arrow.
+        /// </summary>
+        private static screenzap.ImageEditor PrepareEditorWithRectThenArrow_ToolStaysActive()
+        {
+            var editor = new screenzap.ImageEditor();
+            var canvas = new Bitmap(140, 100);
+            using (var g = Graphics.FromImage(canvas))
+                g.Clear(Color.White);
+            editor.LoadImage(canvas);
+            canvas.Dispose();
+
+            editor.TestToggleRectTool();
+            editor.TestFireMouseDownAtImagePixel(new Point(15, 15), MouseButtons.Left);
+            editor.TestFireMouseMoveAtImagePixel(new Point(55, 45), MouseButtons.Left);
+            editor.TestFireMouseUpAtImagePixel(new Point(55, 45), MouseButtons.Left);
+
+            editor.TestToggleArrowTool();
+            editor.TestFireMouseDownAtImagePixel(new Point(60, 60), MouseButtons.Left);
+            editor.TestFireMouseMoveAtImagePixel(new Point(110, 75), MouseButtons.Left);
+            editor.TestFireMouseUpAtImagePixel(new Point(110, 75), MouseButtons.Left);
+
+            Assert.Equal(2, editor.TestAnnotationShapeCount);
+            return editor;
+        }
+
+        /// <summary>
+        /// User's full repro: rect, arrow, click rect, change line width, select arrow,
+        /// then move rect. Drawing tool stays active throughout — the editor should
+        /// recognize clicks on existing shapes as selection (and exit drawing-tool
+        /// mode), not as new-shape creation.
+        /// </summary>
+        [Fact]
+        public void RectThenArrow_ToolStaysActive_ClickRect_SelectsRect_NoNewShape()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectThenArrow_ToolStaysActive();
+                Assert.Equal(screenzap.DrawingTool.Arrow, editor.TestActiveDrawingTool);
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+
+                Assert.Equal(2, editor.TestAnnotationShapeCount);
+                Assert.Equal(screenzap.AnnotationType.Rectangle, editor.TestSelectedAnnotation!.Type);
+                // Selecting an existing shape exits drawing-tool mode.
+                Assert.Equal(screenzap.DrawingTool.None, editor.TestActiveDrawingTool);
+            });
+        }
+
+        [Fact]
+        public void RectThenArrow_ToolStaysActive_ClickRectThenChangeLineWidth_StillSelectsArrow()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectThenArrow_ToolStaysActive();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                Assert.Equal(screenzap.AnnotationType.Rectangle, editor.TestSelectedAnnotation!.Type);
+
+                editor.TestSetAnnotationLineThickness(6f);
+                Assert.Equal(6f, editor.TestSelectedAnnotation!.LineThickness);
+
+                editor.TestFireMouseDownAtImagePixel(new Point(85, 67), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(85, 67), MouseButtons.Left);
+                Assert.Equal(screenzap.AnnotationType.Arrow, editor.TestSelectedAnnotation!.Type);
+                Assert.Equal(2, editor.TestAnnotationShapeCount);
+            });
+        }
+
+        [Fact]
+        public void RectThenArrow_ToolStaysActive_ClickRectThenChangeLineWidth_RectStillMovable()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectThenArrow_ToolStaysActive();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                Assert.Equal(screenzap.AnnotationType.Rectangle, editor.TestSelectedAnnotation!.Type);
+                var rectBefore = editor.TestSelectedAnnotation!;
+                var startBefore = rectBefore.Start;
+                var endBefore = rectBefore.End;
+
+                editor.TestSetAnnotationLineThickness(6f);
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseMoveAtImagePixel(new Point(43, 35), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(43, 35), MouseButtons.Left);
+
+                Assert.Same(rectBefore, editor.TestSelectedAnnotation);
+                Assert.Equal(new Point(startBefore.X + 8, startBefore.Y + 5), editor.TestSelectedAnnotation!.Start);
+                Assert.Equal(new Point(endBefore.X + 8, endBefore.Y + 5), editor.TestSelectedAnnotation!.End);
+            });
+        }
+
+        /// <summary>
+        /// User-reported repro: rect, then arrow, then click rect to select, then change its
+        /// line width via the toolbar, then try to select the arrow. After the line-width
+        /// change, arrow selection must still work — and the rect must still be movable.
+        /// </summary>
+        [Fact]
+        public void RectThenArrow_ChangeRectLineWidth_StillSelectsArrow()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectThenArrow();
+
+                // Click rect interior — selects rect.
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                Assert.NotNull(editor.TestSelectedAnnotation);
+                Assert.Equal(screenzap.AnnotationType.Rectangle, editor.TestSelectedAnnotation!.Type);
+
+                // Change line width through the real combobox event.
+                editor.TestSetAnnotationLineThickness(6f);
+                Assert.Equal(6f, editor.TestSelectedAnnotation!.LineThickness);
+
+                // Now click the arrow midpoint — it should become selected.
+                editor.TestFireMouseDownAtImagePixel(new Point(85, 67), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(85, 67), MouseButtons.Left);
+                Assert.NotNull(editor.TestSelectedAnnotation);
+                Assert.Equal(screenzap.AnnotationType.Arrow, editor.TestSelectedAnnotation!.Type);
+            });
+        }
+
+        [Fact]
+        public void RectThenArrow_ChangeRectLineWidth_RectStillMovable()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithRectThenArrow();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                Assert.Equal(screenzap.AnnotationType.Rectangle, editor.TestSelectedAnnotation!.Type);
+                var rectBefore = editor.TestSelectedAnnotation!;
+                var startBefore = rectBefore.Start;
+                var endBefore = rectBefore.End;
+
+                editor.TestSetAnnotationLineThickness(6f);
+
+                // Drag the rect body by (+8, +5) — must translate.
+                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
+                editor.TestFireMouseMoveAtImagePixel(new Point(43, 35), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(43, 35), MouseButtons.Left);
+
+                Assert.Same(rectBefore, editor.TestSelectedAnnotation);
+                Assert.Equal(new Point(startBefore.X + 8, startBefore.Y + 5), editor.TestSelectedAnnotation!.Start);
+                Assert.Equal(new Point(endBefore.X + 8, endBefore.Y + 5), editor.TestSelectedAnnotation!.End);
+            });
+        }
+
         [Fact]
         public void EmptyClick_InMoveMode_DeselectsAnnotation()
         {

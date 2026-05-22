@@ -459,11 +459,33 @@ namespace screenzap
                 return false;
             }
 
+            // Selected-annotation handle (resize / move) takes priority — the user
+            // is actively manipulating the selection.
             var handle = HitTestAnnotationHandle(formPoint);
             if (handle != AnnotationHandle.None)
             {
                 annotationSnapshotBeforeEdit = CloneAnnotations();
                 activeAnnotationHandle = handle;
+                annotationDragOriginPixel = pixelPoint;
+                annotationChangedDuringDrag = false;
+                return true;
+            }
+
+            // Object selection wins over tool action: clicking on an existing annotation
+            // selects it (and drops the active drawing tool) even when Arrow/Rectangle
+            // is engaged. Without this the drawing tool would draw a new shape on top
+            // of the click, making it impossible to re-select or move existing shapes
+            // without first manually toggling the tool off.
+            var hit = HitTestAnnotation(pixelPoint, formPoint);
+            if (hit != null)
+            {
+                if (activeDrawingTool != DrawingTool.None)
+                {
+                    activeDrawingTool = DrawingTool.None;
+                }
+                SelectAnnotation(hit);
+                annotationSnapshotBeforeEdit = CloneAnnotations();
+                activeAnnotationHandle = AnnotationHandle.Move;
                 annotationDragOriginPixel = pixelPoint;
                 annotationChangedDuringDrag = false;
                 return true;
@@ -488,17 +510,6 @@ namespace screenzap
                 isDrawingAnnotation = true;
                 annotationDraftAnchorPixel = clampedPoint;
                 annotationTranslateModeActive = false;
-                annotationChangedDuringDrag = false;
-                return true;
-            }
-
-            var hit = HitTestAnnotation(pixelPoint, formPoint);
-            if (hit != null)
-            {
-                SelectAnnotation(hit);
-                annotationSnapshotBeforeEdit = CloneAnnotations();
-                activeAnnotationHandle = AnnotationHandle.Move;
-                annotationDragOriginPixel = pixelPoint;
                 annotationChangedDuringDrag = false;
                 return true;
             }

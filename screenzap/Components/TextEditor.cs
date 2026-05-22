@@ -1015,6 +1015,8 @@ namespace screenzap
             return editor?.Text;
         }
 
+        Size? IClipboardDocumentPresenter.GetNaturalContentSize() => null;
+
         private void ApplyHostChromeVisibility(bool isHosted)
         {
             if (mainToolStrip != null)

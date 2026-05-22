@@ -267,6 +267,7 @@ namespace screenzap
                 data.SetData(DataFormats.Bitmap, true, bitmap);
 
                 bitmap.Save(pngMemStream, ImageFormat.Png);
+                pngMemStream.Position = 0;
                 data.SetData("PNG", false, pngMemStream);
 
                 Clipboard.SetDataObject(data, true);
@@ -524,6 +525,7 @@ namespace screenzap
             }
 
             host.ActivateHistoryItem(top);
+            host.FitToContent();
             if (!host.Visible) host.Show();
             host.Activate();
         }

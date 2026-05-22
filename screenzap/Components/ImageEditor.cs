@@ -3166,6 +3166,23 @@ namespace screenzap
             return null;
         }
 
+        Size? IClipboardDocumentPresenter.GetNaturalContentSize()
+        {
+            if (!HasEditableImage || pictureBox1?.Image == null || canvasPanel == null)
+            {
+                return null;
+            }
+
+            // Internal chrome = the editor's own toolbars/status strip surrounding canvasPanel.
+            // canvasPanel.Dock=Fill inside this Form, so (Form.ClientSize - canvasPanel.ClientSize)
+            // is the chrome the host must add on top of the image's intrinsic dimensions for the
+            // canvas to display the image at 1:1.
+            var chrome = new Size(
+                Math.Max(0, ClientSize.Width - canvasPanel.ClientSize.Width),
+                Math.Max(0, ClientSize.Height - canvasPanel.ClientSize.Height));
+            return new Size(pictureBox1.Image.Width + chrome.Width, pictureBox1.Image.Height + chrome.Height);
+        }
+
         private void ApplyHostChromeVisibility(bool isHosted)
         {
             isHostedView = isHosted;

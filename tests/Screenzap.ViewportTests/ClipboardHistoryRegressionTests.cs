@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
+using System.Windows.Forms;
 using screenzap;
 using screenzap.Components;
 using screenzap.Testing;
@@ -120,6 +124,79 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void SystemHistoryRefresh_OrdersNewestSystemItemAboveSeededFallback()
+        {
+            StaTest.Run(() =>
+            {
+                var store = new ClipboardHistoryStore();
+                using var host = new Form();
+                host.CreateControl();
+
+                using var fallbackImage = CreateSolidBitmap(Color.DarkCyan);
+                var fallback = store.AddObservedImage(fallbackImage);
+                fallback.IsSeededFallback = true;
+
+                using var newestImage = CreateSolidBitmap(Color.OrangeRed);
+                var newest = ClipboardHistoryItem.FromImage(newestImage);
+                newest.AssignSystemHistoryId("system-newest");
+
+                using var service = new SystemClipboardHistoryService(
+                    store,
+                    host,
+                    onItemObserved: null,
+                    tryBindPendingCommittedItem: null,
+                    isInternalWriteWindow: null,
+                    includeNonBitmapItems: null);
+
+                ApplySystemSnapshot(
+                    service,
+                    new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>
+                    {
+                        ("system-newest", DateTimeOffset.UtcNow.AddSeconds(1), newest)
+                    });
+
+                Assert.Same(newest, store.TopItem);
+                Assert.Equal(new[] { newest.Id, fallback.Id }, store.Items.Select(item => item.Id).ToArray());
+            });
+        }
+
+        [Fact]
+        public void SystemHistoryRefresh_DoesNotPinCleanLocalItemAboveNewerSystemItem()
+        {
+            StaTest.Run(() =>
+            {
+                var store = new ClipboardHistoryStore();
+                using var host = new Form();
+                host.CreateControl();
+
+                using var localImage = CreateSolidBitmap(Color.MidnightBlue);
+                var localOnly = store.AddObservedImage(localImage);
+
+                using var newestImage = CreateSolidBitmap(Color.Gold);
+                var newest = ClipboardHistoryItem.FromImage(newestImage);
+                newest.AssignSystemHistoryId("system-newest");
+
+                using var service = new SystemClipboardHistoryService(
+                    store,
+                    host,
+                    onItemObserved: null,
+                    tryBindPendingCommittedItem: null,
+                    isInternalWriteWindow: null,
+                    includeNonBitmapItems: null);
+
+                ApplySystemSnapshot(
+                    service,
+                    new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>
+                    {
+                        ("system-newest", DateTimeOffset.UtcNow.AddSeconds(1), newest)
+                    });
+
+                Assert.Same(newest, store.TopItem);
+                Assert.Equal(new[] { newest.Id, localOnly.Id }, store.Items.Select(item => item.Id).ToArray());
+            });
+        }
+
+        [Fact]
         public void HistoryThumbnailClick_StashesAndRestoresImageLayerState()
         {
             Exception? failure = null;
@@ -170,6 +247,25 @@ namespace Screenzap.ViewportTests
             {
                 throw failure;
             }
+        }
+
+        private static Bitmap CreateSolidBitmap(Color color)
+        {
+            var bitmap = new Bitmap(8, 8);
+            using var graphics = Graphics.FromImage(bitmap);
+            graphics.Clear(color);
+            return bitmap;
+        }
+
+        private static void ApplySystemSnapshot(
+            SystemClipboardHistoryService service,
+            List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?> translated)
+        {
+            var method = typeof(SystemClipboardHistoryService).GetMethod(
+                "ApplySnapshot",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(method);
+            method!.Invoke(service, new object[] { translated });
         }
     }
 }

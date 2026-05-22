@@ -28,6 +28,13 @@ namespace screenzap.Components.Shared
 
         /// <summary>The current content rendered by the presenter, or null if nothing is loaded. Caller owns the returned bitmap (for images).</summary>
         object? GetCurrentContent();
+
+        /// <summary>
+        /// Natural content size in client pixels — e.g. the image's intrinsic dimensions for an
+        /// image presenter. Returns null when the presenter has no opinion (e.g. text content),
+        /// in which case the host should leave its size alone.
+        /// </summary>
+        Size? GetNaturalContentSize();
     }
 }
 

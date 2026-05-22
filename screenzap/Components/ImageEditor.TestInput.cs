@@ -161,6 +161,23 @@ namespace screenzap
 
         internal AnnotationShape? TestSelectedAnnotation => selectedAnnotation;
 
+        internal float TestAnnotationLineThickness => annotationLineThickness;
+
+        /// <summary>
+        /// Drive the line-thickness combobox the way a real user does: change SelectedIndex,
+        /// letting SelectedIndexChanged fire naturally. Throws if the requested value isn't in
+        /// the combobox's Items list.
+        /// </summary>
+        internal void TestSetAnnotationLineThickness(float thickness)
+        {
+            if (lineThicknessComboBox == null)
+                throw new System.InvalidOperationException("lineThicknessComboBox not initialized");
+            int idx = lineThicknessComboBox.Items.IndexOf(thickness.ToString());
+            if (idx < 0)
+                throw new System.ArgumentException($"thickness {thickness} not in combobox items");
+            lineThicknessComboBox.SelectedIndex = idx;
+        }
+
         internal string TestDescribeAnnotationShapes()
         {
             if (annotationShapes.Count == 0) return "[]";

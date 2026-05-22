@@ -655,6 +655,7 @@ namespace screenzap.Testing
             public void LoadHistoryItem(screenzap.Components.ClipboardHistoryItem item) { }
             public void StashHistoryItemState(screenzap.Components.ClipboardHistoryItem item) { }
             public object? GetCurrentContent() => null;
+            public System.Drawing.Size? GetNaturalContentSize() => null;
 
             public void Dispose()
             {
