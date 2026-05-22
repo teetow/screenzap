@@ -612,6 +612,7 @@ namespace screenzap
             // Reset text annotations
             textAnnotations.Clear();
             activeTextAnnotation = null;
+            selectedTexts.Clear();
             selectedTextAnnotation = null;
             isTextToolActive = false;
             textAnnotationSnapshotBeforeEdit = null;
@@ -1939,6 +1940,21 @@ namespace screenzap
         private void ImageEditor_KeyDown(object sender, KeyEventArgs e)
         {
             //Console.WriteLine(e.Modifiers);
+
+            // Multi-select Delete: when the user has selected more than one annotation
+            // (any mix of shapes and texts) and isn't editing text, remove the whole
+            // selection in a single combined undo step. Handled before HandleTextToolKeyDown
+            // because the single-target text path would otherwise intercept Delete and
+            // leave the shape side of a mixed selection behind.
+            if (e.KeyCode == Keys.Delete
+                && (selectedShapes.Count + selectedTexts.Count) > 1
+                && (activeTextAnnotation == null || !activeTextAnnotation.IsEditing))
+            {
+                DeleteMultiSelection();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                return;
+            }
 
             // Handle text tool keyboard input first
             if (HandleTextToolKeyDown(e))

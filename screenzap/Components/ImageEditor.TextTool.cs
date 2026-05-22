@@ -621,6 +621,9 @@ namespace screenzap
         private readonly List<TextAnnotation> textAnnotations = new List<TextAnnotation>();
         // isTextToolActive lives on ImageEditor.Tool.cs as a computed accessor.
         private TextAnnotation? activeTextAnnotation;
+        // Multi-selection: selectedTexts is the source of truth; selectedTextAnnotation
+        // mirrors selectedTexts.LastOrDefault() for legacy single-target read sites.
+        private readonly List<TextAnnotation> selectedTexts = new List<TextAnnotation>();
         private TextAnnotation? selectedTextAnnotation;
         private TextAnnotation? hoveredTextAnnotation;
         private Point textDragOriginPixel;
@@ -648,28 +651,63 @@ namespace screenzap
             return textAnnotations.Select(t => t.Clone()).ToList();
         }
 
-        private void SelectTextAnnotation(TextAnnotation? target)
+        private void SelectTextAnnotation(TextAnnotation? target, bool add = false)
         {
+            if (add)
+            {
+                if (target == null)
+                {
+                    return;
+                }
+                if (selectedTexts.Contains(target))
+                {
+                    selectedTexts.Remove(target);
+                }
+                else
+                {
+                    selectedTexts.Add(target);
+                }
+            }
+            else
+            {
+                selectedTexts.Clear();
+                if (target != null)
+                {
+                    selectedTexts.Add(target);
+                }
+            }
+
             foreach (var annotation in textAnnotations)
             {
-                annotation.Selected = annotation == target;
-                if (annotation != target)
+                bool inSelection = selectedTexts.Contains(annotation);
+                annotation.Selected = inSelection;
+                if (!inSelection)
                 {
                     annotation.IsEditing = false;
                 }
             }
 
-            selectedTextAnnotation = target;
-            if (target != null)
+            selectedTextAnnotation = selectedTexts.LastOrDefault();
+            if (selectedTextAnnotation != null)
             {
-                SyncTextToolbarFromAnnotation(target);
+                SyncTextToolbarFromAnnotation(selectedTextAnnotation);
             }
             pictureBox1?.Invalidate();
         }
 
         private void SyncSelectedTextAnnotation()
         {
-            selectedTextAnnotation = textAnnotations.FirstOrDefault(t => t.Selected);
+            // Rebuild selectedTexts from each annotation's Selected flag (used after
+            // undo/redo or any code path that mutates textAnnotations wholesale).
+            selectedTexts.Clear();
+            foreach (var annotation in textAnnotations)
+            {
+                if (annotation.Selected)
+                {
+                    selectedTexts.Add(annotation);
+                }
+            }
+            selectedTextAnnotation = selectedTexts.LastOrDefault();
         }
 
         private void SyncTextToolbarFromAnnotation(TextAnnotation annotation)
@@ -1188,6 +1226,8 @@ namespace screenzap
 
             if (hit != null)
             {
+                bool addToSelection = IsMultiSelectModifierDown;
+
                 // Finalize previous annotation if different
                 if (activeTextAnnotation != null && activeTextAnnotation != hit)
                 {
@@ -1199,17 +1239,37 @@ namespace screenzap
                 // (toolbar / shortcut). Double-click promotes to edit and engages the tool.
                 if (!isTextToolActive)
                 {
-                    SelectTextAnnotation(hit);
-                    textDragOriginPixel = pixelPoint;
-                    isTextAnnotationDragging = true;
-                    textAnnotationChangedDuringDrag = false;
-                    textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                    if (addToSelection)
+                    {
+                        SelectTextAnnotation(hit, add: true);
+                    }
+                    else if (!selectedTexts.Contains(hit))
+                    {
+                        SelectTextAnnotation(hit, add: false);
+                    }
+                    // else: plain click on already-selected text — preserve the multi-
+                    // selection so a group drag works without collapsing.
+
+                    // Don't arm a drag for shift-deselect (toggling off).
+                    if (selectedTexts.Contains(hit))
+                    {
+                        textDragOriginPixel = pixelPoint;
+                        isTextAnnotationDragging = true;
+                        textAnnotationChangedDuringDrag = false;
+                        textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                        // Snapshot shapes too so a multi-drag including shapes commits as
+                        // a single combined undo step.
+                        if (selectedShapes.Count > 0)
+                        {
+                            annotationSnapshotBeforeEdit = CloneAnnotations();
+                        }
+                    }
                     pictureBox1?.Invalidate();
                     return true;
                 }
 
                 textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
-                SelectTextAnnotation(hit);
+                SelectTextAnnotation(hit, add: addToSelection);
                 activeTextAnnotation = hit;
 
                 if (resumingFromToolbarInput)
@@ -1219,9 +1279,12 @@ namespace screenzap
                 }
 
                 // Single click → selection mode only. Enter or double-click to edit.
-                textDragOriginPixel = pixelPoint;
-                isTextAnnotationDragging = true;
-                textAnnotationChangedDuringDrag = false;
+                if (selectedTexts.Contains(hit))
+                {
+                    textDragOriginPixel = pixelPoint;
+                    isTextAnnotationDragging = true;
+                    textAnnotationChangedDuringDrag = false;
+                }
                 pictureBox1?.Invalidate();
                 return true;
             }
@@ -1307,8 +1370,29 @@ namespace screenzap
                     var delta = pixelPoint.Subtract(textDragOriginPixel);
                     if (delta.X != 0 || delta.Y != 0)
                     {
-                        var newPos = target.Position.Add(delta);
-                        target.Position = ClampPointToImage(newPos);
+                        // While text-editing (activeTextAnnotation != null), the user is
+                        // dragging a single text annotation that's being authored. Keep the
+                        // legacy single-target clamp/move for that case.
+                        if (activeTextAnnotation != null)
+                        {
+                            var newPos = target.Position.Add(delta);
+                            target.Position = ClampPointToImage(newPos);
+                        }
+                        else
+                        {
+                            // Object-mode drag: translate the WHOLE multi-selection (texts +
+                            // shapes) by the clamped delta so shift-selected items move
+                            // together.
+                            var clampedDelta = ClampMultiSelectionMoveDelta(delta);
+                            if (clampedDelta.X != 0 || clampedDelta.Y != 0)
+                            {
+                                TranslateSelectionBy(clampedDelta);
+                                if (selectedShapes.Count > 0)
+                                {
+                                    annotationChangedDuringDrag = true;
+                                }
+                            }
+                        }
                         textDragOriginPixel = pixelPoint;
                         textAnnotationChangedDuringDrag = true;
                         pictureBox1?.Invalidate();
@@ -1369,14 +1453,26 @@ namespace screenzap
                     // since there's no edit session to wrap it up.
                     if (!isTextToolActive && activeTextAnnotation == null)
                     {
-                        CommitTextAnnotationUndo();
+                        // Multi-drag that touched shapes too → push one combined undo step.
+                        // CommitAnnotationUndo now handles both shape and text snapshots in
+                        // a single PushUndoStep so a single Ctrl+Z undoes the whole gesture.
+                        if (annotationSnapshotBeforeEdit != null)
+                        {
+                            CommitAnnotationUndo();
+                            annotationChangedDuringDrag = false;
+                        }
+                        else
+                        {
+                            CommitTextAnnotationUndo();
+                        }
                     }
                 }
                 else if (!isTextToolActive && activeTextAnnotation == null)
                 {
-                    // No movement → discard the snapshot we took in mouse-down so it
-                    // can't leak into a later edit and produce a misleading undo step.
+                    // No movement → discard snapshots we took in mouse-down so they can't
+                    // leak into a later edit and produce a misleading undo step.
                     textAnnotationSnapshotBeforeEdit = null;
+                    annotationSnapshotBeforeEdit = null;
                 }
                 return true;
             }
@@ -1581,7 +1677,8 @@ namespace screenzap
                 {
                     var before = CloneTextAnnotations();
                     textAnnotations.Remove(selectedTextAnnotation);
-                    selectedTextAnnotation = null;
+                    selectedTexts.Remove(selectedTextAnnotation);
+                    selectedTextAnnotation = selectedTexts.LastOrDefault();
                     activeTextAnnotation = null;
                     var after = CloneTextAnnotations();
                     PushTextUndoStep(before, after);

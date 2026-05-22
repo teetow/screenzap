@@ -80,6 +80,10 @@ namespace screenzap
         private readonly List<AnnotationShape> annotationShapes = new List<AnnotationShape>();
         private bool isDrawingAnnotation;
         private AnnotationShape? workingAnnotation;
+        // Multi-selection: selectedShapes is the source of truth, selectedAnnotation mirrors
+        // selectedShapes.LastOrDefault() to keep the ~30 existing single-target read sites
+        // working without churn. All writes go through SelectAnnotation / SyncSelectedAnnotation.
+        private readonly List<AnnotationShape> selectedShapes = new List<AnnotationShape>();
         private AnnotationShape? selectedAnnotation;
         private AnnotationShape? hoveredAnnotation;
         private AnnotationHandle activeAnnotationHandle = AnnotationHandle.None;
@@ -98,27 +102,78 @@ namespace screenzap
         private float annotationArrowSize = 1f;
         private Color annotationColor = Color.Red;
 
+        // Tests can't manipulate real keyboard state and Control.ModifierKeys is a static
+        // property tied to OS input. Set via TestSetShiftHeld to simulate Shift-during-click.
+        private bool isShiftHeld_TestOverride;
+        private bool IsMultiSelectModifierDown =>
+            isShiftHeld_TestOverride || ModifierKeys.HasFlag(Keys.Shift);
+
         private List<AnnotationShape> CloneAnnotations()
         {
             return annotationShapes.Select(a => a.Clone()).ToList();
         }
 
-        private void SelectAnnotation(AnnotationShape? target)
+        /// <summary>
+        /// Update the shape selection. When <paramref name="add"/> is false (the default,
+        /// matching legacy single-select behaviour), the selection is replaced with the
+        /// target (or cleared when target is null). When add is true, the target is
+        /// toggled into or out of the existing selection; passing null with add=true is
+        /// a no-op.
+        /// </summary>
+        private void SelectAnnotation(AnnotationShape? target, bool add = false)
         {
-            foreach (var annotation in annotationShapes)
+            if (add)
             {
-                annotation.Selected = annotation == target;
+                if (target == null)
+                {
+                    return;
+                }
+                if (selectedShapes.Contains(target))
+                {
+                    selectedShapes.Remove(target);
+                }
+                else
+                {
+                    selectedShapes.Add(target);
+                }
+            }
+            else
+            {
+                selectedShapes.Clear();
+                if (target != null)
+                {
+                    selectedShapes.Add(target);
+                }
             }
 
-            selectedAnnotation = target;
+            SyncSelectionFlagsFromList();
+            selectedAnnotation = selectedShapes.LastOrDefault();
             UpdateAnnotationToolbarFromSelection();
             UpdateAnnotationToolbarVisibility();
             pictureBox1?.Invalidate();
         }
 
+        private void SyncSelectionFlagsFromList()
+        {
+            foreach (var annotation in annotationShapes)
+            {
+                annotation.Selected = selectedShapes.Contains(annotation);
+            }
+        }
+
         private void SyncSelectedAnnotation()
         {
-            selectedAnnotation = annotationShapes.FirstOrDefault(a => a.Selected);
+            // Rebuild selectedShapes from each shape's Selected flag (used after undo/redo
+            // or any code path that mutates annotationShapes wholesale).
+            selectedShapes.Clear();
+            foreach (var annotation in annotationShapes)
+            {
+                if (annotation.Selected)
+                {
+                    selectedShapes.Add(annotation);
+                }
+            }
+            selectedAnnotation = selectedShapes.LastOrDefault();
         }
 
         private void UpdateDrawingToolButtons()
@@ -492,11 +547,36 @@ namespace screenzap
                 {
                     activeDrawingTool = DrawingTool.None;
                 }
-                SelectAnnotation(hit);
-                annotationSnapshotBeforeEdit = CloneAnnotations();
-                activeAnnotationHandle = AnnotationHandle.Move;
-                annotationDragOriginPixel = pixelPoint;
-                annotationChangedDuringDrag = false;
+                bool addToSelection = IsMultiSelectModifierDown;
+                if (addToSelection)
+                {
+                    SelectAnnotation(hit, add: true);
+                }
+                else if (!selectedShapes.Contains(hit))
+                {
+                    // Plain click on something not already in the selection → replace.
+                    SelectAnnotation(hit, add: false);
+                }
+                // else: plain click on an already-selected item → preserve the multi-
+                // selection so the user can drag the group as a whole. (Replacing would
+                // collapse the selection to this single item and silently break multi-drag.)
+
+                // Only arm a drag when the click ended with the hit shape still in the
+                // selection — shift-deselecting (toggling a shape off) should not start
+                // a translate gesture.
+                if (selectedShapes.Contains(hit))
+                {
+                    annotationSnapshotBeforeEdit = CloneAnnotations();
+                    // Snapshot text annotations too so a multi-drag including texts can
+                    // be undone as a single step.
+                    if (selectedTexts.Count > 0)
+                    {
+                        textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                    }
+                    activeAnnotationHandle = AnnotationHandle.Move;
+                    annotationDragOriginPixel = pixelPoint;
+                    annotationChangedDuringDrag = false;
+                }
                 return true;
             }
 
@@ -644,23 +724,17 @@ namespace screenzap
             switch (activeAnnotationHandle)
             {
                 case AnnotationHandle.Move:
+                    // Move applies to the WHOLE multi-selection so users can shift-click
+                    // several items and drag them together. Resize handles below remain
+                    // single-target — multi-resize would require bounding-box scaling that's
+                    // out of scope for this slice.
                     var delta = clamped.Subtract(annotationDragOriginPixel);
                     if (delta.X == 0 && delta.Y == 0)
                     {
                         return;
                     }
 
-                    if (pictureBox1.Image != null)
-                    {
-                        var bounds = GetImageBounds();
-                        int minX = Math.Min(target.Start.X, target.End.X);
-                        int maxX = Math.Max(target.Start.X, target.End.X);
-                        int minY = Math.Min(target.Start.Y, target.End.Y);
-                        int maxY = Math.Max(target.Start.Y, target.End.Y);
-
-                        delta.X = Math.Max(bounds.Left - minX, Math.Min(bounds.Right - maxX, delta.X));
-                        delta.Y = Math.Max(bounds.Top - minY, Math.Min(bounds.Bottom - maxY, delta.Y));
-                    }
+                    delta = ClampMultiSelectionMoveDelta(delta);
 
                     if (delta.X == 0 && delta.Y == 0)
                     {
@@ -668,8 +742,7 @@ namespace screenzap
                         return;
                     }
 
-                    target.Start = target.Start.Add(delta);
-                    target.End = target.End.Add(delta);
+                    TranslateSelectionBy(delta);
                     annotationDragOriginPixel = clamped;
                     break;
                 case AnnotationHandle.ArrowStart:
@@ -700,6 +773,90 @@ namespace screenzap
             {
                 NormalizeRectangleAnnotation(target);
             }
+        }
+
+        /// <summary>
+        /// Restrict a proposed move-delta so the bounding box of the entire multi-selection
+        /// (shapes + texts) stays inside the image. Text positions are treated as single
+        /// points — matches the existing single-text-drag clamping behaviour.
+        /// </summary>
+        private Point ClampMultiSelectionMoveDelta(Point delta)
+        {
+            if (pictureBox1?.Image == null) return delta;
+            if (selectedShapes.Count == 0 && selectedTexts.Count == 0) return delta;
+
+            int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
+            foreach (var shape in selectedShapes)
+            {
+                minX = Math.Min(minX, Math.Min(shape.Start.X, shape.End.X));
+                maxX = Math.Max(maxX, Math.Max(shape.Start.X, shape.End.X));
+                minY = Math.Min(minY, Math.Min(shape.Start.Y, shape.End.Y));
+                maxY = Math.Max(maxY, Math.Max(shape.Start.Y, shape.End.Y));
+            }
+            foreach (var text in selectedTexts)
+            {
+                minX = Math.Min(minX, text.Position.X);
+                maxX = Math.Max(maxX, text.Position.X);
+                minY = Math.Min(minY, text.Position.Y);
+                maxY = Math.Max(maxY, text.Position.Y);
+            }
+
+            var bounds = GetImageBounds();
+            delta.X = Math.Max(bounds.Left - minX, Math.Min(bounds.Right - maxX, delta.X));
+            delta.Y = Math.Max(bounds.Top - minY, Math.Min(bounds.Bottom - maxY, delta.Y));
+            return delta;
+        }
+
+        /// <summary>
+        /// Translate every selected shape and text annotation by the given delta. Caller is
+        /// responsible for clamping the delta and recording an undo snapshot before/after.
+        /// </summary>
+        private void TranslateSelectionBy(Point delta)
+        {
+            foreach (var shape in selectedShapes)
+            {
+                shape.Start = shape.Start.Add(delta);
+                shape.End = shape.End.Add(delta);
+            }
+            foreach (var text in selectedTexts)
+            {
+                text.Position = text.Position.Add(delta);
+            }
+        }
+
+        /// <summary>
+        /// Remove every selected shape and text annotation in one combined undo step.
+        /// Caller is responsible for ensuring this is the intended action (e.g. Delete
+        /// pressed outside text-editing mode with multi-selection present).
+        /// </summary>
+        private void DeleteMultiSelection()
+        {
+            bool hadShapes = selectedShapes.Count > 0;
+            bool hadTexts = selectedTexts.Count > 0;
+            if (!hadShapes && !hadTexts) return;
+
+            var shapesBefore = hadShapes ? CloneAnnotations() : null;
+            var textsBefore = hadTexts ? CloneTextAnnotations() : null;
+
+            foreach (var shape in selectedShapes.ToList())
+            {
+                annotationShapes.Remove(shape);
+            }
+            foreach (var text in selectedTexts.ToList())
+            {
+                textAnnotations.Remove(text);
+            }
+
+            SelectAnnotation(null);
+            SelectTextAnnotation(null);
+            activeTextAnnotation = null;
+
+            var shapesAfter = hadShapes ? CloneAnnotations() : null;
+            var textsAfter = hadTexts ? CloneTextAnnotations() : null;
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false,
+                shapesBefore, shapesAfter,
+                textsBefore, textsAfter);
+            pictureBox1?.Invalidate();
         }
 
         private void CompleteAnnotationDraft(Point pixelPoint)
@@ -891,14 +1048,21 @@ namespace screenzap
 
         private void CommitAnnotationUndo()
         {
-            if (annotationSnapshotBeforeEdit == null)
+            if (annotationSnapshotBeforeEdit == null && textAnnotationSnapshotBeforeEdit == null)
             {
                 return;
             }
 
-            var afterState = CloneAnnotations();
-            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, annotationSnapshotBeforeEdit, afterState);
+            // Combine shape + text diffs into a single undo step so a multi-selection drag
+            // is undone with one Ctrl+Z. Each half is captured only when we actually staged
+            // a snapshot on the corresponding type at drag-start.
+            var shapesAfter = annotationSnapshotBeforeEdit != null ? CloneAnnotations() : null;
+            var textsAfter = textAnnotationSnapshotBeforeEdit != null ? CloneTextAnnotations() : null;
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false,
+                annotationSnapshotBeforeEdit, shapesAfter,
+                textAnnotationSnapshotBeforeEdit, textsAfter);
             annotationSnapshotBeforeEdit = null;
+            textAnnotationSnapshotBeforeEdit = null;
         }
 
         private void ApplyAnnotationState(List<AnnotationShape>? source)
@@ -986,9 +1150,11 @@ namespace screenzap
 
         private void annotationColorButton_Click(object? sender, EventArgs e)
         {
+            // Choose the dialog's starting color: use the unanimous selection color when
+            // all selected items agree, fall back to the primary's color or tool default.
             using var dialog = new ColorDialog
             {
-                Color = selectedAnnotation?.Color ?? annotationColor,
+                Color = GetRepresentativeSelectionColor() ?? annotationColor,
                 FullOpen = true
             };
 
@@ -998,14 +1164,65 @@ namespace screenzap
             }
 
             annotationColor = dialog.Color;
-            if (selectedAnnotation != null)
-            {
-                annotationSnapshotBeforeEdit = CloneAnnotations();
-                selectedAnnotation.Color = dialog.Color;
-                CommitAnnotationUndo();
-                pictureBox1?.Invalidate();
-            }
+            ApplyColorToSelection(dialog.Color);
             UpdateAnnotationColorButtonAppearance();
+        }
+
+        /// <summary>
+        /// Push one undo step that applies the colour to every selected shape and text
+        /// annotation. Items in the selection that don't have an applicable colour slot
+        /// are silently skipped.
+        /// </summary>
+        private void ApplyColorToSelection(Color color)
+        {
+            bool anyShapeChange = selectedShapes.Count > 0;
+            bool anyTextChange = selectedTexts.Count > 0;
+            if (!anyShapeChange && !anyTextChange)
+            {
+                return;
+            }
+
+            List<AnnotationShape>? shapesBefore = null;
+            List<TextAnnotation>? textsBefore = null;
+            if (anyShapeChange) shapesBefore = CloneAnnotations();
+            if (anyTextChange) textsBefore = CloneTextAnnotations();
+
+            foreach (var shape in selectedShapes)
+            {
+                shape.Color = color;
+            }
+            foreach (var text in selectedTexts)
+            {
+                text.TextColor = color;
+            }
+
+            // Push as a single combined undo step so a single Ctrl+Z reverts the whole
+            // multi-target colour change.
+            var shapesAfter = anyShapeChange ? CloneAnnotations() : null;
+            var textsAfter = anyTextChange ? CloneTextAnnotations() : null;
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false,
+                shapesBefore, shapesAfter, textsBefore, textsAfter);
+            pictureBox1?.Invalidate();
+        }
+
+        /// <summary>
+        /// Returns the colour shared by every selected item (shapes + texts), or null
+        /// when the selection contains a mix of colours or is empty.
+        /// </summary>
+        private Color? GetRepresentativeSelectionColor()
+        {
+            Color? candidate = null;
+            foreach (var shape in selectedShapes)
+            {
+                if (candidate == null) candidate = shape.Color;
+                else if (candidate.Value.ToArgb() != shape.Color.ToArgb()) return null;
+            }
+            foreach (var text in selectedTexts)
+            {
+                if (candidate == null) candidate = text.TextColor;
+                else if (candidate.Value.ToArgb() != text.TextColor.ToArgb()) return null;
+            }
+            return candidate;
         }
 
         private void UpdateAnnotationColorButtonAppearance()
@@ -1015,9 +1232,22 @@ namespace screenzap
                 return;
             }
 
-            var swatch = selectedAnnotation?.Color ?? annotationColor;
+            int selectionCount = selectedShapes.Count + selectedTexts.Count;
+            var representative = GetRepresentativeSelectionColor();
+
+            if (selectionCount > 1 && representative == null)
+            {
+                // Mixed colours across the multi-selection — neutral swatch + "Mixed".
+                annotationColorButton.BackColor = SystemColors.Control;
+                annotationColorButton.ForeColor = SystemColors.ControlText;
+                annotationColorButton.Text = "Mixed";
+                return;
+            }
+
+            var swatch = representative ?? annotationColor;
             annotationColorButton.BackColor = swatch;
             annotationColorButton.ForeColor = GetContrastColor(swatch);
+            annotationColorButton.Text = "Color";
         }
 
         private void lineThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)

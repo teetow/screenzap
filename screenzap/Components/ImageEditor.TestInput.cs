@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -164,6 +165,42 @@ namespace screenzap
         internal float TestAnnotationLineThickness => annotationLineThickness;
 
         internal Color TestAnnotationColorDefault => annotationColor;
+
+        internal int TestSelectedShapeCount => selectedShapes.Count;
+        internal int TestSelectedTextCount => selectedTexts.Count;
+        internal IReadOnlyList<AnnotationShape> TestSelectedShapes => selectedShapes;
+        internal IReadOnlyList<TextAnnotation> TestSelectedTexts => selectedTexts;
+        internal string TestAnnotationColorButtonText => annotationColorButton?.Text ?? string.Empty;
+        internal Color TestAnnotationColorButtonBackColor => annotationColorButton?.BackColor ?? Color.Empty;
+
+        internal void TestSetShiftHeld(bool held) => isShiftHeld_TestOverride = held;
+
+        /// <summary>
+        /// Fire a click at the given image pixel with Shift held throughout the down+up,
+        /// then release. Same code path as a real shift-click — the shift state is read
+        /// from <see cref="IsMultiSelectModifierDown"/> during MouseDown handling.
+        /// </summary>
+        internal void TestShiftClickAtImagePixel(Point imagePixel)
+        {
+            isShiftHeld_TestOverride = true;
+            try
+            {
+                TestFireMouseDownAtImagePixel(imagePixel, MouseButtons.Left);
+                TestFireMouseUpAtImagePixel(imagePixel, MouseButtons.Left);
+            }
+            finally
+            {
+                isShiftHeld_TestOverride = false;
+            }
+        }
+
+        /// <summary>Apply a color to all selected shapes + texts via the same path the color picker uses.</summary>
+        internal void TestApplyColorToSelection(Color color)
+        {
+            annotationColor = color;
+            ApplyColorToSelection(color);
+            UpdateAnnotationColorButtonAppearance();
+        }
 
         /// <summary>
         /// Apply a color to the selected annotation through the same code path the picker uses,
