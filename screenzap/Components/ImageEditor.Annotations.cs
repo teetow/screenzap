@@ -40,6 +40,7 @@ namespace screenzap
         public Point End { get; set; }
         public float LineThickness { get; set; } = 2f;
         public float ArrowSize { get; set; } = 1f; // Multiplier for arrow head size
+        public Color Color { get; set; } = Color.Red;
         public bool Selected { get; set; }
 
         public AnnotationShape Clone()
@@ -52,6 +53,7 @@ namespace screenzap
                 End = End,
                 LineThickness = LineThickness,
                 ArrowSize = ArrowSize,
+                Color = Color,
                 Selected = Selected
             };
         }
@@ -94,6 +96,7 @@ namespace screenzap
         // Annotation tool settings
         private float annotationLineThickness = 2f;
         private float annotationArrowSize = 1f;
+        private Color annotationColor = Color.Red;
 
         private List<AnnotationShape> CloneAnnotations()
         {
@@ -165,6 +168,10 @@ namespace screenzap
             if (lineThicknessComboBox != null)
             {
                 lineThicknessComboBox.Visible = showPanel;
+            }
+            if (annotationColorButton != null)
+            {
+                annotationColorButton.Visible = showPanel;
             }
             if (arrowSizeLabel != null)
             {
@@ -265,9 +272,11 @@ namespace screenzap
         {
             float scale = surface == AnnotationSurface.Screen ? (float)ZoomLevel : 1f;
             float strokeWidth = Math.Max(1f, annotation.LineThickness * scale);
-            
-            var penColor = annotation.Selected ? Color.OrangeRed : Color.Red;
-            using var pen = new Pen(penColor, strokeWidth)
+
+            // Selection feedback comes from the corner handles drawn separately in
+            // DrawAnnotationHandles, so the stroke uses the user-chosen color regardless of
+            // selection state.
+            using var pen = new Pen(annotation.Color, strokeWidth)
             {
                 Alignment = System.Drawing.Drawing2D.PenAlignment.Center
             };
@@ -503,6 +512,7 @@ namespace screenzap
                     End = clampedPoint,
                     LineThickness = annotationLineThickness,
                     ArrowSize = annotationArrowSize,
+                    Color = annotationColor,
                     Selected = true
                 };
                 annotationShapes.Add(workingAnnotation);
@@ -970,6 +980,44 @@ namespace screenzap
                 int defaultIndex = arrowSizeComboBox.Items.IndexOf(annotationArrowSize.ToString());
                 arrowSizeComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 2; // Default to "1"
             }
+
+            UpdateAnnotationColorButtonAppearance();
+        }
+
+        private void annotationColorButton_Click(object? sender, EventArgs e)
+        {
+            using var dialog = new ColorDialog
+            {
+                Color = selectedAnnotation?.Color ?? annotationColor,
+                FullOpen = true
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            annotationColor = dialog.Color;
+            if (selectedAnnotation != null)
+            {
+                annotationSnapshotBeforeEdit = CloneAnnotations();
+                selectedAnnotation.Color = dialog.Color;
+                CommitAnnotationUndo();
+                pictureBox1?.Invalidate();
+            }
+            UpdateAnnotationColorButtonAppearance();
+        }
+
+        private void UpdateAnnotationColorButtonAppearance()
+        {
+            if (annotationColorButton == null)
+            {
+                return;
+            }
+
+            var swatch = selectedAnnotation?.Color ?? annotationColor;
+            annotationColorButton.BackColor = swatch;
+            annotationColorButton.ForeColor = GetContrastColor(swatch);
         }
 
         private void lineThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
@@ -1021,6 +1069,8 @@ namespace screenzap
                     }
                 }
             }
+
+            UpdateAnnotationColorButtonAppearance();
         }
 
     }

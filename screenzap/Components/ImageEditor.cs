@@ -823,6 +823,7 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, lineThicknessComboBox);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeLabel);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeComboBox);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, annotationColorButton);
             NormalizeToolStripItemAlignment(annotationOptionsToolStrip);
 
             Controls.Add(toolsToolStrip);

@@ -163,6 +163,25 @@ namespace screenzap
 
         internal float TestAnnotationLineThickness => annotationLineThickness;
 
+        internal Color TestAnnotationColorDefault => annotationColor;
+
+        /// <summary>
+        /// Apply a color to the selected annotation through the same code path the picker uses,
+        /// updating both the selection and the tool default. Skips opening a real ColorDialog.
+        /// </summary>
+        internal void TestSetAnnotationColor(Color color)
+        {
+            annotationColor = color;
+            if (selectedAnnotation != null)
+            {
+                annotationSnapshotBeforeEdit = CloneAnnotations();
+                selectedAnnotation.Color = color;
+                CommitAnnotationUndo();
+                pictureBox1?.Invalidate();
+            }
+            UpdateAnnotationColorButtonAppearance();
+        }
+
         /// <summary>
         /// Drive the line-thickness combobox the way a real user does: change SelectedIndex,
         /// letting SelectedIndexChanged fire naturally. Throws if the requested value isn't in

@@ -326,6 +326,76 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void NewShape_UsesToolDefaultColor()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = new screenzap.ImageEditor();
+                var canvas = new Bitmap(120, 80);
+                using (var g = Graphics.FromImage(canvas))
+                    g.Clear(Color.White);
+                editor.LoadImage(canvas);
+                canvas.Dispose();
+
+                // Default color is Red on a fresh editor.
+                Assert.Equal(Color.Red.ToArgb(), editor.TestAnnotationColorDefault.ToArgb());
+
+                editor.TestToggleArrowTool();
+                editor.TestFireMouseDownAtImagePixel(new Point(20, 20), MouseButtons.Left);
+                editor.TestFireMouseMoveAtImagePixel(new Point(60, 50), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(60, 50), MouseButtons.Left);
+
+                Assert.Equal(Color.Red.ToArgb(), editor.TestSelectedAnnotation!.Color.ToArgb());
+            });
+        }
+
+        [Fact]
+        public void SetColor_AppliesToSelection_AndBecomesNewDefault()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithArrow();
+                Assert.NotNull(editor.TestSelectedAnnotation);
+                Assert.Equal(Color.Red.ToArgb(), editor.TestSelectedAnnotation!.Color.ToArgb());
+
+                editor.TestSetAnnotationColor(Color.Blue);
+
+                Assert.Equal(Color.Blue.ToArgb(), editor.TestSelectedAnnotation!.Color.ToArgb());
+                Assert.Equal(Color.Blue.ToArgb(), editor.TestAnnotationColorDefault.ToArgb());
+
+                // Draw a second arrow — should pick up the new default.
+                editor.TestToggleArrowTool();
+                editor.TestFireMouseDownAtImagePixel(new Point(80, 20), MouseButtons.Left);
+                editor.TestFireMouseMoveAtImagePixel(new Point(110, 60), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(110, 60), MouseButtons.Left);
+
+                Assert.Equal(Color.Blue.ToArgb(), editor.TestSelectedAnnotation!.Color.ToArgb());
+            });
+        }
+
+        [Fact]
+        public void SetColor_IsUndoable()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditorWithArrow();
+                var arrow = editor.TestSelectedAnnotation!;
+                Assert.Equal(Color.Red.ToArgb(), arrow.Color.ToArgb());
+
+                editor.TestSetAnnotationColor(Color.Green);
+                Assert.Equal(Color.Green.ToArgb(), editor.TestSelectedAnnotation!.Color.ToArgb());
+
+                editor.TestFireKeyDown(Keys.Control | Keys.Z);
+
+                // Undo restores prior color. The annotation list was rebuilt from the snapshot
+                // so the in-list shape may not be the same reference — look up the only
+                // remaining annotation in the editor.
+                Assert.Equal(1, editor.TestAnnotationShapeCount);
+                Assert.Equal(Color.Red.ToArgb(), editor.TestSelectedAnnotation!.Color.ToArgb());
+            });
+        }
+
+        [Fact]
         public void EmptyClick_InMoveMode_DeselectsAnnotation()
         {
             StaTest.Run(() =>

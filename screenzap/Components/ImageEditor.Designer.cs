@@ -53,6 +53,7 @@
             this.lineThicknessComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.arrowSizeLabel = new System.Windows.Forms.ToolStripLabel();
             this.arrowSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.annotationColorButton = new System.Windows.Forms.ToolStripButton();
             this.textToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.textToolSeparator = new System.Windows.Forms.ToolStripSeparator();
             this.fontComboBox = new System.Windows.Forms.ToolStripComboBox();
@@ -148,6 +149,7 @@
             this.arrowSizeLabel,
             this.lineThicknessComboBox,
             this.lineThicknessLabel,
+            this.annotationColorButton,
             this.annotationToolSeparator});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
             this.mainToolStrip.Name = "mainToolStrip";
@@ -671,7 +673,18 @@
             this.arrowSizeComboBox.ToolTipText = "Arrow Head Size";
             this.arrowSizeComboBox.Visible = false;
             this.arrowSizeComboBox.SelectedIndexChanged += new System.EventHandler(this.arrowSizeComboBox_SelectedIndexChanged);
-            // 
+            //
+            // annotationColorButton
+            //
+            this.annotationColorButton.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.annotationColorButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.annotationColorButton.Name = "annotationColorButton";
+            this.annotationColorButton.Size = new System.Drawing.Size(43, 20);
+            this.annotationColorButton.Text = "Color";
+            this.annotationColorButton.ToolTipText = "Shape Color";
+            this.annotationColorButton.Visible = false;
+            this.annotationColorButton.Click += new System.EventHandler(this.annotationColorButton_Click);
+            //
             // textToolStripButton
             // 
             this.textToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -877,6 +890,7 @@
     private System.Windows.Forms.ToolStripComboBox lineThicknessComboBox;
     private System.Windows.Forms.ToolStripLabel arrowSizeLabel;
     private System.Windows.Forms.ToolStripComboBox arrowSizeComboBox;
+    private System.Windows.Forms.ToolStripButton annotationColorButton;
     private FontAwesome.Sharp.IconToolStripButton textToolStripButton;
     private System.Windows.Forms.ToolStripDropDownButton traceToolStripDropDown;
     private System.Windows.Forms.ToolStripMenuItem tracePosterMenuItem;
