@@ -524,7 +524,7 @@ namespace screenzap
                 return;
             }
 
-            host.ActivateHistoryItem(top);
+            host.ActivatePreferredHistoryItem();
             host.FitToContent();
             if (!host.Visible) host.Show();
             host.Activate();

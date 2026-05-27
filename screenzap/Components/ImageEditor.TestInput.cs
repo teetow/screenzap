@@ -150,6 +150,44 @@ namespace screenzap
 
         internal void TestToggleRectTool() => ToggleDrawingTool(DrawingTool.Rectangle);
 
+        internal void TestToggleHighlighterTool() => ToggleDrawingTool(DrawingTool.Highlighter);
+
+        /// <summary>Clear the annotation selection without touching the active tool.</summary>
+        internal void TestClearAnnotationSelection() => SelectAnnotation(null);
+
+        /// <summary>
+        /// Drive a full freehand highlighter stroke: mouse-down at the first point, a move per
+        /// subsequent point, then mouse-up at the last. Mirrors a real drag so decimation /
+        /// smoothing runs in CompleteAnnotationDraft. Requires the highlighter tool to be active.
+        /// </summary>
+        internal void TestDrawHighlighterStroke(System.Collections.Generic.IReadOnlyList<Point> imagePixels)
+        {
+            if (imagePixels == null || imagePixels.Count == 0)
+                throw new System.ArgumentException("stroke needs at least one point");
+
+            TestFireMouseDownAtImagePixel(imagePixels[0], MouseButtons.Left);
+            for (int i = 1; i < imagePixels.Count; i++)
+            {
+                TestFireMouseMoveAtImagePixel(imagePixels[i], MouseButtons.Left);
+            }
+            TestFireMouseUpAtImagePixel(imagePixels[imagePixels.Count - 1], MouseButtons.Left);
+        }
+
+        internal void TestSetHighlighterThickness(float thickness)
+        {
+            if (highlighterThicknessComboBox == null)
+                throw new System.InvalidOperationException("highlighterThicknessComboBox not initialized");
+            int idx = highlighterThicknessComboBox.Items.IndexOf(thickness.ToString());
+            if (idx < 0)
+                throw new System.ArgumentException($"thickness {thickness} not in combobox items");
+            highlighterThicknessComboBox.SelectedIndex = idx;
+        }
+
+        internal int TestHighlighterThicknessComboBoxSelectedIndex => highlighterThicknessComboBox?.SelectedIndex ?? -2;
+
+        internal int TestSelectedHighlighterPointCount =>
+            selectedAnnotation?.Points?.Count ?? -1;
+
         internal void TestDeactivateDrawingTool()
         {
             if (activeDrawingTool != DrawingTool.None)

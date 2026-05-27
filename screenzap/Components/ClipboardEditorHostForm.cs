@@ -39,8 +39,6 @@ namespace screenzap.Components
         internal Func<Task>? RefreshSystemHistoryAsync { get; set; }
         internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
         internal Func<string, bool>? ClipboardTextWriterForDiagnostics { get; set; }
-        /// <summary>When true, a clipboard event arriving via the store won't override the currently-active dirty item.</summary>
-        internal bool IsHostVisibleForAutoSwitch => Visible && !SuppressActivation;
         internal ClipboardHistoryStore HistoryStore => historyStore;
 
         private const int InternalClipboardWriteSuppressMs = 2000;
@@ -869,6 +867,13 @@ namespace screenzap.Components
             var presenter = presenters.FirstOrDefault(p => p.CanPresent(item));
             if (presenter == null) return false;
 
+            if (ReferenceEquals(outgoing, item) && activePresenter == presenter)
+            {
+                ActivatePresenter(presenter);
+                UpdateCommandStates();
+                return true;
+            }
+
             historyStore.Activate(item);
             ActivatePresenter(presenter);
             presenter.LoadHistoryItem(item);
@@ -876,9 +881,23 @@ namespace screenzap.Components
             return true;
         }
 
+        internal bool ActivatePreferredHistoryItem()
+        {
+            var preferred = GetPreferredHistoryItem();
+            return preferred != null && ActivateHistoryItem(preferred);
+        }
+
+        private ClipboardHistoryItem? GetPreferredHistoryItem()
+        {
+            var activeItem = historyStore.ActiveItem;
+            return activeItem?.IsDirty == true
+                ? activeItem
+                : historyStore.TopItem;
+        }
+
         /// <summary>
         /// Applies the auto-switch rule for a newly-observed clipboard item.
-        /// Rule: if host is visible AND the current active item is dirty, keep the current item active.
+        /// Rule: if the current active item is dirty, keep editing it and leave the new item in history.
         /// Otherwise, activate the new item.
         /// </summary>
         internal void OnObservedClipboardItem(ClipboardHistoryItem newItem)
@@ -886,8 +905,7 @@ namespace screenzap.Components
             if (newItem == null) return;
 
             var activeItem = historyStore.ActiveItem;
-            bool hostVisible = Visible;
-            bool shouldPreserve = hostVisible && activeItem?.IsDirty == true;
+            bool shouldPreserve = activeItem?.IsDirty == true;
 
             if (shouldPreserve)
             {

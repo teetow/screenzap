@@ -262,6 +262,7 @@ namespace screenzap
             ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
             ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
             ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
+            ConfigureIconButton(highlighterToolStripButton, IconChar.Highlighter);
             ConfigureIconButton(textToolStripButton, IconChar.Font);
             ConfigureIconButton(censorToolStripButton, IconChar.UserSecret);
             ConfigureIconButton(copyClipboardToolStripButton, IconChar.Copy);
@@ -301,7 +302,7 @@ namespace screenzap
 
         private void ConfigureToolRailButtons()
         {
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
             {
                 if (button == null)
                 {
@@ -769,11 +770,12 @@ namespace screenzap
 
             MoveToolStripItem(mainToolStrip, toolsToolStrip, arrowToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, rectangleToolStripButton);
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, highlighterToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, textToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, censorToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, straightenToolStripButton);
 
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
             {
                 if (button != null)
                 {
@@ -822,6 +824,7 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, annotationToolSeparator);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, lineThicknessLabel);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, lineThicknessComboBox);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, highlighterThicknessComboBox);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeLabel);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeComboBox);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, annotationColorButton);
@@ -2909,6 +2912,11 @@ namespace screenzap
         private void rectangleToolStripButton_Click(object sender, EventArgs e)
         {
             ToggleDrawingTool(DrawingTool.Rectangle);
+        }
+
+        private void highlighterToolStripButton_Click(object sender, EventArgs e)
+        {
+            ToggleDrawingTool(DrawingTool.Highlighter);
         }
 
         private async void tracePosterMenuItem_Click(object? sender, EventArgs e)

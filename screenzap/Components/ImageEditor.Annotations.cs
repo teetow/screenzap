@@ -11,7 +11,8 @@ namespace screenzap
     {
         None,
         Arrow,
-        Rectangle
+        Rectangle,
+        Highlighter
     }
 
     internal enum AnnotationHandle
@@ -29,7 +30,8 @@ namespace screenzap
     internal enum AnnotationType
     {
         Arrow,
-        Rectangle
+        Rectangle,
+        Highlighter
     }
 
     internal sealed class AnnotationShape
@@ -43,6 +45,11 @@ namespace screenzap
         public Color Color { get; set; } = Color.Red;
         public bool Selected { get; set; }
 
+        // Sampled freehand path. Non-null only for Highlighter shapes. Start/End are kept
+        // synced to Points[0]/Points[^1] so the endpoint-based machinery (bounds fallback,
+        // crop, clamp) keeps working without special-casing every call site.
+        public List<Point>? Points { get; set; }
+
         public AnnotationShape Clone()
         {
             return new AnnotationShape
@@ -54,17 +61,48 @@ namespace screenzap
                 LineThickness = LineThickness,
                 ArrowSize = ArrowSize,
                 Color = Color,
-                Selected = Selected
+                Selected = Selected,
+                Points = Points != null ? new List<Point>(Points) : null
             };
         }
 
         public Rectangle GetBounds()
         {
+            if (Points != null && Points.Count > 0)
+            {
+                int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                foreach (var p in Points)
+                {
+                    minX = Math.Min(minX, p.X);
+                    minY = Math.Min(minY, p.Y);
+                    maxX = Math.Max(maxX, p.X);
+                    maxY = Math.Max(maxY, p.Y);
+                }
+                return Rectangle.FromLTRB(minX, minY, maxX, maxY);
+            }
+
             return RectangleExt.fromPoints(Start, End);
         }
 
         public bool IsValid()
         {
+            if (Type == AnnotationType.Highlighter)
+            {
+                if (Points == null || Points.Count < 2)
+                {
+                    return false;
+                }
+
+                double length = 0;
+                for (int i = 1; i < Points.Count; i++)
+                {
+                    double dx = Points[i].X - Points[i - 1].X;
+                    double dy = Points[i].Y - Points[i - 1].Y;
+                    length += Math.Sqrt(dx * dx + dy * dy);
+                }
+                return length >= 4.0;
+            }
+
             if (Type == AnnotationType.Arrow)
             {
                 return !Start.Equals(End);
@@ -96,11 +134,39 @@ namespace screenzap
         private Point annotationTranslationAnchorSnapshot;
         private List<AnnotationShape>? annotationSnapshotBeforeEdit;
         private bool annotationChangedDuringDrag;
+        // Captured at the start of a highlighter corner-resize so each mouse-move scales the
+        // ORIGINAL polyline (no per-move accumulation drift).
+        private List<Point>? highlighterResizeOriginalPoints;
+        private Rectangle highlighterResizeOriginalBounds;
 
         // Annotation tool settings
         private float annotationLineThickness = 2f;
         private float annotationArrowSize = 1f;
+        private float annotationHighlighterThickness = 12f;
         private Color annotationColor = Color.Red;
+        // The highlighter keeps its own default so it lands lemon-yellow rather than inheriting the
+        // arrow/rectangle red. Picking a color while the highlighter tool is active updates this one.
+        private Color annotationHighlighterColor = Color.FromArgb(255, 238, 88);
+
+        /// <summary>
+        /// The tool default color the color picker reads/writes: the highlighter's own default when
+        /// that tool is active, otherwise the shared arrow/rectangle default.
+        /// </summary>
+        private Color ActiveToolDefaultColor
+        {
+            get => activeDrawingTool == DrawingTool.Highlighter ? annotationHighlighterColor : annotationColor;
+            set
+            {
+                if (activeDrawingTool == DrawingTool.Highlighter)
+                {
+                    annotationHighlighterColor = value;
+                }
+                else
+                {
+                    annotationColor = value;
+                }
+            }
+        }
 
         // Tests can't manipulate real keyboard state and Control.ModifierKeys is a static
         // property tied to OS input. Set via TestSetShiftHeld to simulate Shift-during-click.
@@ -205,6 +271,12 @@ namespace screenzap
                 rectangleToolStripButton.Checked = enable && activeDrawingTool == DrawingTool.Rectangle;
             }
 
+            if (highlighterToolStripButton != null)
+            {
+                highlighterToolStripButton.Enabled = enable;
+                highlighterToolStripButton.Checked = enable && activeDrawingTool == DrawingTool.Highlighter;
+            }
+
             UpdateAnnotationToolbarVisibility();
         }
 
@@ -219,17 +291,31 @@ namespace screenzap
             bool showArrowControls =
                 activeDrawingTool == DrawingTool.Arrow || AnyArrowInSelection();
 
+            // Highlighter has its own 8–24 thickness combo; the regular 1–10 line combo
+            // governs arrows/rects. Show whichever the current tool/selection calls for so
+            // both thickness controls don't crowd the strip for a pure-highlighter context.
+            bool showHighlighterControls =
+                activeDrawingTool == DrawingTool.Highlighter || AnyHighlighterInSelection();
+            bool nonHighlighterToolActive =
+                isAnnotationToolActive && activeDrawingTool != DrawingTool.Highlighter;
+            bool showLineControls =
+                showPanel && (nonHighlighterToolActive || AnyNonHighlighterShapeInSelection());
+
             if (annotationToolSeparator != null)
             {
                 annotationToolSeparator.Visible = showPanel;
             }
             if (lineThicknessLabel != null)
             {
-                lineThicknessLabel.Visible = showPanel;
+                lineThicknessLabel.Visible = showLineControls;
             }
             if (lineThicknessComboBox != null)
             {
-                lineThicknessComboBox.Visible = showPanel;
+                lineThicknessComboBox.Visible = showLineControls;
+            }
+            if (highlighterThicknessComboBox != null)
+            {
+                highlighterThicknessComboBox.Visible = showHighlighterControls;
             }
             if (annotationColorButton != null)
             {
@@ -249,6 +335,10 @@ namespace screenzap
                 annotationOptionsToolStrip.Visible = showPanel;
                 PositionOverlayToolStrips();
             }
+
+            // Reflect the active tool's default color in the swatch (e.g. lemon when the highlighter
+            // tool is engaged with nothing selected).
+            UpdateAnnotationColorButtonAppearance();
         }
 
         private void ToggleDrawingTool(DrawingTool tool)
@@ -292,6 +382,7 @@ namespace screenzap
             activeAnnotationHandle = AnnotationHandle.None;
             annotationSnapshotBeforeEdit = null;
             annotationChangedDuringDrag = false;
+            highlighterResizeOriginalPoints = null;
             annotationTranslateModeActive = false;
             annotationDraftAnchorPixel = Point.Empty;
             pictureBox1?.Invalidate();
@@ -333,6 +424,13 @@ namespace screenzap
         private void DrawAnnotationShape(Graphics graphics, AnnotationShape annotation, AnnotationSurface surface)
         {
             float scale = surface == AnnotationSurface.Screen ? (float)ZoomLevel : 1f;
+
+            if (annotation.Type == AnnotationType.Highlighter)
+            {
+                DrawHighlighter(graphics, annotation, surface, scale);
+                return;
+            }
+
             float strokeWidth = Math.Max(1f, annotation.LineThickness * scale);
 
             // Selection feedback comes from the corner handles drawn separately in
@@ -359,6 +457,356 @@ namespace screenzap
             }
         }
 
+        // Translucency of the "snail trail". The whole buffer is composited at the PEAK (tip)
+        // alpha; the body is floored below that inside the buffer so the felt-tip ends read a
+        // touch heavier without a separate, mechanical-looking stamp pass.
+        private const float HighlighterBodyAlpha = 0.26f;
+        private const float HighlighterEndAlpha = 0.40f;
+        private const double HighlighterBodyLevel = HighlighterBodyAlpha / HighlighterEndAlpha;
+
+        private void DrawHighlighter(Graphics graphics, AnnotationShape annotation, AnnotationSurface surface, float scale)
+        {
+            var pts = annotation.Points;
+            if (pts == null || pts.Count == 0)
+            {
+                return;
+            }
+
+            // Vertically-stretched chisel tip: t tall, t/3 wide (t=12 -> 4x12).
+            float t = Math.Max(1f, annotation.LineThickness * scale);
+            float w = Math.Max(1f, t / 3f);
+
+            // Map path to target coordinates.
+            var mapped = new PointF[pts.Count];
+            for (int i = 0; i < pts.Count; i++)
+            {
+                mapped[i] = ConvertAnnotationPoint(pts[i], surface);
+            }
+
+            // Buffer covers the path bounds inflated by a full stamp so caps aren't clipped.
+            float pad = Math.Max(t, w) / 2f + 2f;
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            foreach (var p in mapped)
+            {
+                minX = Math.Min(minX, p.X);
+                minY = Math.Min(minY, p.Y);
+                maxX = Math.Max(maxX, p.X);
+                maxY = Math.Max(maxY, p.Y);
+            }
+
+            var bounds = Rectangle.FromLTRB(
+                (int)Math.Floor(minX - pad),
+                (int)Math.Floor(minY - pad),
+                (int)Math.Ceiling(maxX + pad),
+                (int)Math.Ceiling(maxY + pad));
+
+            // Cap the buffer to the visible/relevant area to bound memory and cost.
+            var clip = surface == AnnotationSurface.Screen
+                ? new Rectangle(0, 0, pictureBox1?.ClientSize.Width ?? bounds.Right, pictureBox1?.ClientSize.Height ?? bounds.Bottom)
+                : new Rectangle(0, 0, pictureBox1?.Image?.Width ?? bounds.Right, pictureBox1?.Image?.Height ?? bounds.Bottom);
+            // Inflate the clip by the pad so caps near the edge still render.
+            clip.Inflate((int)Math.Ceiling(pad), (int)Math.Ceiling(pad));
+            bounds = Rectangle.Intersect(bounds, clip);
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                return;
+            }
+
+            // Render the whole stroke at FULL opacity into an offscreen buffer, then composite
+            // once at the target alpha. Compositing in one pass (rather than stamping translucent
+            // ink directly) avoids alpha doubling-up where the stroke overlaps itself.
+            using (var buffer = new Bitmap(bounds.Width, bounds.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            {
+                using (var bg = Graphics.FromImage(buffer))
+                using (var brush = new SolidBrush(annotation.Color))
+                {
+                    bg.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    StampHighlighterPath(bg, brush, mapped, w, t, bounds.Location);
+                }
+
+                // Soften the edges with a small 2D blur, then modulate the alpha with value noise
+                // (wavy edges, ink pooling, fiber grain, heavier tips) so the ink reads as an organic
+                // wash. The noise is sampled in IMAGE space (see imageOrigin/invScale below) so the
+                // texture stays locked to the stroke and doesn't reshuffle when the view zooms/pans.
+                int blurRadius = Math.Max(2, (int)Math.Round(w * 0.45f));
+                var endA = new PointF(mapped[0].X - bounds.X, mapped[0].Y - bounds.Y);
+                var endB = new PointF(mapped[mapped.Length - 1].X - bounds.X, mapped[mapped.Length - 1].Y - bounds.Y);
+
+                // Affine map from image px to target px is uniform: target = image*scale + off.
+                // Recover off from a known pair, then express each buffer pixel back in image space.
+                var off = new PointF(mapped[0].X - pts[0].X * scale, mapped[0].Y - pts[0].Y * scale);
+                double invScale = 1.0 / scale;
+                double imageOriginX = (bounds.X - off.X) * invScale;
+                double imageOriginY = (bounds.Y - off.Y) * invScale;
+
+                PostProcessHighlighterBuffer(buffer, annotation.Color, annotation.Id.GetHashCode(), blurRadius, t,
+                    endA, endB, imageOriginX, imageOriginY, invScale);
+
+                using var attributes = new System.Drawing.Imaging.ImageAttributes();
+                var matrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = HighlighterEndAlpha };
+                attributes.SetColorMatrix(matrix);
+                graphics.DrawImage(
+                    buffer,
+                    new Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height),
+                    0, 0, bounds.Width, bounds.Height,
+                    GraphicsUnit.Pixel,
+                    attributes);
+            }
+        }
+
+        /// <summary>
+        /// Draw the path as ONE contiguous vertically-stretched streak. A round-capped/round-joined
+        /// pen produces a seamless stroke (no visible per-stamp scalloping); an anisotropic X-scale
+        /// on the graphics squashes that round stroke into the chisel-tip profile (t tall, w wide)
+        /// while the points are pre-divided by the same factor so the path geometry is unchanged.
+        /// </summary>
+        private static void StampHighlighterPath(Graphics graphics, Brush brush, PointF[] mapped, float w, float t, Point origin)
+        {
+            if (mapped.Length == 1)
+            {
+                var g = graphics.Save();
+                graphics.TranslateTransform(-origin.X, -origin.Y);
+                StampEllipse(graphics, brush, mapped[0], w, t);
+                graphics.Restore(g);
+                return;
+            }
+
+            float s = w / t; // horizontal squash factor (<1 for the chisel profile)
+            var drawPts = new PointF[mapped.Length];
+            for (int i = 0; i < mapped.Length; i++)
+            {
+                drawPts[i] = new PointF(mapped[i].X / s, mapped[i].Y);
+            }
+
+            var state = graphics.Save();
+            // Device = scale(s,1) then translate(-origin); points are pre-divided by s above so the
+            // path lands back at its true position with only the pen width squashed horizontally.
+            graphics.TranslateTransform(-origin.X, -origin.Y);
+            graphics.ScaleTransform(s, 1f);
+            using (var pen = new Pen(brush, t)
+            {
+                StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                EndCap = System.Drawing.Drawing2D.LineCap.Round,
+                LineJoin = System.Drawing.Drawing2D.LineJoin.Round
+            })
+            {
+                graphics.DrawLines(pen, drawPts);
+            }
+            graphics.Restore(state);
+        }
+
+        /// <summary>
+        /// In-place 2D blur + value-noise alpha modulation of a 32bpp ARGB highlighter buffer. RGB
+        /// is forced to <paramref name="color"/> everywhere so blurring the alpha can't drag edge
+        /// pixels toward black. Noise is seeded per-shape AND sampled in image space
+        /// (<paramref name="imageOriginX"/> + x·<paramref name="invScale"/>) so the texture is stable
+        /// across repaints and stays locked to the stroke when the view zooms or pans.
+        /// </summary>
+        private static void PostProcessHighlighterBuffer(Bitmap buffer, Color color, int seed, int blurRadius, float thickness,
+            PointF endA, PointF endB, double imageOriginX, double imageOriginY, double invScale)
+        {
+            int width = buffer.Width;
+            int height = buffer.Height;
+            if (width == 0 || height == 0)
+            {
+                return;
+            }
+
+            var rect = new Rectangle(0, 0, width, height);
+            var data = buffer.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadWrite, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            try
+            {
+                int stride = data.Stride;
+                int bytes = stride * height;
+                var pixels = new byte[bytes];
+                System.Runtime.InteropServices.Marshal.Copy(data.Scan0, pixels, 0, bytes);
+
+                // Pull the alpha channel out (memory order is B,G,R,A on little-endian).
+                var srcAlpha = new byte[width * height];
+                for (int y = 0; y < height; y++)
+                {
+                    int row = y * stride;
+                    int arow = y * width;
+                    for (int x = 0; x < width; x++)
+                    {
+                        srcAlpha[arow + x] = pixels[row + x * 4 + 3];
+                    }
+                }
+
+                // Pass 1: separable box blur (horizontal then vertical) → blur[]. The vertical pass
+                // matters: a horizontal stroke's long top/bottom edges are vertical transitions, so
+                // X-only blur would leave them razor-sharp. A slightly smaller Y radius keeps the
+                // chisel from going mushy.
+                int radiusX = blurRadius;
+                int radiusY = Math.Max(1, (int)Math.Round(blurRadius * 0.7));
+                var tmp = new byte[width * height];
+                var blur = new byte[width * height];
+                int windowX = radiusX * 2 + 1;
+                for (int y = 0; y < height; y++)
+                {
+                    int arow = y * width;
+                    int sum = 0;
+                    for (int k = -radiusX; k <= radiusX; k++)
+                    {
+                        sum += srcAlpha[arow + Math.Clamp(k, 0, width - 1)];
+                    }
+                    for (int x = 0; x < width; x++)
+                    {
+                        tmp[arow + x] = (byte)(sum / windowX);
+                        int outX = Math.Clamp(x - radiusX, 0, width - 1);
+                        int inX = Math.Clamp(x + radiusX + 1, 0, width - 1);
+                        sum += srcAlpha[arow + inX] - srcAlpha[arow + outX];
+                    }
+                }
+                int windowY = radiusY * 2 + 1;
+                for (int x = 0; x < width; x++)
+                {
+                    int sum = 0;
+                    for (int k = -radiusY; k <= radiusY; k++)
+                    {
+                        sum += tmp[Math.Clamp(k, 0, height - 1) * width + x];
+                    }
+                    for (int y = 0; y < height; y++)
+                    {
+                        blur[y * width + x] = (byte)(sum / windowY);
+                        int outY = Math.Clamp(y - radiusY, 0, height - 1);
+                        int inY = Math.Clamp(y + radiusY + 1, 0, height - 1);
+                        sum += tmp[inY * width + x] - tmp[outY * width + x];
+                    }
+                }
+
+                // Pass 2: the "delight" — combine real-marker cues, all driven by the same seeded
+                // value noise so the texture is stable across repaints:
+                //   * displacement   — sample the band through a low-frequency noise offset so its
+                //                       edges wobble organically (the feTurbulence+feDisplacementMap
+                //                       trick the realistic CSS markers use), instead of staying a
+                //                       parallel-sided bar.
+                //   * tip emphasis   — raise opacity toward the two endpoints (felt-tip pooling on
+                //                       press/lift) with a noisy, non-circular boundary so the caps
+                //                       look dabbed rather than rubber-stamped.
+                //   * ink pooling    — reinforce the feathered rim so the wet edge reads heavier.
+                //   * fiber streaks  — faint dry lines along the travel axis (the marker's "grain").
+                // Displacement amplitude lives in device px (so the wobble scales with the on-screen
+                // stroke), but the noise driving it is sampled in image space for zoom stability.
+                // Kept gentle — earlier values read like the page was marked up during an earthquake.
+                double dispAmp = Math.Max(0.8, thickness * 0.06);
+                const double dispCell = 26.0;   // longer wavelength → calmer, rolling edges
+                const double blobCell = 12.0;   // ~5–15px opacity blobs (image space)
+                const double poolStrength = 0.22;
+                const double fiberStrength = 0.16;
+                double tipRadius = Math.Max(3.0, thickness * 1.25); // how far in from each end the dab reaches
+
+                for (int y = 0; y < height; y++)
+                {
+                    int row = y * stride;
+                    double imgY = imageOriginY + y * invScale;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int idx = row + x * 4;
+                        double imgX = imageOriginX + x * invScale;
+
+                        // Displace the sample position by a smooth 2D noise field (image-space noise,
+                        // device-space offset).
+                        double dispX = (ValueNoise(imgX / dispCell, imgY / dispCell, seed ^ 0x1b56c4e9) - 0.5) * 2.0 * dispAmp;
+                        double dispY = (ValueNoise(imgX / dispCell, imgY / dispCell, seed ^ 0x7f4a7c15) - 0.5) * 2.0 * dispAmp;
+                        int sx = Math.Clamp((int)Math.Round(x + dispX), 0, width - 1);
+                        int sy = Math.Clamp((int)Math.Round(y + dispY), 0, height - 1);
+
+                        double band = blur[sy * width + sx] / 255.0;
+                        double nb;
+                        if (band <= 0)
+                        {
+                            nb = 0;
+                        }
+                        else
+                        {
+                            // Mottled opacity (two octaves of blobs) keeps a mostly-opaque floor.
+                            double blob = 0.65 * ValueNoise(imgX / blobCell, imgY / blobCell, seed)
+                                        + 0.35 * ValueNoise(imgX / (blobCell * 0.45), imgY / (blobCell * 0.45), seed ^ 0x5bd1e995);
+                            double mult = 0.80 + 0.20 * blob;
+
+                            // Fiber grain: thin dry lines stretched ALONG the stroke (long cells in
+                            // x, fine in y) plus a finer octave, for the streaky look of a felt tip.
+                            double fiber = 0.7 * ValueNoise(imgX / 42.0, imgY / 2.1, seed ^ 0x2c1b3a55)
+                                         + 0.3 * ValueNoise(imgX / 18.0, imgY / 1.3, seed ^ 0x511fb3a7);
+                            mult *= 1.0 - fiberStrength * fiber;
+
+                            // Longitudinal density: body sits at the floor, rising toward the tips.
+                            // The dab edge is roughened by noise so it isn't a clean radius.
+                            double dEnd = Math.Min(Distance(sx, sy, endA), Distance(sx, sy, endB));
+                            double rough = tipRadius * (0.30 * ValueNoise(imgX / 7.0, imgY / 7.0, seed ^ 0x3da1f29b) - 0.10);
+                            double endE = 1.0 - Smoothstep(0.0, tipRadius, dEnd + rough);
+                            double level = HighlighterBodyLevel + (1.0 - HighlighterBodyLevel) * endE;
+
+                            // Edge factor peaks in the feathered band boundary (band ≈ 0.5).
+                            double edge = 4.0 * band * (1.0 - band);
+                            nb = band * level * mult + poolStrength * edge;
+                            if (nb > 1.0) nb = 1.0;
+                        }
+
+                        pixels[idx + 0] = color.B;
+                        pixels[idx + 1] = color.G;
+                        pixels[idx + 2] = color.R;
+                        pixels[idx + 3] = (byte)(nb * 255.0);
+                    }
+                }
+
+                System.Runtime.InteropServices.Marshal.Copy(pixels, 0, data.Scan0, bytes);
+            }
+            finally
+            {
+                buffer.UnlockBits(data);
+            }
+        }
+
+        private static double Distance(int x, int y, PointF p)
+        {
+            double dx = x - p.X;
+            double dy = y - p.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        /// <summary>Hermite smoothstep: 0 below <paramref name="edge0"/>, 1 above <paramref name="edge1"/>.</summary>
+        private static double Smoothstep(double edge0, double edge1, double x)
+        {
+            if (edge1 <= edge0) return x < edge0 ? 0.0 : 1.0;
+            double t = Math.Clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+            return t * t * (3.0 - 2.0 * t);
+        }
+
+        /// <summary>Smooth (smoothstep-interpolated) value noise in [0,1] on an integer lattice.</summary>
+        private static double ValueNoise(double x, double y, int seed)
+        {
+            int x0 = (int)Math.Floor(x);
+            int y0 = (int)Math.Floor(y);
+            double fx = x - x0;
+            double fy = y - y0;
+
+            double v00 = LatticeValue(x0, y0, seed);
+            double v10 = LatticeValue(x0 + 1, y0, seed);
+            double v01 = LatticeValue(x0, y0 + 1, seed);
+            double v11 = LatticeValue(x0 + 1, y0 + 1, seed);
+
+            double sx = fx * fx * (3 - 2 * fx);
+            double sy = fy * fy * (3 - 2 * fy);
+            double a = v00 + (v10 - v00) * sx;
+            double b = v01 + (v11 - v01) * sx;
+            return a + (b - a) * sy;
+        }
+
+        private static double LatticeValue(int ix, int iy, int seed)
+        {
+            uint h = (uint)(ix * 374761393 + iy * 668265263 + seed * 362437);
+            h = (h ^ (h >> 13)) * 1274126177u;
+            h ^= h >> 16;
+            return (h & 0xFFFFFF) / (double)0xFFFFFF;
+        }
+
+        private static void StampEllipse(Graphics graphics, Brush brush, PointF center, float w, float t)
+        {
+            graphics.FillEllipse(brush, center.X - w / 2f, center.Y - t / 2f, w, t);
+        }
+
         private void DrawAnnotationHandles(Graphics graphics, AnnotationShape annotation)
         {
             // Draw hover hitbox for non-selected annotations
@@ -370,6 +818,19 @@ namespace screenzap
             if (!annotation.Selected)
             {
                 return;
+            }
+
+            if (annotation.Type == AnnotationType.Highlighter)
+            {
+                // Dashed bounding outline makes the (otherwise edge-less) selection legible; the
+                // corner handles below it let the stroke be scaled for finer adjustments.
+                var outline = PixelToFormCoord(annotation.GetBounds());
+                outline.Inflate(4, 4);
+                using var selectionPen = new Pen(Color.FromArgb(200, Color.DodgerBlue), 1.5f)
+                {
+                    DashStyle = System.Drawing.Drawing2D.DashStyle.Dash
+                };
+                graphics.DrawRectangle(selectionPen, outline);
             }
 
             const int handleSize = 8;
@@ -396,6 +857,28 @@ namespace screenzap
                 using var hitPen = new Pen(Color.FromArgb(60, Color.Cyan), hitWidth);
                 graphics.DrawLine(hitPen, start, end);
                 graphics.DrawLine(pen, start, end);
+            }
+            else if (annotation.Type == AnnotationType.Highlighter)
+            {
+                // Trace the polyline with a translucent cyan stroke roughly the stroke's width.
+                var path = annotation.Points;
+                if (path != null && path.Count >= 2)
+                {
+                    var formPts = new PointF[path.Count];
+                    for (int i = 0; i < path.Count; i++)
+                    {
+                        formPts[i] = PixelToFormCoordF(path[i]);
+                    }
+                    float hitWidth = Math.Max(8f, annotation.LineThickness * (float)ZoomLevel);
+                    using var hitPen = new Pen(Color.FromArgb(60, Color.Cyan), hitWidth)
+                    {
+                        StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                        EndCap = System.Drawing.Drawing2D.LineCap.Round,
+                        LineJoin = System.Drawing.Drawing2D.LineJoin.Round
+                    };
+                    graphics.DrawLines(hitPen, formPts);
+                    graphics.DrawLines(pen, formPts);
+                }
             }
             else
             {
@@ -439,6 +922,8 @@ namespace screenzap
             }
             else
             {
+                // Rectangle and Highlighter both expose four corner handles; the highlighter scales
+                // its whole polyline about the opposite corner (see ScaleHighlighterByHandle).
                 var bounds = annotation.GetBounds();
                 AddHandle(AnnotationHandle.RectTopLeft, new Point(bounds.Left, bounds.Top));
                 AddHandle(AnnotationHandle.RectTopRight, new Point(bounds.Right, bounds.Top));
@@ -457,6 +942,13 @@ namespace screenzap
                 if (annotation.Type == AnnotationType.Arrow)
                 {
                     if (IsPointNearArrow(pixelPoint, annotation))
+                    {
+                        return annotation;
+                    }
+                }
+                else if (annotation.Type == AnnotationType.Highlighter)
+                {
+                    if (IsPointNearHighlighter(pixelPoint, annotation))
                     {
                         return annotation;
                     }
@@ -481,6 +973,35 @@ namespace screenzap
             return distance <= tolerance;
         }
 
+        private bool IsPointNearHighlighter(Point pixelPoint, AnnotationShape annotation)
+        {
+            var pts = annotation.Points;
+            if (pts == null || pts.Count == 0)
+            {
+                return false;
+            }
+
+            // Half the (vertical) stroke thickness, with a small floor so thin strokes at low
+            // zoom stay grabbable.
+            double tolerance = Math.Max(annotation.LineThickness / 2.0, 4.0 / (double)ZoomLevel);
+
+            if (pts.Count == 1)
+            {
+                double dx = pixelPoint.X - pts[0].X;
+                double dy = pixelPoint.Y - pts[0].Y;
+                return Math.Sqrt(dx * dx + dy * dy) <= tolerance;
+            }
+
+            for (int i = 1; i < pts.Count; i++)
+            {
+                if (DistanceFromPointToSegment(pixelPoint, pts[i - 1], pts[i]) <= tolerance)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private static double DistanceFromPointToSegment(Point point, Point start, Point end)
         {
             double dx = end.X - start.X;
@@ -501,6 +1022,94 @@ namespace screenzap
             double diffX = point.X - projectionX;
             double diffY = point.Y - projectionY;
             return Math.Sqrt(diffX * diffX + diffY * diffY);
+        }
+
+        /// <summary>
+        /// Moving-average smoothing of a freehand polyline (the "2D low-pass"). Endpoints are
+        /// preserved exactly; interior points are averaged over a window of <paramref name="window"/>
+        /// samples. A window &lt; 2 (or fewer than 3 points) returns a copy unchanged.
+        /// </summary>
+        internal static List<Point> SmoothPolyline(IReadOnlyList<Point> points, int window)
+        {
+            int n = points.Count;
+            if (n < 3 || window < 2)
+            {
+                return new List<Point>(points);
+            }
+
+            int radius = window / 2;
+            var result = new List<Point>(n) { points[0] };
+            for (int i = 1; i < n - 1; i++)
+            {
+                int lo = Math.Max(0, i - radius);
+                int hi = Math.Min(n - 1, i + radius);
+                double sx = 0, sy = 0;
+                for (int j = lo; j <= hi; j++)
+                {
+                    sx += points[j].X;
+                    sy += points[j].Y;
+                }
+                int count = hi - lo + 1;
+                result.Add(new Point((int)Math.Round(sx / count), (int)Math.Round(sy / count)));
+            }
+            result.Add(points[n - 1]);
+            return result;
+        }
+
+        /// <summary>
+        /// Ramer–Douglas–Peucker decimation: drops samples that lie within <paramref name="epsilon"/>
+        /// pixels of the line between retained neighbours, collapsing near-straight runs while
+        /// preserving the overall shape. Always keeps both endpoints.
+        /// </summary>
+        internal static List<Point> SimplifyPolyline(IReadOnlyList<Point> points, double epsilon)
+        {
+            int n = points.Count;
+            if (n < 3)
+            {
+                return new List<Point>(points);
+            }
+
+            var keep = new bool[n];
+            keep[0] = true;
+            keep[n - 1] = true;
+            SimplifySegment(points, 0, n - 1, epsilon, keep);
+
+            var result = new List<Point>(n);
+            for (int i = 0; i < n; i++)
+            {
+                if (keep[i])
+                {
+                    result.Add(points[i]);
+                }
+            }
+            return result;
+        }
+
+        private static void SimplifySegment(IReadOnlyList<Point> points, int first, int last, double epsilon, bool[] keep)
+        {
+            if (last <= first + 1)
+            {
+                return;
+            }
+
+            double maxDistance = 0;
+            int index = first;
+            for (int i = first + 1; i < last; i++)
+            {
+                double distance = DistanceFromPointToSegment(points[i], points[first], points[last]);
+                if (distance > maxDistance)
+                {
+                    maxDistance = distance;
+                    index = i;
+                }
+            }
+
+            if (maxDistance > epsilon)
+            {
+                keep[index] = true;
+                SimplifySegment(points, first, index, epsilon, keep);
+                SimplifySegment(points, index, last, epsilon, keep);
+            }
         }
 
         private AnnotationHandle HitTestAnnotationHandle(Point formPoint)
@@ -539,6 +1148,12 @@ namespace screenzap
                 activeAnnotationHandle = handle;
                 annotationDragOriginPixel = pixelPoint;
                 annotationChangedDuringDrag = false;
+                // Snapshot the source polyline so the resize scales from the original each move.
+                if (selectedAnnotation?.Type == AnnotationType.Highlighter && IsCornerHandle(handle) && selectedAnnotation.Points != null)
+                {
+                    highlighterResizeOriginalPoints = new List<Point>(selectedAnnotation.Points);
+                    highlighterResizeOriginalBounds = selectedAnnotation.GetBounds();
+                }
                 return true;
             }
 
@@ -590,17 +1205,24 @@ namespace screenzap
             if (activeDrawingTool != DrawingTool.None)
             {
                 annotationSnapshotBeforeEdit = CloneAnnotations();
-                var annotationType = activeDrawingTool == DrawingTool.Arrow ? AnnotationType.Arrow : AnnotationType.Rectangle;
+                var annotationType = activeDrawingTool switch
+                {
+                    DrawingTool.Arrow => AnnotationType.Arrow,
+                    DrawingTool.Highlighter => AnnotationType.Highlighter,
+                    _ => AnnotationType.Rectangle
+                };
                 var clampedPoint = ClampPointToImage(pixelPoint);
+                bool isHighlighter = annotationType == AnnotationType.Highlighter;
                 workingAnnotation = new AnnotationShape
                 {
                     Type = annotationType,
                     Start = clampedPoint,
                     End = clampedPoint,
-                    LineThickness = annotationLineThickness,
+                    LineThickness = isHighlighter ? annotationHighlighterThickness : annotationLineThickness,
                     ArrowSize = annotationArrowSize,
-                    Color = annotationColor,
-                    Selected = true
+                    Color = isHighlighter ? annotationHighlighterColor : annotationColor,
+                    Selected = true,
+                    Points = isHighlighter ? new List<Point> { clampedPoint } : null
                 };
                 annotationShapes.Add(workingAnnotation);
                 SelectAnnotation(workingAnnotation);
@@ -630,7 +1252,21 @@ namespace screenzap
             {
                 if (isDrawingAnnotation && workingAnnotation != null)
                 {
-                    if (annotationTranslateModeActive)
+                    if (workingAnnotation.Type == AnnotationType.Highlighter)
+                    {
+                        // Freehand sampling: append the cursor position whenever it has moved
+                        // at least 1px from the last sample. The raw samples are decimated and
+                        // smoothed on mouse-up (CompleteAnnotationDraft).
+                        var sample = ClampPointToImage(pixelPoint);
+                        var pts = workingAnnotation.Points!;
+                        var last = pts[pts.Count - 1];
+                        if (Math.Abs(sample.X - last.X) >= 1 || Math.Abs(sample.Y - last.Y) >= 1)
+                        {
+                            pts.Add(sample);
+                            workingAnnotation.End = sample;
+                        }
+                    }
+                    else if (annotationTranslateModeActive)
                     {
                         ApplyAnnotationTranslation(pixelPoint);
                     }
@@ -712,6 +1348,7 @@ namespace screenzap
                 activeAnnotationHandle = AnnotationHandle.None;
                 annotationSnapshotBeforeEdit = null;
                 annotationChangedDuringDrag = false;
+                highlighterResizeOriginalPoints = null;
                 return true;
             }
 
@@ -727,6 +1364,14 @@ namespace screenzap
 
             var clamped = ClampPointToImage(currentPixel);
             var target = selectedAnnotation;
+
+            // Highlighter corner-drag scales the whole polyline about the opposite corner rather
+            // than moving a single vertex.
+            if (target.Type == AnnotationType.Highlighter && IsCornerHandle(activeAnnotationHandle))
+            {
+                ScaleHighlighterByHandle(target, activeAnnotationHandle, clamped);
+                return;
+            }
 
             switch (activeAnnotationHandle)
             {
@@ -782,6 +1427,66 @@ namespace screenzap
             }
         }
 
+        private static bool IsCornerHandle(AnnotationHandle handle) =>
+            handle is AnnotationHandle.RectTopLeft or AnnotationHandle.RectTopRight
+                   or AnnotationHandle.RectBottomLeft or AnnotationHandle.RectBottomRight;
+
+        /// <summary>
+        /// Scale a highlighter's whole polyline about the corner opposite the dragged handle. The
+        /// scale is taken from the ORIGINAL geometry captured at drag-start (see
+        /// <see cref="highlighterResizeOriginalPoints"/>), so repeated mouse-moves don't accumulate
+        /// rounding drift. A signed scale lets the stroke mirror if the cursor crosses the anchor.
+        /// </summary>
+        private void ScaleHighlighterByHandle(AnnotationShape target, AnnotationHandle handle, Point clamped)
+        {
+            if (highlighterResizeOriginalPoints == null || target.Points == null)
+            {
+                return;
+            }
+
+            var ob = highlighterResizeOriginalBounds;
+            // anchor = fixed opposite corner; dragged = the original position of the grabbed corner.
+            Point anchor, dragged;
+            switch (handle)
+            {
+                case AnnotationHandle.RectTopLeft:
+                    anchor = new Point(ob.Right, ob.Bottom); dragged = new Point(ob.Left, ob.Top); break;
+                case AnnotationHandle.RectTopRight:
+                    anchor = new Point(ob.Left, ob.Bottom); dragged = new Point(ob.Right, ob.Top); break;
+                case AnnotationHandle.RectBottomLeft:
+                    anchor = new Point(ob.Right, ob.Top); dragged = new Point(ob.Left, ob.Bottom); break;
+                default: // RectBottomRight
+                    anchor = new Point(ob.Left, ob.Top); dragged = new Point(ob.Right, ob.Bottom); break;
+            }
+
+            double denomX = dragged.X - anchor.X; // ±original width
+            double denomY = dragged.Y - anchor.Y; // ±original height
+            if (Math.Abs(denomX) < 1 || Math.Abs(denomY) < 1)
+            {
+                return; // degenerate (zero-area) original bounds — nothing sensible to scale
+            }
+
+            // New offset of the dragged corner from the anchor, floored so the stroke can't collapse.
+            int dx = clamped.X - anchor.X;
+            int dy = clamped.Y - anchor.Y;
+            if (Math.Abs(dx) < 2) dx = dx < 0 ? -2 : 2;
+            if (Math.Abs(dy) < 2) dy = dy < 0 ? -2 : 2;
+
+            double sx = dx / denomX;
+            double sy = dy / denomY;
+
+            var pts = target.Points;
+            for (int i = 0; i < highlighterResizeOriginalPoints.Count; i++)
+            {
+                var op = highlighterResizeOriginalPoints[i];
+                int nx = anchor.X + (int)Math.Round((op.X - anchor.X) * sx);
+                int ny = anchor.Y + (int)Math.Round((op.Y - anchor.Y) * sy);
+                pts[i] = new Point(nx, ny);
+            }
+            target.Start = pts[0];
+            target.End = pts[pts.Count - 1];
+        }
+
         /// <summary>
         /// Restrict a proposed move-delta so the bounding box of the entire multi-selection
         /// (shapes + texts) stays inside the image. Text positions are treated as single
@@ -795,10 +1500,12 @@ namespace screenzap
             int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
             foreach (var shape in selectedShapes)
             {
-                minX = Math.Min(minX, Math.Min(shape.Start.X, shape.End.X));
-                maxX = Math.Max(maxX, Math.Max(shape.Start.X, shape.End.X));
-                minY = Math.Min(minY, Math.Min(shape.Start.Y, shape.End.Y));
-                maxY = Math.Max(maxY, Math.Max(shape.Start.Y, shape.End.Y));
+                // GetBounds covers the full freehand path for highlighters; Start/End for the rest.
+                var b = shape.GetBounds();
+                minX = Math.Min(minX, b.Left);
+                maxX = Math.Max(maxX, b.Right);
+                minY = Math.Min(minY, b.Top);
+                maxY = Math.Max(maxY, b.Bottom);
             }
             foreach (var text in selectedTexts)
             {
@@ -824,6 +1531,13 @@ namespace screenzap
             {
                 shape.Start = shape.Start.Add(delta);
                 shape.End = shape.End.Add(delta);
+                if (shape.Points != null)
+                {
+                    for (int i = 0; i < shape.Points.Count; i++)
+                    {
+                        shape.Points[i] = shape.Points[i].Add(delta);
+                    }
+                }
             }
             foreach (var text in selectedTexts)
             {
@@ -873,10 +1587,28 @@ namespace screenzap
                 return;
             }
 
-            workingAnnotation.End = ClampPointToImage(pixelPoint);
-            if (workingAnnotation.Type == AnnotationType.Rectangle)
+            if (workingAnnotation.Type == AnnotationType.Highlighter)
             {
-                NormalizeRectangleAnnotation(workingAnnotation);
+                var pts = workingAnnotation.Points!;
+                var clamped = ClampPointToImage(pixelPoint);
+                var last = pts[pts.Count - 1];
+                if (clamped.X != last.X || clamped.Y != last.Y)
+                {
+                    pts.Add(clamped);
+                }
+                // Round jitter (moving average), then drop redundant samples (RDP).
+                var processed = SimplifyPolyline(SmoothPolyline(pts, 3), 1.5);
+                workingAnnotation.Points = processed;
+                workingAnnotation.Start = processed[0];
+                workingAnnotation.End = processed[processed.Count - 1];
+            }
+            else
+            {
+                workingAnnotation.End = ClampPointToImage(pixelPoint);
+                if (workingAnnotation.Type == AnnotationType.Rectangle)
+                {
+                    NormalizeRectangleAnnotation(workingAnnotation);
+                }
             }
 
             if (!workingAnnotation.IsValid())
@@ -1104,6 +1836,28 @@ namespace screenzap
                 clone.Start = clone.Start.Subtract(cropOrigin);
                 clone.End = clone.End.Subtract(cropOrigin);
 
+                if (clone.Type == AnnotationType.Highlighter)
+                {
+                    var path = clone.Points;
+                    if (path == null || path.Count < 2)
+                    {
+                        continue;
+                    }
+                    for (int i = 0; i < path.Count; i++)
+                    {
+                        path[i] = ClampPointToBounds(path[i].Subtract(cropOrigin), newBounds);
+                    }
+                    // Drop strokes that collapsed to (effectively) a single point after clamping.
+                    if (!clone.IsValid())
+                    {
+                        continue;
+                    }
+                    clone.Start = path[0];
+                    clone.End = path[path.Count - 1];
+                    updated.Add(clone);
+                    continue;
+                }
+
                 if (clone.Type == AnnotationType.Rectangle)
                 {
                     var rect = RectangleExt.fromPoints(clone.Start, clone.End);
@@ -1152,6 +1906,13 @@ namespace screenzap
                 arrowSizeComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 2; // Default to "1"
             }
 
+            if (highlighterThicknessComboBox != null)
+            {
+                highlighterThicknessComboBox.Items.AddRange(new object[] { "8", "12", "16", "20", "24" });
+                int defaultIndex = highlighterThicknessComboBox.Items.IndexOf(annotationHighlighterThickness.ToString());
+                highlighterThicknessComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 1; // Default to "12"
+            }
+
             UpdateAnnotationColorButtonAppearance();
         }
 
@@ -1161,7 +1922,7 @@ namespace screenzap
             // all selected items agree, fall back to the primary's color or tool default.
             using var dialog = new ColorDialog
             {
-                Color = GetRepresentativeSelectionColor() ?? annotationColor,
+                Color = GetRepresentativeSelectionColor() ?? ActiveToolDefaultColor,
                 FullOpen = true
             };
 
@@ -1170,7 +1931,7 @@ namespace screenzap
                 return;
             }
 
-            annotationColor = dialog.Color;
+            ActiveToolDefaultColor = dialog.Color;
             ApplyColorToSelection(dialog.Color);
             UpdateAnnotationColorButtonAppearance();
         }
@@ -1251,7 +2012,7 @@ namespace screenzap
                 return;
             }
 
-            var swatch = representative ?? annotationColor;
+            var swatch = representative ?? ActiveToolDefaultColor;
             annotationColorButton.BackColor = swatch;
             annotationColorButton.ForeColor = GetContrastColor(swatch);
             annotationColorButton.Text = "Color";
@@ -1268,6 +2029,20 @@ namespace screenzap
             {
                 annotationLineThickness = thickness;
                 ApplyLineThicknessToSelection(thickness);
+            }
+        }
+
+        private void highlighterThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (isSyncingAnnotationToolbarControls)
+            {
+                return;
+            }
+            if (highlighterThicknessComboBox?.SelectedItem is string thicknessStr &&
+                float.TryParse(thicknessStr, out float thickness) && thickness > 0)
+            {
+                annotationHighlighterThickness = thickness;
+                ApplyHighlighterThicknessToSelection(thickness);
             }
         }
 
@@ -1292,7 +2067,36 @@ namespace screenzap
         /// </summary>
         private void ApplyLineThicknessToSelection(float thickness)
         {
-            var targets = selectedShapes.Where(s => s.LineThickness != thickness).ToList();
+            // Highlighters have their own thickness combo (8–24); the line combo governs
+            // arrows and rectangles only.
+            var targets = selectedShapes
+                .Where(s => s.Type != AnnotationType.Highlighter && s.LineThickness != thickness)
+                .ToList();
+            if (targets.Count == 0)
+            {
+                return;
+            }
+
+            var before = CloneAnnotations();
+            foreach (var shape in targets)
+            {
+                shape.LineThickness = thickness;
+            }
+            var after = CloneAnnotations();
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
+            pictureBox1?.Invalidate();
+        }
+
+        /// <summary>
+        /// Write the thickness to every selected highlighter shape (other types are silently
+        /// skipped). Highlighters that already match the requested value are excluded so the
+        /// undo step records a real change.
+        /// </summary>
+        private void ApplyHighlighterThicknessToSelection(float thickness)
+        {
+            var targets = selectedShapes
+                .Where(s => s.Type == AnnotationType.Highlighter && s.LineThickness != thickness)
+                .ToList();
             if (targets.Count == 0)
             {
                 return;
@@ -1356,6 +2160,20 @@ namespace screenzap
                     }
                 }
 
+                if (highlighterThicknessComboBox != null && AnyHighlighterInSelection())
+                {
+                    float? unanimous = GetUnanimousHighlighterThickness();
+                    if (unanimous.HasValue)
+                    {
+                        int index = highlighterThicknessComboBox.Items.IndexOf(unanimous.Value.ToString());
+                        highlighterThicknessComboBox.SelectedIndex = index >= 0 ? index : -1;
+                    }
+                    else
+                    {
+                        highlighterThicknessComboBox.SelectedIndex = -1;
+                    }
+                }
+
                 if (arrowSizeComboBox != null && AnyArrowInSelection())
                 {
                     float? unanimous = GetUnanimousArrowSize();
@@ -1383,11 +2201,30 @@ namespace screenzap
             float? candidate = null;
             foreach (var shape in selectedShapes)
             {
+                if (shape.Type == AnnotationType.Highlighter) continue;
                 if (candidate == null) candidate = shape.LineThickness;
                 else if (candidate.Value != shape.LineThickness) return null;
             }
             return candidate;
         }
+
+        private float? GetUnanimousHighlighterThickness()
+        {
+            float? candidate = null;
+            foreach (var shape in selectedShapes)
+            {
+                if (shape.Type != AnnotationType.Highlighter) continue;
+                if (candidate == null) candidate = shape.LineThickness;
+                else if (candidate.Value != shape.LineThickness) return null;
+            }
+            return candidate;
+        }
+
+        private bool AnyHighlighterInSelection() =>
+            selectedShapes.Any(s => s.Type == AnnotationType.Highlighter);
+
+        private bool AnyNonHighlighterShapeInSelection() =>
+            selectedShapes.Any(s => s.Type != AnnotationType.Highlighter);
 
         private float? GetUnanimousArrowSize()
         {

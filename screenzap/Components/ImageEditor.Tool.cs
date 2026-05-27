@@ -11,6 +11,7 @@ namespace screenzap
         None,
         Arrow,
         Rectangle,
+        Highlighter,
         Text,
         Censor,
         Straighten
@@ -63,6 +64,7 @@ namespace screenzap
             {
                 ActiveTool.Arrow => DrawingTool.Arrow,
                 ActiveTool.Rectangle => DrawingTool.Rectangle,
+                ActiveTool.Highlighter => DrawingTool.Highlighter,
                 _ => DrawingTool.None
             };
             set
@@ -75,10 +77,13 @@ namespace screenzap
                     case DrawingTool.Rectangle:
                         SetActiveTool(ActiveTool.Rectangle);
                         break;
+                    case DrawingTool.Highlighter:
+                        SetActiveTool(ActiveTool.Highlighter);
+                        break;
                     case DrawingTool.None:
                         // Old field semantics: assigning DrawingTool.None unconditionally
                         // cleared this slot. Preserve that, but don't touch unrelated tools.
-                        if (activeTool is ActiveTool.Arrow or ActiveTool.Rectangle)
+                        if (activeTool is ActiveTool.Arrow or ActiveTool.Rectangle or ActiveTool.Highlighter)
                         {
                             SetActiveTool(ActiveTool.None);
                         }
@@ -122,6 +127,7 @@ namespace screenzap
                         break;
                     case ActiveTool.Arrow:
                     case ActiveTool.Rectangle:
+                    case ActiveTool.Highlighter:
                         CancelAnnotationPreview();
                         break;
                     case ActiveTool.Censor:
@@ -142,6 +148,7 @@ namespace screenzap
                         break;
                     case ActiveTool.Arrow:
                     case ActiveTool.Rectangle:
+                    case ActiveTool.Highlighter:
                         UpdateDrawingToolButtons();
                         break;
                 }

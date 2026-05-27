@@ -165,6 +165,135 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void ObservedClipboardItem_DoesNotReplaceDirtyActiveItem_WhenHostIsHidden()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubTextPresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.CreateControl();
+                    Assert.False(host.Visible);
+
+                    var edited = host.HistoryStore.AddObservedText("edited screenshot");
+                    var newCapture = host.HistoryStore.AddObservedText("new capture");
+
+                    Assert.True(host.ActivateHistoryItem(edited));
+                    presenter.CurrentText = "edited screenshot with annotations";
+                    edited.MarkDirtyExternally();
+
+                    host.OnObservedClipboardItem(newCapture);
+
+                    Assert.Same(edited, host.HistoryStore.ActiveItem);
+                    Assert.Equal("edited screenshot with annotations", presenter.CurrentText);
+                    Assert.Equal(newCapture, host.HistoryStore.TopItem);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void ActivatePreferredHistoryItem_PrefersDirtyActiveItemOverNewestCapture()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubTextPresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.CreateControl();
+
+                    var edited = host.HistoryStore.AddObservedText("edited screenshot");
+                    Assert.True(host.ActivateHistoryItem(edited));
+
+                    presenter.CurrentText = "edited screenshot with live annotations";
+                    edited.MarkDirtyExternally();
+
+                    var newCapture = host.HistoryStore.AddObservedText("new capture");
+                    Assert.Same(newCapture, host.HistoryStore.TopItem);
+
+                    Assert.True(host.ActivatePreferredHistoryItem());
+
+                    Assert.Same(edited, host.HistoryStore.ActiveItem);
+                    Assert.Equal("edited screenshot with live annotations", presenter.CurrentText);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void ActivateHistoryItem_DoesNotReloadAlreadyActivePresenter()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubTextPresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.CreateControl();
+
+                    var item = host.HistoryStore.AddObservedText("original");
+                    Assert.True(host.ActivateHistoryItem(item));
+
+                    presenter.CurrentText = "live edit not stashed yet";
+                    item.MarkDirtyExternally();
+
+                    Assert.True(host.ActivateHistoryItem(item));
+
+                    Assert.Same(item, host.HistoryStore.ActiveItem);
+                    Assert.Equal("live edit not stashed yet", presenter.CurrentText);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
         public void DeleteActiveItem_ActivatesNearestRemainingItem()
         {
             Exception? failure = null;
