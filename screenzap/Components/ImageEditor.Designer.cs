@@ -53,6 +53,10 @@
             this.lineThicknessLabel = new System.Windows.Forms.ToolStripLabel();
             this.lineThicknessComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.highlighterThicknessComboBox = new System.Windows.Forms.ToolStripComboBox();
+            this.highlighterOpacityLabel = new System.Windows.Forms.ToolStripLabel();
+            this.highlighterOpacityTrackBar = new System.Windows.Forms.TrackBar();
+            this.highlighterOpacityToolStripHost = new System.Windows.Forms.ToolStripControlHost(this.highlighterOpacityTrackBar);
+            this.highlighterOpacityValueLabel = new System.Windows.Forms.ToolStripLabel();
             this.arrowSizeLabel = new System.Windows.Forms.ToolStripLabel();
             this.arrowSizeComboBox = new System.Windows.Forms.ToolStripComboBox();
             this.annotationColorButton = new System.Windows.Forms.ToolStripButton();
@@ -109,6 +113,7 @@
             this.straightenToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
             this.statusStrip.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.highlighterOpacityTrackBar)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.iterationsTrackBar)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.smearTrackBar)).BeginInit();
@@ -153,6 +158,9 @@
             this.lineThicknessComboBox,
             this.lineThicknessLabel,
             this.highlighterThicknessComboBox,
+            this.highlighterOpacityValueLabel,
+            this.highlighterOpacityToolStripHost,
+            this.highlighterOpacityLabel,
             this.annotationColorButton,
             this.annotationToolSeparator});
             this.mainToolStrip.Location = new System.Drawing.Point(0, 0);
@@ -680,6 +688,45 @@
             this.highlighterThicknessComboBox.Visible = false;
             this.highlighterThicknessComboBox.SelectedIndexChanged += new System.EventHandler(this.highlighterThicknessComboBox_SelectedIndexChanged);
             //
+            // highlighterOpacityLabel
+            //
+            this.highlighterOpacityLabel.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.highlighterOpacityLabel.Name = "highlighterOpacityLabel";
+            this.highlighterOpacityLabel.Size = new System.Drawing.Size(51, 23);
+            this.highlighterOpacityLabel.Text = "Opacity";
+            this.highlighterOpacityLabel.Visible = false;
+            //
+            // highlighterOpacityTrackBar
+            //
+            this.highlighterOpacityTrackBar.AutoSize = false;
+            this.highlighterOpacityTrackBar.LargeChange = 10;
+            this.highlighterOpacityTrackBar.Location = new System.Drawing.Point(0, 0);
+            this.highlighterOpacityTrackBar.Maximum = 100;
+            this.highlighterOpacityTrackBar.Name = "highlighterOpacityTrackBar";
+            this.highlighterOpacityTrackBar.Size = new System.Drawing.Size(110, 24);
+            this.highlighterOpacityTrackBar.TabIndex = 0;
+            this.highlighterOpacityTrackBar.TickFrequency = 10;
+            this.highlighterOpacityTrackBar.Value = 40;
+            this.highlighterOpacityTrackBar.ValueChanged += new System.EventHandler(this.highlighterOpacityTrackBar_ValueChanged);
+            //
+            // highlighterOpacityToolStripHost
+            //
+            this.highlighterOpacityToolStripHost.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.highlighterOpacityToolStripHost.AutoSize = false;
+            this.highlighterOpacityToolStripHost.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
+            this.highlighterOpacityToolStripHost.Name = "highlighterOpacityToolStripHost";
+            this.highlighterOpacityToolStripHost.Size = new System.Drawing.Size(116, 23);
+            this.highlighterOpacityToolStripHost.Text = "highlighterOpacityToolStripHost";
+            this.highlighterOpacityToolStripHost.Visible = false;
+            //
+            // highlighterOpacityValueLabel
+            //
+            this.highlighterOpacityValueLabel.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.highlighterOpacityValueLabel.Name = "highlighterOpacityValueLabel";
+            this.highlighterOpacityValueLabel.Size = new System.Drawing.Size(31, 23);
+            this.highlighterOpacityValueLabel.Text = "40%";
+            this.highlighterOpacityValueLabel.Visible = false;
+            //
             // arrowSizeLabel
             //
             this.arrowSizeLabel.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
@@ -880,6 +927,7 @@
             this.straightenToolStrip.PerformLayout();
             this.mainToolStrip.ResumeLayout(false);
             this.mainToolStrip.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.highlighterOpacityTrackBar)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.confidenceTrackBar)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.iterationsTrackBar)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.smearTrackBar)).EndInit();
@@ -914,6 +962,10 @@
     private System.Windows.Forms.ToolStripLabel lineThicknessLabel;
     private System.Windows.Forms.ToolStripComboBox lineThicknessComboBox;
     private System.Windows.Forms.ToolStripComboBox highlighterThicknessComboBox;
+    private System.Windows.Forms.ToolStripLabel highlighterOpacityLabel;
+    private System.Windows.Forms.TrackBar highlighterOpacityTrackBar;
+    private System.Windows.Forms.ToolStripControlHost highlighterOpacityToolStripHost;
+    private System.Windows.Forms.ToolStripLabel highlighterOpacityValueLabel;
     private System.Windows.Forms.ToolStripLabel arrowSizeLabel;
     private System.Windows.Forms.ToolStripComboBox arrowSizeComboBox;
     private System.Windows.Forms.ToolStripButton annotationColorButton;

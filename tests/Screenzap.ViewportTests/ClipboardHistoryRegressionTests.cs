@@ -8,6 +8,7 @@ using System.Threading;
 using System.Windows.Forms;
 using screenzap;
 using screenzap.Components;
+using screenzap.Components.Shared;
 using screenzap.Testing;
 using Xunit;
 
@@ -121,6 +122,67 @@ namespace Screenzap.ViewportTests
             Assert.NotNull(item.UndoSnapshot);
             Assert.Single(item.UndoSnapshot!.Steps);
             Assert.Equal(0, item.UndoSnapshot.Index);
+        }
+
+        [Fact]
+        public void RestoredActiveImageItem_LoadsIntoPresenterDuringHostConstruction()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "screenzap-tests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+
+            ClipboardHistoryItem? persistedItem = null;
+
+            try
+            {
+                var persistence = new ClipboardHistoryPersistence(root);
+                using var persistedImage = CreateSolidBitmap(Color.LimeGreen);
+                var expectedSize = persistedImage.Size;
+                var expectedArgb = persistedImage.GetPixel(0, 0).ToArgb();
+
+                persistedItem = ClipboardHistoryItem.FromImage(persistedImage);
+                persistence.Save(new[] { persistedItem }, persistedItem);
+
+                StaTest.Run(() =>
+                {
+                    using var imagePresenter = new ImageEditor();
+                    using var textPresenter = new TextEditor();
+                    using var host = new ClipboardEditorHostForm(
+                        new IClipboardDocumentPresenter[] { imagePresenter, textPresenter },
+                        persistence,
+                        restorePersistedHistory: true,
+                        persistHistoryChanges: false,
+                        allowSystemClipboardWrites: false)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.CreateControl();
+
+                    Assert.Same(imagePresenter, host.ActivePresenter);
+
+                    using var loaded = imagePresenter.CloneBaseBitmapForTests();
+                    Assert.NotNull(loaded);
+                    Assert.Equal(expectedSize, loaded!.Size);
+                    Assert.Equal(expectedArgb, loaded.GetPixel(0, 0).ToArgb());
+                });
+            }
+            finally
+            {
+                persistedItem?.Dispose();
+
+                try
+                {
+                    if (Directory.Exists(root))
+                    {
+                        Directory.Delete(root, recursive: true);
+                    }
+                }
+                catch
+                {
+                    // Best-effort cleanup for test artifacts.
+                }
+            }
         }
 
         [Fact]

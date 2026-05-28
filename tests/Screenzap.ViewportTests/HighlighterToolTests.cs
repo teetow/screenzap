@@ -34,6 +34,32 @@ namespace Screenzap.ViewportTests
             };
         }
 
+        private static int DistanceFromWhite(Color color)
+        {
+            return (255 - color.R) + (255 - color.G) + (255 - color.B);
+        }
+
+        private static Point FindMostTintedPoint(Bitmap bitmap, Rectangle searchArea)
+        {
+            Point best = searchArea.Location;
+            int bestInk = -1;
+
+            for (int x = searchArea.Left; x < searchArea.Right; x++)
+            {
+                for (int y = searchArea.Top; y < searchArea.Bottom; y++)
+                {
+                    int ink = DistanceFromWhite(bitmap.GetPixel(x, y));
+                    if (ink > bestInk)
+                    {
+                        bestInk = ink;
+                        best = new Point(x, y);
+                    }
+                }
+            }
+
+            return best;
+        }
+
         [Fact]
         public void SimplifyPolyline_CollapsesStraightLine_ToEndpoints()
         {
@@ -249,6 +275,26 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void HighlighterOpacity_AppliesToSelection_AndIsUndoable()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditor();
+                editor.TestToggleHighlighterTool();
+                editor.TestDrawHighlighterStroke(SampleStroke());
+
+                editor.TestSetHighlighterOpacityPercent(70);
+
+                Assert.InRange(editor.TestSelectedAnnotation!.Opacity, 0.699f, 0.701f);
+                Assert.Equal("70%", editor.TestHighlighterOpacityValueLabelText);
+
+                editor.TestFireKeyDown(Keys.Control | Keys.Z);
+
+                Assert.InRange(editor.TestSelectedAnnotation!.Opacity, 0.399f, 0.401f);
+            });
+        }
+
+        [Fact]
         public void DrawHighlighter_FlattensIntoComposite_AsTranslucentInk()
         {
             StaTest.Run(() =>
@@ -287,6 +333,31 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void HighlighterOpacity_LowerValueLightensComposite()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditor();
+                editor.TestToggleHighlighterTool();
+                editor.TestApplyColorToSelection(Color.Yellow);
+                editor.TestSetHighlighterThickness(24f);
+                editor.TestDrawHighlighterStroke(SampleStroke());
+
+                editor.TestSetHighlighterOpacityPercent(80);
+                using var strongComposite = editor.BuildCompositeImageForTests();
+                Point sample = FindMostTintedPoint(strongComposite, new Rectangle(25, 30, 85, 21));
+                int strongInk = DistanceFromWhite(strongComposite.GetPixel(sample.X, sample.Y));
+
+                editor.TestSetHighlighterOpacityPercent(10);
+                using var lightComposite = editor.BuildCompositeImageForTests();
+                int lightInk = DistanceFromWhite(lightComposite.GetPixel(sample.X, sample.Y));
+
+                Assert.True(strongInk > 0, "expected to find a tinted highlighter pixel");
+                Assert.True(lightInk < strongInk, $"expected lower opacity to lighten the wash at {sample}, but {lightInk} >= {strongInk}");
+            });
+        }
+
+        [Fact]
         public void HighlighterThicknessCombo_ShowsBlank_WhenSelectionIsMixed()
         {
             StaTest.Run(() =>
@@ -315,6 +386,34 @@ namespace Screenzap.ViewportTests
                 Assert.Equal(2, editor.TestSelectedShapeCount);
 
                 Assert.Equal(-1, editor.TestHighlighterThicknessComboBoxSelectedIndex);
+            });
+        }
+
+        [Fact]
+        public void HighlighterOpacityValueLabel_ShowsMixed_WhenSelectionIsMixed()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditor();
+                editor.TestToggleHighlighterTool();
+
+                editor.TestDrawHighlighterStroke(SampleStroke());
+                editor.TestDrawHighlighterStroke(new List<Point>
+                {
+                    new Point(20, 90), new Point(60, 90), new Point(100, 91), new Point(140, 90)
+                });
+                editor.TestDeactivateDrawingTool();
+
+                editor.TestFireMouseDownAtImagePixel(new Point(180, 110), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(180, 110), MouseButtons.Left);
+                editor.TestFireMouseDownAtImagePixel(new Point(65, 40), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(65, 40), MouseButtons.Left);
+                editor.TestSetHighlighterOpacityPercent(70);
+
+                editor.TestShiftClickAtImagePixel(new Point(65, 90));
+
+                Assert.Equal(2, editor.TestSelectedShapeCount);
+                Assert.Equal("Mixed", editor.TestHighlighterOpacityValueLabelText);
             });
         }
     }

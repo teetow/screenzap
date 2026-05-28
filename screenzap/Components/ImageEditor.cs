@@ -825,6 +825,9 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, lineThicknessLabel);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, lineThicknessComboBox);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, highlighterThicknessComboBox);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, highlighterOpacityLabel);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, highlighterOpacityToolStripHost);
+            MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, highlighterOpacityValueLabel);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeLabel);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, arrowSizeComboBox);
             MoveToolStripItem(mainToolStrip, annotationOptionsToolStrip, annotationColorButton);

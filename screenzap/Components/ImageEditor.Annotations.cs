@@ -43,6 +43,7 @@ namespace screenzap
         public float LineThickness { get; set; } = 2f;
         public float ArrowSize { get; set; } = 1f; // Multiplier for arrow head size
         public Color Color { get; set; } = Color.Red;
+        public float Opacity { get; set; } = 0.40f;
         public bool Selected { get; set; }
 
         // Sampled freehand path. Non-null only for Highlighter shapes. Start/End are kept
@@ -61,6 +62,7 @@ namespace screenzap
                 LineThickness = LineThickness,
                 ArrowSize = ArrowSize,
                 Color = Color,
+                Opacity = Opacity,
                 Selected = Selected,
                 Points = Points != null ? new List<Point>(Points) : null
             };
@@ -139,6 +141,10 @@ namespace screenzap
         private List<Point>? highlighterResizeOriginalPoints;
         private Rectangle highlighterResizeOriginalBounds;
 
+        private const float DefaultHighlighterPeakOpacity = 0.40f;
+        private const float DefaultHighlighterBodyOpacity = 0.26f;
+        private const double HighlighterBodyLevel = DefaultHighlighterBodyOpacity / DefaultHighlighterPeakOpacity;
+
         // Annotation tool settings
         private float annotationLineThickness = 2f;
         private float annotationArrowSize = 1f;
@@ -147,6 +153,7 @@ namespace screenzap
         // The highlighter keeps its own default so it lands lemon-yellow rather than inheriting the
         // arrow/rectangle red. Picking a color while the highlighter tool is active updates this one.
         private Color annotationHighlighterColor = Color.FromArgb(255, 238, 88);
+        private float annotationHighlighterOpacity = DefaultHighlighterPeakOpacity;
 
         /// <summary>
         /// The tool default color the color picker reads/writes: the highlighter's own default when
@@ -166,6 +173,21 @@ namespace screenzap
                     annotationColor = value;
                 }
             }
+        }
+
+        private static float ClampHighlighterOpacity(float opacity)
+        {
+            return Math.Clamp(opacity, 0f, 1f);
+        }
+
+        private static int HighlighterOpacityToPercent(float opacity)
+        {
+            return (int)Math.Round(ClampHighlighterOpacity(opacity) * 100f);
+        }
+
+        private static float HighlighterOpacityFromPercent(int percent)
+        {
+            return Math.Clamp(percent, 0, 100) / 100f;
         }
 
         // Tests can't manipulate real keyboard state and Control.ModifierKeys is a static
@@ -317,6 +339,18 @@ namespace screenzap
             {
                 highlighterThicknessComboBox.Visible = showHighlighterControls;
             }
+            if (highlighterOpacityLabel != null)
+            {
+                highlighterOpacityLabel.Visible = showHighlighterControls;
+            }
+            if (highlighterOpacityToolStripHost != null)
+            {
+                highlighterOpacityToolStripHost.Visible = showHighlighterControls;
+            }
+            if (highlighterOpacityValueLabel != null)
+            {
+                highlighterOpacityValueLabel.Visible = showHighlighterControls;
+            }
             if (annotationColorButton != null)
             {
                 annotationColorButton.Visible = showPanel;
@@ -457,17 +491,16 @@ namespace screenzap
             }
         }
 
-        // Translucency of the "snail trail". The whole buffer is composited at the PEAK (tip)
-        // alpha; the body is floored below that inside the buffer so the felt-tip ends read a
-        // touch heavier without a separate, mechanical-looking stamp pass.
-        private const float HighlighterBodyAlpha = 0.26f;
-        private const float HighlighterEndAlpha = 0.40f;
-        private const double HighlighterBodyLevel = HighlighterBodyAlpha / HighlighterEndAlpha;
-
         private void DrawHighlighter(Graphics graphics, AnnotationShape annotation, AnnotationSurface surface, float scale)
         {
             var pts = annotation.Points;
             if (pts == null || pts.Count == 0)
+            {
+                return;
+            }
+
+            float peakOpacity = ClampHighlighterOpacity(annotation.Opacity);
+            if (peakOpacity <= 0f)
             {
                 return;
             }
@@ -543,7 +576,7 @@ namespace screenzap
                     endA, endB, imageOriginX, imageOriginY, invScale);
 
                 using var attributes = new System.Drawing.Imaging.ImageAttributes();
-                var matrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = HighlighterEndAlpha };
+                var matrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = peakOpacity };
                 attributes.SetColorMatrix(matrix);
                 graphics.DrawImage(
                     buffer,
@@ -1221,6 +1254,7 @@ namespace screenzap
                     LineThickness = isHighlighter ? annotationHighlighterThickness : annotationLineThickness,
                     ArrowSize = annotationArrowSize,
                     Color = isHighlighter ? annotationHighlighterColor : annotationColor,
+                    Opacity = isHighlighter ? annotationHighlighterOpacity : 1f,
                     Selected = true,
                     Points = isHighlighter ? new List<Point> { clampedPoint } : null
                 };
@@ -1913,7 +1947,26 @@ namespace screenzap
                 highlighterThicknessComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 1; // Default to "12"
             }
 
+            if (highlighterOpacityTrackBar != null)
+            {
+                int percent = HighlighterOpacityToPercent(annotationHighlighterOpacity);
+                highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
+            }
+            UpdateHighlighterOpacityValueLabel(HighlighterOpacityToPercent(annotationHighlighterOpacity));
+
             UpdateAnnotationColorButtonAppearance();
+        }
+
+        private void UpdateHighlighterOpacityValueLabel(int? percent, bool mixed = false)
+        {
+            if (highlighterOpacityValueLabel == null)
+            {
+                return;
+            }
+
+            highlighterOpacityValueLabel.Text = mixed
+                ? "Mixed"
+                : $"{Math.Clamp(percent ?? 0, 0, 100)}%";
         }
 
         private void annotationColorButton_Click(object? sender, EventArgs e)
@@ -2046,6 +2099,25 @@ namespace screenzap
             }
         }
 
+        private void highlighterOpacityTrackBar_ValueChanged(object? sender, EventArgs e)
+        {
+            if (highlighterOpacityTrackBar == null)
+            {
+                return;
+            }
+
+            int percent = highlighterOpacityTrackBar.Value;
+            UpdateHighlighterOpacityValueLabel(percent);
+
+            if (isSyncingAnnotationToolbarControls)
+            {
+                return;
+            }
+
+            annotationHighlighterOpacity = HighlighterOpacityFromPercent(percent);
+            ApplyHighlighterOpacityToSelection(annotationHighlighterOpacity);
+        }
+
         private void arrowSizeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
             if (isSyncingAnnotationToolbarControls)
@@ -2106,6 +2178,27 @@ namespace screenzap
             foreach (var shape in targets)
             {
                 shape.LineThickness = thickness;
+            }
+            var after = CloneAnnotations();
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
+            pictureBox1?.Invalidate();
+        }
+
+        private void ApplyHighlighterOpacityToSelection(float opacity)
+        {
+            float clampedOpacity = ClampHighlighterOpacity(opacity);
+            var targets = selectedShapes
+                .Where(s => s.Type == AnnotationType.Highlighter && Math.Abs(s.Opacity - clampedOpacity) > 0.0001f)
+                .ToList();
+            if (targets.Count == 0)
+            {
+                return;
+            }
+
+            var before = CloneAnnotations();
+            foreach (var shape in targets)
+            {
+                shape.Opacity = clampedOpacity;
             }
             var after = CloneAnnotations();
             PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
@@ -2174,6 +2267,32 @@ namespace screenzap
                     }
                 }
 
+                if (highlighterOpacityTrackBar != null)
+                {
+                    if (AnyHighlighterInSelection())
+                    {
+                        float? unanimous = GetUnanimousHighlighterOpacity();
+                        if (unanimous.HasValue)
+                        {
+                            int percent = HighlighterOpacityToPercent(unanimous.Value);
+                            highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
+                            UpdateHighlighterOpacityValueLabel(percent);
+                        }
+                        else
+                        {
+                            int percent = HighlighterOpacityToPercent(annotationHighlighterOpacity);
+                            highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
+                            UpdateHighlighterOpacityValueLabel(null, mixed: true);
+                        }
+                    }
+                    else if (activeDrawingTool == DrawingTool.Highlighter)
+                    {
+                        int percent = HighlighterOpacityToPercent(annotationHighlighterOpacity);
+                        highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
+                        UpdateHighlighterOpacityValueLabel(percent);
+                    }
+                }
+
                 if (arrowSizeComboBox != null && AnyArrowInSelection())
                 {
                     float? unanimous = GetUnanimousArrowSize();
@@ -2216,6 +2335,18 @@ namespace screenzap
                 if (shape.Type != AnnotationType.Highlighter) continue;
                 if (candidate == null) candidate = shape.LineThickness;
                 else if (candidate.Value != shape.LineThickness) return null;
+            }
+            return candidate;
+        }
+
+        private float? GetUnanimousHighlighterOpacity()
+        {
+            float? candidate = null;
+            foreach (var shape in selectedShapes)
+            {
+                if (shape.Type != AnnotationType.Highlighter) continue;
+                if (candidate == null) candidate = shape.Opacity;
+                else if (Math.Abs(candidate.Value - shape.Opacity) > 0.0001f) return null;
             }
             return candidate;
         }

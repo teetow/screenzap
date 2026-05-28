@@ -145,7 +145,8 @@ namespace screenzap.Components
             FormClosed += OnHostFormClosed;
 
             WindowLayoutHelper.ApplyInitialGeometry(this);
-            if (presenters.FirstOrDefault() is IClipboardDocumentPresenter firstPresenter)
+            if (!ActivatePreferredHistoryItem()
+                && presenters.FirstOrDefault() is IClipboardDocumentPresenter firstPresenter)
             {
                 ActivatePresenter(firstPresenter);
             }

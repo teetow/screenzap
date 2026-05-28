@@ -185,6 +185,18 @@ namespace screenzap
 
         internal int TestHighlighterThicknessComboBoxSelectedIndex => highlighterThicknessComboBox?.SelectedIndex ?? -2;
 
+        internal void TestSetHighlighterOpacityPercent(int percent)
+        {
+            if (highlighterOpacityTrackBar == null)
+                throw new System.InvalidOperationException("highlighterOpacityTrackBar not initialized");
+            int clamped = System.Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
+            highlighterOpacityTrackBar.Value = clamped;
+        }
+
+        internal int TestHighlighterOpacityPercent => highlighterOpacityTrackBar?.Value ?? -1;
+
+        internal string TestHighlighterOpacityValueLabelText => highlighterOpacityValueLabel?.Text ?? string.Empty;
+
         internal int TestSelectedHighlighterPointCount =>
             selectedAnnotation?.Points?.Count ?? -1;
 
