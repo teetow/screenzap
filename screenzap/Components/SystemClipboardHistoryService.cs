@@ -659,7 +659,7 @@ namespace screenzap.Components
                     return false;
                 }
 
-                var result = await WinRtClipboard.GetHistoryItemsAsync();
+                var result = await AwaitWithTimeout(WinRtClipboard.GetHistoryItemsAsync(), "GetHistoryItemsAsync (delete)").ConfigureAwait(false);
                 if (result == null || result.Status.ToString() != "Success")
                 {
                     return false;
