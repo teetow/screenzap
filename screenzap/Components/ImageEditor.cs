@@ -35,7 +35,6 @@ namespace screenzap
 
     public partial class ImageEditor : Form, IClipboardDocumentPresenter
     {
-        internal Func<TextEditor>? RequestTextEditor { get; set; }
         private EditorHostServices? hostServices;
         private bool isHostedView;
 
@@ -87,7 +86,6 @@ namespace screenzap
         private ClipboardReloadTarget pendingReloadTarget = ClipboardReloadTarget.None;
         internal Func<bool>? ConfirmReloadWhenDirtyOverrideForDiagnostics { get; set; }
         internal Func<Image?>? ClipboardImageProviderForDiagnostics { get; set; }
-        internal Func<string?>? ClipboardTextProviderForDiagnostics { get; set; }
     internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
 
         private bool HasEditableImage => pictureBox1.Image != null && !isPlaceholderImage;
@@ -2775,14 +2773,9 @@ namespace screenzap
                 return;
             }
 
-            if (TrySwitchToTextEditorFromClipboard())
-            {
-                return;
-            }
-
             if (showEmptyClipboardMessage)
             {
-                MessageBox.Show(this, "Clipboard does not contain image or text data to reload.", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "Clipboard does not contain image data to reload.", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
@@ -2852,65 +2845,6 @@ namespace screenzap
             return true;
         }
 
-        private bool TrySwitchToTextEditorFromClipboard()
-        {
-            if (RequestTextEditor == null)
-            {
-                return false;
-            }
-
-            string? clipboardText;
-            if (ClipboardTextProviderForDiagnostics != null)
-            {
-                clipboardText = ClipboardTextProviderForDiagnostics();
-            }
-            else
-            {
-                clipboardText = null;
-                try
-                {
-                    if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
-                    {
-                        clipboardText = Clipboard.GetText(TextDataFormat.UnicodeText);
-                    }
-                }
-                catch (ExternalException ex)
-                {
-                    MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return true;
-                }
-            }
-
-            if (clipboardText == null)
-            {
-                return false;
-            }
-
-            var textEditor = RequestTextEditor?.Invoke();
-            if (textEditor == null)
-            {
-                return false;
-            }
-
-            textEditor.LoadText(clipboardText);
-            if (hostServices?.ActivatePresenter != null)
-            {
-                hostServices.ActivatePresenter(textEditor);
-                textEditor.FocusEditor();
-            }
-            else
-            {
-                textEditor.AdoptWindowGeometry(this);
-                textEditor.ShowAndFocus();
-                if (Visible)
-                {
-                    Hide();
-                }
-            }
-
-            ClearClipboardNotification();
-            return true;
-        }
 
         private void copyClipboardToolStripButton_Click(object sender, EventArgs e)
         {

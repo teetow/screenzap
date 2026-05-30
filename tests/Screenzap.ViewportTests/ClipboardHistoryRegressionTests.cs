@@ -26,8 +26,10 @@ namespace Screenzap.ViewportTests
             store.Changed += (_, _) => changedCalls++;
             store.ActiveItemChanged += (_, _) => activeChangedCalls++;
 
-            var first = store.AddObservedText("first");
-            var second = store.AddObservedText("second");
+            using var firstImg = CreateSolidBitmap(Color.Red);
+            using var secondImg = CreateSolidBitmap(Color.Blue);
+            var first = store.AddObservedImage(firstImg);
+            var second = store.AddObservedImage(secondImg);
             changedCalls = 0;
 
             store.Activate(first);
@@ -51,8 +53,12 @@ namespace Screenzap.ViewportTests
             try
             {
                 var persistence = new ClipboardHistoryPersistence(root);
-                first = ClipboardHistoryItem.FromText("first");
-                second = ClipboardHistoryItem.FromText("second");
+                using (var firstImg = CreateSolidBitmap(Color.Red))
+                using (var secondImg = CreateSolidBitmap(Color.Blue))
+                {
+                    first = ClipboardHistoryItem.FromImage(firstImg);
+                    second = ClipboardHistoryItem.FromImage(secondImg);
+                }
 
                 persistence.Save(new[] { first, second }, first);
                 persistence.SaveActiveItemOnly(second.Id);
@@ -145,9 +151,8 @@ namespace Screenzap.ViewportTests
                 StaTest.Run(() =>
                 {
                     using var imagePresenter = new ImageEditor();
-                    using var textPresenter = new TextEditor();
                     using var host = new ClipboardEditorHostForm(
-                        new IClipboardDocumentPresenter[] { imagePresenter, textPresenter },
+                        new IClipboardDocumentPresenter[] { imagePresenter },
                         persistence,
                         restorePersistedHistory: true,
                         persistHistoryChanges: false,
@@ -207,8 +212,7 @@ namespace Screenzap.ViewportTests
                     host,
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
-                    isInternalWriteWindow: null,
-                    includeNonBitmapItems: null);
+                    isInternalWriteWindow: null);
 
                 ApplySystemSnapshot(
                     service,
@@ -243,8 +247,7 @@ namespace Screenzap.ViewportTests
                     host,
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
-                    isInternalWriteWindow: null,
-                    includeNonBitmapItems: null);
+                    isInternalWriteWindow: null);
 
                 ApplySystemSnapshot(
                     service,
@@ -286,8 +289,7 @@ namespace Screenzap.ViewportTests
                     host,
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
-                    isInternalWriteWindow: null,
-                    includeNonBitmapItems: null);
+                    isInternalWriteWindow: null);
 
                 ApplySystemSnapshot(
                     service,
@@ -326,8 +328,7 @@ namespace Screenzap.ViewportTests
                     host,
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
-                    isInternalWriteWindow: null,
-                    includeNonBitmapItems: null);
+                    isInternalWriteWindow: null);
 
                 ApplySystemSnapshot(
                     service,
@@ -341,53 +342,6 @@ namespace Screenzap.ViewportTests
                 Assert.Contains(store.Items, item => item.IsUserDuplicate);
                 Assert.Contains(store.Items, item => item.SystemHistoryId == "sys-id" && !item.IsUserDuplicate);
             });
-        }
-
-        [Fact]
-        public void HostedTextEditor_IgnoresClipboardImageUpdate()
-        {
-            Exception? failure = null;
-            var thread = new Thread(() =>
-            {
-                try
-                {
-                    using var textEditor = new TextEditor();
-                    textEditor.CreateControl();
-                    _ = textEditor.Handle;
-
-                    // Host the text editor (sets isHostedView).
-                    ((IClipboardDocumentPresenter)textEditor).AttachHostServices(new EditorHostServices());
-                    Assert.True(textEditor.IsHostedViewForDiagnostics);
-
-                    bool switchedToImageEditor = false;
-                    textEditor.RequestImageEditor = () =>
-                    {
-                        switchedToImageEditor = true;
-                        return new ImageEditor();
-                    };
-
-                    // A new clipboard image arrives. The handler owns/disposes the bitmap.
-                    textEditor.FireClipboardImageUpdateForDiagnostics(new Bitmap(50, 40));
-                    Application.DoEvents();
-
-                    // Hosted: the text editor must NOT react (which would drift the shared image editor
-                    // and clobber the active history item when it is stashed).
-                    Assert.False(switchedToImageEditor, "hosted text editor must ignore external clipboard image changes");
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join();
-
-            if (failure != null)
-            {
-                throw failure;
-            }
         }
 
         [Fact]

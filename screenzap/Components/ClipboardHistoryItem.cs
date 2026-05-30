@@ -11,6 +11,8 @@ namespace screenzap.Components
     internal enum ClipboardItemKind
     {
         Image,
+        // Retained only so persistence can recognize and skip legacy text entries written by older
+        // builds. Screenzap no longer creates text items — the clipboard history is image-only.
         Text
     }
 
@@ -23,7 +25,6 @@ namespace screenzap.Components
     {
         private const int DefaultThumbnailMaxWidth = 64;
         private const int DefaultThumbnailMaxHeight = 64;
-        private const float TextThumbnailAspect = 2f / 3f; // 2:3 portrait (w:h)
 
         // Last dimensions used when building the thumbnail, so that no-arg RebuildThumbnail()
         // (called from SetPreviewComposite during item stash) uses the panel's current size
@@ -60,30 +61,16 @@ namespace screenzap.Components
 
         // Originals (immutable after construction via setters from store).
         public Bitmap? OriginalImage { get; private set; }
-        public string? OriginalText { get; private set; }
 
         // Last committed baseline (what "Accept edits" wrote to clipboard).
         public Bitmap? CommittedImage { get; private set; }
-        public string? CommittedText { get; private set; }
 
         // Current edited state.
         public Bitmap? CurrentImage { get; private set; }
-        public string? CurrentText { get; private set; }
 
         public bool IsDirty { get; private set; }
         public IReadOnlyCollection<string> SuppressedSystemHistoryIds => suppressedSystemHistoryIds;
-        public bool CanRevertToOriginal
-        {
-            get
-            {
-                if (Kind == ClipboardItemKind.Image)
-                {
-                    return IsDirty || !AreImagesEqual(OriginalImage, CommittedImage);
-                }
-
-                return IsDirty || !string.Equals(OriginalText ?? string.Empty, CommittedText ?? string.Empty, StringComparison.Ordinal);
-            }
-        }
+        public bool CanRevertToOriginal => IsDirty || !AreImagesEqual(OriginalImage, CommittedImage);
 
         /// <summary>32x32 thumbnail. Owned by the item; regenerated on content change.</summary>
         public Bitmap? Thumbnail { get; private set; }
@@ -151,16 +138,6 @@ namespace screenzap.Components
             return item;
         }
 
-        public static ClipboardHistoryItem FromText(string source)
-        {
-            var item = new ClipboardHistoryItem(ClipboardItemKind.Text);
-            item.OriginalText = source ?? string.Empty;
-            item.CommittedText = source ?? string.Empty;
-            item.CurrentText = source ?? string.Empty;
-            item.RebuildThumbnail();
-            return item;
-        }
-
         internal static ClipboardHistoryItem FromPersistedImage(Guid id, DateTime createdUtc, Bitmap original, Bitmap committed, Bitmap current)
         {
             var item = new ClipboardHistoryItem(ClipboardItemKind.Image, id, createdUtc)
@@ -170,19 +147,6 @@ namespace screenzap.Components
                 CurrentImage = new Bitmap(current)
             };
             item.IsDirty = !AreImagesEqual(item.CommittedImage, item.CurrentImage);
-            item.RebuildThumbnail();
-            return item;
-        }
-
-        internal static ClipboardHistoryItem FromPersistedText(Guid id, DateTime createdUtc, string original, string committed, string current)
-        {
-            var item = new ClipboardHistoryItem(ClipboardItemKind.Text, id, createdUtc)
-            {
-                OriginalText = original ?? string.Empty,
-                CommittedText = committed ?? string.Empty,
-                CurrentText = current ?? string.Empty
-            };
-            item.IsDirty = !string.Equals(item.CommittedText ?? string.Empty, item.CurrentText ?? string.Empty, StringComparison.Ordinal);
             item.RebuildThumbnail();
             return item;
         }
@@ -212,25 +176,13 @@ namespace screenzap.Components
             IsDirty = true;
         }
 
-        public void UpdateCurrentText(string updated)
-        {
-            if (Kind != ClipboardItemKind.Text) return;
-            CurrentText = updated ?? string.Empty;
-            IsDirty = !string.Equals(CommittedText ?? string.Empty, CurrentText, StringComparison.Ordinal);
-            RebuildThumbnail();
-        }
-
         public void MarkClean()
         {
-            // Treat current state as the new committed baseline, but keep Original* immutable.
-            if (Kind == ClipboardItemKind.Image && CurrentImage != null)
+            // Treat current state as the new committed baseline, but keep OriginalImage immutable.
+            if (CurrentImage != null)
             {
                 CommittedImage?.Dispose();
                 CommittedImage = new Bitmap(CurrentImage);
-            }
-            else if (Kind == ClipboardItemKind.Text)
-            {
-                CommittedText = CurrentText ?? string.Empty;
             }
 
             // UndoSnapshot is intentionally preserved so undo/revert remain available after commit.
@@ -245,17 +197,12 @@ namespace screenzap.Components
 
         public void RevertToOriginal()
         {
-            if (Kind == ClipboardItemKind.Image && OriginalImage != null)
+            if (OriginalImage != null)
             {
                 CurrentImage?.Dispose();
                 CurrentImage = new Bitmap(OriginalImage);
                 CommittedImage?.Dispose();
                 CommittedImage = new Bitmap(OriginalImage);
-            }
-            else if (Kind == ClipboardItemKind.Text)
-            {
-                CurrentText = OriginalText ?? string.Empty;
-                CommittedText = OriginalText ?? string.Empty;
             }
 
             IsDirty = false;
@@ -279,19 +226,10 @@ namespace screenzap.Components
                 clone.suppressedSystemHistoryIds.Add(suppressedId);
             }
 
-            if (Kind == ClipboardItemKind.Image)
-            {
-                clone.OriginalImage = OriginalImage == null ? null : new Bitmap(OriginalImage);
-                clone.CommittedImage = CommittedImage == null ? null : new Bitmap(CommittedImage);
-                clone.CurrentImage = CurrentImage == null ? null : new Bitmap(CurrentImage);
-                clone.PreviewComposite = PreviewComposite == null ? null : new Bitmap(PreviewComposite);
-            }
-            else
-            {
-                clone.OriginalText = OriginalText ?? string.Empty;
-                clone.CommittedText = CommittedText ?? string.Empty;
-                clone.CurrentText = CurrentText ?? string.Empty;
-            }
+            clone.OriginalImage = OriginalImage == null ? null : new Bitmap(OriginalImage);
+            clone.CommittedImage = CommittedImage == null ? null : new Bitmap(CommittedImage);
+            clone.CurrentImage = CurrentImage == null ? null : new Bitmap(CurrentImage);
+            clone.PreviewComposite = PreviewComposite == null ? null : new Bitmap(PreviewComposite);
 
             clone.Annotations = Annotations?.Select(shape => shape.Clone()).ToList();
             clone.TextAnnotations = TextAnnotations?.Select(text => text.Clone()).ToList();
@@ -332,17 +270,8 @@ namespace screenzap.Components
 
         internal bool ContentMatches(ClipboardHistoryItem other)
         {
-            if (other == null || Kind != other.Kind)
-            {
-                return false;
-            }
-
-            if (Kind == ClipboardItemKind.Image)
-            {
-                return AreImagesEqual(CurrentImage, other.CurrentImage);
-            }
-
-            return string.Equals(CurrentText ?? string.Empty, other.CurrentText ?? string.Empty, StringComparison.Ordinal);
+            if (other == null) return false;
+            return AreImagesEqual(CurrentImage, other.CurrentImage);
         }
 
         internal void SetDirtyFlagForRestore(bool isDirty)
@@ -366,9 +295,7 @@ namespace screenzap.Components
             using var perf = LoggerPerfScope(maxWidth, maxHeight);
 
             var previous = Thumbnail;
-            Thumbnail = Kind == ClipboardItemKind.Image
-                ? RenderImageThumbnail(PreviewComposite ?? CurrentImage, maxWidth, maxHeight)
-                : RenderTextThumbnail(CurrentText ?? string.Empty, maxWidth, maxHeight);
+            Thumbnail = RenderImageThumbnail(PreviewComposite ?? CurrentImage, maxWidth, maxHeight);
             previous?.Dispose();
         }
 
@@ -404,47 +331,6 @@ namespace screenzap.Components
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.DrawImage(source, new Rectangle(0, 0, w, h));
-            return thumb;
-        }
-
-        private static Bitmap RenderTextThumbnail(string text, int maxWidth, int maxHeight)
-        {
-            // Keep text cards in a portrait 2:3 shape while fitting the available bounds.
-            int h = maxHeight;
-            int w = Math.Max(1, (int)Math.Round(h * TextThumbnailAspect));
-            if (w > maxWidth)
-            {
-                w = maxWidth;
-                h = Math.Max(1, (int)Math.Round(w / TextThumbnailAspect));
-            }
-
-            var thumb = new Bitmap(w, h, PixelFormat.Format32bppArgb);
-            using var g = Graphics.FromImage(thumb);
-            g.Clear(Color.FromArgb(40, 50, 65));
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
-
-            var preview = (text ?? string.Empty).Trim();
-            if (preview.Length == 0)
-            {
-                using var emptyFont = new Font("Segoe UI", 7f, FontStyle.Italic);
-                TextRenderer.DrawText(g, "(empty)", emptyFont, new Rectangle(0, 0, w, h),
-                    Color.Gray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-                return thumb;
-            }
-
-            if (preview.Length > 80) preview = preview.Substring(0, 80);
-            using var font = new Font("Segoe UI", 6f, FontStyle.Regular);
-            TextRenderer.DrawText(
-                g, preview, font,
-                new Rectangle(3, 3, w - 6, h - 6),
-                Color.White,
-                TextFormatFlags.WordBreak | TextFormatFlags.Top | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
-
-            // Subtle "T" badge bottom-right so text items are recognizable at a glance.
-            using var badgeFont = new Font("Segoe UI", 7f, FontStyle.Bold);
-            TextRenderer.DrawText(g, "T", badgeFont, new Point(w - 12, h - 14),
-                Color.FromArgb(180, 220, 255), TextFormatFlags.NoPrefix);
-
             return thumb;
         }
 

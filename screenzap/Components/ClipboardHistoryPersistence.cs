@@ -171,18 +171,9 @@ namespace screenzap.Components
                 TextAnnotations = item.TextAnnotations?.Select(ToDto).ToList()
             };
 
-            if (item.Kind == ClipboardItemKind.Image)
-            {
-                entry.OriginalImagePath = SaveImage(item.Id, "original", item.OriginalImage, keepFiles);
-                entry.CommittedImagePath = SaveImage(item.Id, "committed", item.CommittedImage, keepFiles);
-                entry.CurrentImagePath = SaveImage(item.Id, "current", item.CurrentImage, keepFiles);
-            }
-            else
-            {
-                entry.OriginalText = item.OriginalText ?? string.Empty;
-                entry.CommittedText = item.CommittedText ?? string.Empty;
-                entry.CurrentText = item.CurrentText ?? string.Empty;
-            }
+            entry.OriginalImagePath = SaveImage(item.Id, "original", item.OriginalImage, keepFiles);
+            entry.CommittedImagePath = SaveImage(item.Id, "committed", item.CommittedImage, keepFiles);
+            entry.CurrentImagePath = SaveImage(item.Id, "current", item.CurrentImage, keepFiles);
 
             return entry;
         }
@@ -209,38 +200,33 @@ namespace screenzap.Components
 
         private ClipboardHistoryItem? LoadItem(ClipboardHistoryItemEntry entry)
         {
-            if (entry.Kind == ClipboardItemKind.Image)
+            if (entry.Kind != ClipboardItemKind.Image)
             {
-                var original = LoadBitmap(entry.OriginalImagePath);
-                var committed = LoadBitmap(entry.CommittedImagePath);
-                var current = LoadBitmap(entry.CurrentImagePath);
-
-                if (original == null || committed == null || current == null)
-                {
-                    original?.Dispose();
-                    committed?.Dispose();
-                    current?.Dispose();
-                    return null;
-                }
-
-                using (original)
-                using (committed)
-                using (current)
-                {
-                    var item = ClipboardHistoryItem.FromPersistedImage(entry.Id, entry.CreatedUtc, original, committed, current);
-                    ApplyCommonEntryState(item, entry);
-                    return item;
-                }
+                // Legacy text entry written by an older build. Screenzap is image-only now, so skip
+                // it gracefully — the next save drops it from the manifest.
+                return null;
             }
 
-            var textItem = ClipboardHistoryItem.FromPersistedText(
-                entry.Id,
-                entry.CreatedUtc,
-                entry.OriginalText ?? string.Empty,
-                entry.CommittedText ?? string.Empty,
-                entry.CurrentText ?? string.Empty);
-            ApplyCommonEntryState(textItem, entry);
-            return textItem;
+            var original = LoadBitmap(entry.OriginalImagePath);
+            var committed = LoadBitmap(entry.CommittedImagePath);
+            var current = LoadBitmap(entry.CurrentImagePath);
+
+            if (original == null || committed == null || current == null)
+            {
+                original?.Dispose();
+                committed?.Dispose();
+                current?.Dispose();
+                return null;
+            }
+
+            using (original)
+            using (committed)
+            using (current)
+            {
+                var item = ClipboardHistoryItem.FromPersistedImage(entry.Id, entry.CreatedUtc, original, committed, current);
+                ApplyCommonEntryState(item, entry);
+                return item;
+            }
         }
 
         private void ApplyCommonEntryState(ClipboardHistoryItem item, ClipboardHistoryItemEntry entry)
@@ -369,9 +355,6 @@ namespace screenzap.Components
             public string? OriginalImagePath { get; set; }
             public string? CommittedImagePath { get; set; }
             public string? CurrentImagePath { get; set; }
-            public string? OriginalText { get; set; }
-            public string? CommittedText { get; set; }
-            public string? CurrentText { get; set; }
             public List<AnnotationShapeDto>? Annotations { get; set; }
             public List<TextAnnotationDto>? TextAnnotations { get; set; }
         }

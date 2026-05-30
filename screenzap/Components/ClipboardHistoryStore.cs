@@ -41,13 +41,6 @@ namespace screenzap.Components
             return item;
         }
 
-        public ClipboardHistoryItem AddObservedText(string source)
-        {
-            var item = ClipboardHistoryItem.FromText(source);
-            InsertAtTop(item);
-            return item;
-        }
-
         private void InsertAtTop(ClipboardHistoryItem item)
         {
             items.Insert(0, item);
@@ -84,12 +77,6 @@ namespace screenzap.Components
         public void NotifyImageEdited(ClipboardHistoryItem item, Bitmap updated)
         {
             item.UpdateCurrentImage(updated);
-            ItemUpdated?.Invoke(this, item);
-        }
-
-        public void NotifyTextEdited(ClipboardHistoryItem item, string updated)
-        {
-            item.UpdateCurrentText(updated);
             ItemUpdated?.Invoke(this, item);
         }
 

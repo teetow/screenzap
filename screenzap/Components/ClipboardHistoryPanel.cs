@@ -23,11 +23,9 @@ namespace screenzap.Components
         private readonly ToolStripMenuItem refreshFromWindowsHistoryItem;
         private readonly ToolStripMenuItem activateNewestItem;
         private readonly ToolStripMenuItem scrollToActiveItem;
-        private readonly ToolStripMenuItem showTextItemsItem;
         private ClipboardHistoryStore? store;
         private int currentThumbMaxWidth = 64;
         private int currentThumbMaxHeight = 64;
-        private bool suppressShowTextItemsEvents;
         private Guid? lastActiveItemId;
 
         public event EventHandler<ClipboardHistoryItem>? ItemActivated;
@@ -37,7 +35,6 @@ namespace screenzap.Components
         public event EventHandler<ClipboardHistoryItem>? ItemDelete;
         public event EventHandler? RefreshRequested;
         public event EventHandler? ActivateNewestRequested;
-        public event EventHandler<bool>? ShowTextItemsChanged;
 
         public ClipboardHistoryPanel()
         {
@@ -77,30 +74,13 @@ namespace screenzap.Components
             };
             scrollToActiveItem.Click += (s, e) => ScrollToActiveItem();
 
-            showTextItemsItem = new ToolStripMenuItem("Show Text Items")
-            {
-                CheckOnClick = true,
-                Image = MakeIcon(IconChar.Font, SystemColors.ControlText)
-            };
-            showTextItemsItem.CheckedChanged += (s, e) =>
-            {
-                if (suppressShowTextItemsEvents)
-                {
-                    return;
-                }
-
-                ShowTextItemsChanged?.Invoke(this, showTextItemsItem.Checked);
-            };
-
             listMenu = new ContextMenuStrip();
             listMenu.Items.AddRange(new ToolStripItem[]
             {
                 refreshFromWindowsHistoryItem,
                 new ToolStripSeparator(),
                 activateNewestItem,
-                scrollToActiveItem,
-                new ToolStripSeparator(),
-                showTextItemsItem
+                scrollToActiveItem
             });
             listMenu.Opening += (s, e) =>
             {
@@ -114,19 +94,6 @@ namespace screenzap.Components
 
             SizeChanged += (_, _) => UpdateThumbnailSizing();
             flow.SizeChanged += (_, _) => UpdateThumbnailSizing();
-        }
-
-        public void SetShowTextItems(bool enabled)
-        {
-            suppressShowTextItemsEvents = true;
-            try
-            {
-                showTextItemsItem.Checked = enabled;
-            }
-            finally
-            {
-                suppressShowTextItemsEvents = false;
-            }
         }
 
         public void AttachStore(ClipboardHistoryStore store)

@@ -54,7 +54,7 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var presenter = new StubTextPresenter();
+                    using var presenter = new StubImagePresenter();
                     using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
@@ -64,21 +64,22 @@ namespace Screenzap.ViewportTests
                     host.CreateControl();
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
-                    var first = host.HistoryStore.AddObservedText("first");
-                    var second = host.HistoryStore.AddObservedText("second");
+                    var first = AddImage(host.HistoryStore, Color.Red);
+                    var second = AddImage(host.HistoryStore, Color.Blue);
 
                     Assert.True(host.ActivateHistoryItem(first));
-                    presenter.CurrentText = "first-edited-in-presenter";
+                    presenter.CurrentColor = Color.Green; // simulate a live edit on the active presenter
 
                     var duplicateMethod = typeof(ClipboardEditorHostForm).GetMethod("DuplicateItem", BindingFlags.Instance | BindingFlags.NonPublic);
                     Assert.NotNull(duplicateMethod);
                     duplicateMethod!.Invoke(host, new object[] { second });
 
-                    Assert.Equal("second", second.CurrentText);
+                    // Duplicating a non-active item must not capture the active presenter's edits.
+                    Assert.Equal(Argb(Color.Blue), PixelArgb(second));
 
-                    var clones = host.HistoryStore.Items.Where(i => i.Kind == ClipboardItemKind.Text && i.Id != first.Id && i.Id != second.Id).ToList();
+                    var clones = host.HistoryStore.Items.Where(i => i.Id != first.Id && i.Id != second.Id).ToList();
                     Assert.Single(clones);
-                    Assert.Equal("second", clones[0].CurrentText);
+                    Assert.Equal(Argb(Color.Blue), PixelArgb(clones[0]));
                 }
                 catch (Exception ex)
                 {
@@ -102,8 +103,7 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var imagePresenter = new screenzap.ImageEditor();
-                    using var textPresenter = new screenzap.TextEditor();
-                    using var host = new ClipboardEditorHostForm(true, imagePresenter, textPresenter)
+                    using var host = new ClipboardEditorHostForm(true, imagePresenter)
                     {
                         SuppressActivation = true,
                         ShowInTaskbar = false
@@ -173,7 +173,7 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var presenter = new StubTextPresenter();
+                    using var presenter = new StubImagePresenter();
                     using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
@@ -183,17 +183,17 @@ namespace Screenzap.ViewportTests
                     host.CreateControl();
                     Assert.False(host.Visible);
 
-                    var edited = host.HistoryStore.AddObservedText("edited screenshot");
-                    var newCapture = host.HistoryStore.AddObservedText("new capture");
+                    var edited = AddImage(host.HistoryStore, Color.Red);
+                    var newCapture = AddImage(host.HistoryStore, Color.Blue);
 
                     Assert.True(host.ActivateHistoryItem(edited));
-                    presenter.CurrentText = "edited screenshot with annotations";
+                    presenter.CurrentColor = Color.Green; // live annotation edit, not yet stashed
                     edited.MarkDirtyExternally();
 
                     host.OnObservedClipboardItem(newCapture);
 
                     Assert.Same(edited, host.HistoryStore.ActiveItem);
-                    Assert.Equal("edited screenshot with annotations", presenter.CurrentText);
+                    Assert.Equal(Argb(Color.Green), Argb(presenter.CurrentColor));
                     Assert.Equal(newCapture, host.HistoryStore.TopItem);
                 }
                 catch (Exception ex)
@@ -217,7 +217,7 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var presenter = new StubTextPresenter();
+                    using var presenter = new StubImagePresenter();
                     using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
@@ -226,19 +226,19 @@ namespace Screenzap.ViewportTests
 
                     host.CreateControl();
 
-                    var edited = host.HistoryStore.AddObservedText("edited screenshot");
+                    var edited = AddImage(host.HistoryStore, Color.Red);
                     Assert.True(host.ActivateHistoryItem(edited));
 
-                    presenter.CurrentText = "edited screenshot with live annotations";
+                    presenter.CurrentColor = Color.Green; // live annotations, not yet stashed
                     edited.MarkDirtyExternally();
 
-                    var newCapture = host.HistoryStore.AddObservedText("new capture");
+                    var newCapture = AddImage(host.HistoryStore, Color.Blue);
                     Assert.Same(newCapture, host.HistoryStore.TopItem);
 
                     Assert.True(host.ActivatePreferredHistoryItem());
 
                     Assert.Same(edited, host.HistoryStore.ActiveItem);
-                    Assert.Equal("edited screenshot with live annotations", presenter.CurrentText);
+                    Assert.Equal(Argb(Color.Green), Argb(presenter.CurrentColor));
                 }
                 catch (Exception ex)
                 {
@@ -261,7 +261,7 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var presenter = new StubTextPresenter();
+                    using var presenter = new StubImagePresenter();
                     using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
@@ -270,16 +270,18 @@ namespace Screenzap.ViewportTests
 
                     host.CreateControl();
 
-                    var item = host.HistoryStore.AddObservedText("original");
+                    var item = AddImage(host.HistoryStore, Color.Red);
                     Assert.True(host.ActivateHistoryItem(item));
 
-                    presenter.CurrentText = "live edit not stashed yet";
+                    presenter.CurrentColor = Color.Green; // live edit, not stashed yet
                     item.MarkDirtyExternally();
 
                     Assert.True(host.ActivateHistoryItem(item));
 
+                    // Re-activating the already-active item must not reload the presenter (which would
+                    // discard the live edit back to the item's stored Red).
                     Assert.Same(item, host.HistoryStore.ActiveItem);
-                    Assert.Equal("live edit not stashed yet", presenter.CurrentText);
+                    Assert.Equal(Argb(Color.Green), Argb(presenter.CurrentColor));
                 }
                 catch (Exception ex)
                 {
@@ -302,7 +304,7 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var presenter = new StubTextPresenter();
+                    using var presenter = new StubImagePresenter();
                     using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
@@ -312,9 +314,9 @@ namespace Screenzap.ViewportTests
                     host.CreateControl();
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
-                    var first = host.HistoryStore.AddObservedText("first");
-                    var second = host.HistoryStore.AddObservedText("second");
-                    var third = host.HistoryStore.AddObservedText("third");
+                    var first = AddImage(host.HistoryStore, Color.Red);
+                    var second = AddImage(host.HistoryStore, Color.Blue);
+                    var third = AddImage(host.HistoryStore, Color.Green);
 
                     Assert.True(host.ActivateHistoryItem(second));
                     Assert.Same(second, host.HistoryStore.ActiveItem);
@@ -350,7 +352,7 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var presenter = new StubTextPresenter();
+                    using var presenter = new StubImagePresenter();
                     using var host = new ClipboardEditorHostForm(true, presenter)
                     {
                         SuppressActivation = true,
@@ -360,8 +362,8 @@ namespace Screenzap.ViewportTests
                     host.CreateControl();
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
-                    var first = host.HistoryStore.AddObservedText("first");
-                    var second = host.HistoryStore.AddObservedText("second");
+                    var first = AddImage(host.HistoryStore, Color.Red);
+                    var second = AddImage(host.HistoryStore, Color.Blue);
                     second.AssignSystemHistoryId("{TEST-SYSTEM-ID}");
 
                     Assert.True(host.ActivateHistoryItem(second));
@@ -369,10 +371,10 @@ namespace Screenzap.ViewportTests
 
                     var releaseSystemDelete = new TaskCompletionSource<bool>();
                     bool systemDeleteStarted = false;
-                    host.TryDeleteFromSystemHistoryAsync = async item =>
+                    host.TryDeleteFromSystemHistoryAsync = async systemHistoryId =>
                     {
                         systemDeleteStarted = true;
-                        Assert.Equal("{TEST-SYSTEM-ID}", item.SystemHistoryId);
+                        Assert.Equal("{TEST-SYSTEM-ID}", systemHistoryId);
                         await releaseSystemDelete.Task;
                         return true;
                     };
@@ -415,9 +417,9 @@ namespace Screenzap.ViewportTests
                     var store = new ClipboardHistoryStore();
                     panel.AttachStore(store);
 
-                    var first = store.AddObservedText("first");
-                    var second = store.AddObservedText("second");
-                    var third = store.AddObservedText("third");
+                    var first = AddImage(store, Color.Red);
+                    var second = AddImage(store, Color.Blue);
+                    var third = AddImage(store, Color.Green);
 
                     ClipboardHistoryItem? activated = null;
                     panel.ItemActivated += (_, item) => activated = item;
@@ -502,7 +504,10 @@ namespace Screenzap.ViewportTests
 
                     var first = store.AddObservedImage(wide);
                     var second = store.AddObservedImage(tall);
-                    store.AddObservedText("text item");
+                    using (var extra = MakeSolid(Color.SlateGray))
+                    {
+                        store.AddObservedImage(extra);
+                    }
 
                     Application.DoEvents();
 
@@ -647,15 +652,39 @@ namespace Screenzap.ViewportTests
             }
         }
 
-        private sealed class StubTextPresenter : IClipboardDocumentPresenter
+        internal static Bitmap MakeSolid(Color color)
+        {
+            var bmp = new Bitmap(8, 8);
+            using var g = Graphics.FromImage(bmp);
+            g.Clear(color);
+            return bmp;
+        }
+
+        private static ClipboardHistoryItem AddImage(ClipboardHistoryStore store, Color color)
+        {
+            using var bmp = MakeSolid(color);
+            return store.AddObservedImage(bmp);
+        }
+
+        private static int Argb(Color color) => color.ToArgb();
+
+        private static int PixelArgb(ClipboardHistoryItem item) => item.CurrentImage!.GetPixel(0, 0).ToArgb();
+
+        /// <summary>
+        /// Minimal image presenter for host/store behavior tests. Tracks the currently-displayed
+        /// content as a single color so tests can simulate a live in-presenter edit
+        /// (<see cref="CurrentColor"/>) and assert which content was loaded/stashed without a real
+        /// image editor. Mirrors how the real ImageEditor round-trips an item's CurrentImage.
+        /// </summary>
+        private sealed class StubImagePresenter : IClipboardDocumentPresenter
         {
             private readonly System.Windows.Forms.Panel view = new System.Windows.Forms.Panel();
 
-            public string CurrentText { get; set; } = string.Empty;
+            public Color CurrentColor { get; set; } = Color.Empty;
 
             public System.Windows.Forms.Control View => view;
 
-            public string DisplayName => "StubText";
+            public string DisplayName => "StubImage";
 
             public void AttachHostServices(EditorHostServices services)
             {
@@ -690,22 +719,23 @@ namespace Screenzap.ViewportTests
 
             public bool CanPresent(ClipboardHistoryItem item)
             {
-                return item.Kind == ClipboardItemKind.Text;
+                return item.Kind == ClipboardItemKind.Image;
             }
 
             public void LoadHistoryItem(ClipboardHistoryItem item)
             {
-                CurrentText = item.CurrentText ?? string.Empty;
+                CurrentColor = item.CurrentImage != null ? item.CurrentImage.GetPixel(0, 0) : Color.Empty;
             }
 
             public void StashHistoryItemState(ClipboardHistoryItem item)
             {
-                item.UpdateCurrentText(CurrentText);
+                using var bmp = MakeSolid(CurrentColor);
+                item.UpdateCurrentImage(bmp);
             }
 
             public object? GetCurrentContent()
             {
-                return CurrentText;
+                return CurrentColor == Color.Empty ? null : MakeSolid(CurrentColor);
             }
 
             public System.Drawing.Size? GetNaturalContentSize() => null;

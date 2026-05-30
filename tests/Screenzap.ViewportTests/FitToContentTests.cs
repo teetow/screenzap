@@ -15,8 +15,7 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var imageEditor = new screenzap.ImageEditor();
-                using var textEditor = new screenzap.TextEditor();
-                using var host = new ClipboardEditorHostForm(true, imageEditor, textEditor)
+                using var host = new ClipboardEditorHostForm(true, imageEditor)
                 {
                     SuppressActivation = true,
                     ShowInTaskbar = false
@@ -55,8 +54,7 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var imageEditor = new screenzap.ImageEditor();
-                using var textEditor = new screenzap.TextEditor();
-                using var host = new ClipboardEditorHostForm(true, imageEditor, textEditor)
+                using var host = new ClipboardEditorHostForm(true, imageEditor)
                 {
                     SuppressActivation = true,
                     ShowInTaskbar = false
@@ -77,8 +75,7 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var imageEditor = new screenzap.ImageEditor();
-                using var textEditor = new screenzap.TextEditor();
-                using var host = new ClipboardEditorHostForm(true, imageEditor, textEditor)
+                using var host = new ClipboardEditorHostForm(true, imageEditor)
                 {
                     SuppressActivation = true,
                     ShowInTaskbar = false

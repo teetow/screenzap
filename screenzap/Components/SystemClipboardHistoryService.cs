@@ -26,7 +26,6 @@ namespace screenzap.Components
         private readonly Action<ClipboardHistoryItem>? onItemObserved;
         private readonly Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem;
         private readonly Func<bool>? isInternalWriteWindow;
-        private readonly Func<bool>? includeNonBitmapItems;
         private bool disposed;
         private bool subscribed;
 
@@ -50,15 +49,13 @@ namespace screenzap.Components
             Control uiDispatcher,
             Action<ClipboardHistoryItem>? onItemObserved,
             Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem,
-            Func<bool>? isInternalWriteWindow,
-            Func<bool>? includeNonBitmapItems)
+            Func<bool>? isInternalWriteWindow)
         {
             this.store = store;
             this.poster = new SynchronizationContextPoster(uiDispatcher);
             this.onItemObserved = onItemObserved;
             this.tryBindPendingCommittedItem = tryBindPendingCommittedItem;
             this.isInternalWriteWindow = isInternalWriteWindow;
-            this.includeNonBitmapItems = includeNonBitmapItems;
         }
 
         public bool IsAvailable
@@ -238,8 +235,9 @@ namespace screenzap.Components
                 var availableFormats = dp.AvailableFormats?.ToList() ?? new List<string>();
                 bool imageLikeFormats = LooksImageLike(availableFormats);
 
-                // Prefer image conversion. Some providers do not reliably advertise bitmap support,
-                // so probe likely image formats too.
+                // Screenzap's history is image-only. Some providers do not reliably advertise bitmap
+                // support, so probe likely image formats too; everything that isn't a decodable bitmap
+                // (text, files, etc.) is ignored.
                 if (declaresBitmap || imageLikeFormats)
                 {
                     var imageItem = await TryBuildImageItemAsync(dp, sys.Id, logFailures: declaresBitmap);
@@ -247,39 +245,8 @@ namespace screenzap.Components
                     {
                         return (sys.Id, imageItem);
                     }
-                }
 
-                // Optional filter: keep only bitmap-backed system entries.
-                if (includeNonBitmapItems?.Invoke() != true)
-                {
-                    if (imageLikeFormats)
-                    {
-                        Logger.Log($"Skipping image-like WinRT history item {sys.Id} because bitmap decode failed. Formats: {string.Join(", ", availableFormats.Take(6))}");
-                    }
-                    return null;
-                }
-
-                if (dp.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
-                {
-                    var text = await AwaitWithTimeout(dp.GetTextAsync(), "GetTextAsync").ConfigureAwait(false);
-                    var item = ClipboardHistoryItem.FromText(text ?? string.Empty);
-                    item.AssignSystemHistoryId(sys.Id);
-                    return (sys.Id, item);
-                }
-
-                // Preserve recency/order visibility even for clipboard entries we cannot edit directly.
-                // We represent unsupported WinRT formats as lightweight text placeholders.
-                if (availableFormats != null && availableFormats.Count > 0)
-                {
-                    var summary = string.Join(", ", availableFormats.Take(6));
-                    if (availableFormats.Count > 6)
-                    {
-                        summary += ", ...";
-                    }
-
-                    var placeholder = ClipboardHistoryItem.FromText($"[Unsupported clipboard item: {summary}]");
-                    placeholder.AssignSystemHistoryId(sys.Id);
-                    return (sys.Id, placeholder);
+                    Logger.Log($"Skipping image-like WinRT history item {sys.Id} because bitmap decode failed. Formats: {string.Join(", ", availableFormats.Take(6))}");
                 }
             }
             catch (Exception ex)
@@ -600,16 +567,6 @@ namespace screenzap.Components
             foreach (var item in items)
             {
                 if (string.IsNullOrEmpty(item.SystemHistoryId)) continue;
-                if (item.Kind != candidate.Kind) continue;
-
-                if (candidate.Kind == ClipboardItemKind.Text)
-                {
-                    if (string.Equals(item.CurrentText ?? string.Empty, candidate.CurrentText ?? string.Empty, StringComparison.Ordinal))
-                    {
-                        return true;
-                    }
-                    continue;
-                }
 
                 if (AreImagesEquivalent(item.CurrentImage, candidate.CurrentImage))
                 {

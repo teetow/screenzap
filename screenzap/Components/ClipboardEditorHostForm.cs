@@ -35,10 +35,9 @@ namespace screenzap.Components
         private Guid? pendingCommittedItemId;
         private DateTime? pendingCommittedItemUntilUtc;
         internal bool SuppressActivation { get; set; }
-        internal Func<ClipboardHistoryItem, Task<bool>>? TryDeleteFromSystemHistoryAsync { get; set; }
+        internal Func<string?, Task<bool>>? TryDeleteFromSystemHistoryAsync { get; set; }
         internal Func<Task>? RefreshSystemHistoryAsync { get; set; }
         internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
-        internal Func<string, bool>? ClipboardTextWriterForDiagnostics { get; set; }
         internal ClipboardHistoryStore HistoryStore => historyStore;
 
         private const int InternalClipboardWriteSuppressMs = 2000;
@@ -114,8 +113,6 @@ namespace screenzap.Components
             historyPanel.ItemDelete     += (_, item) => _ = DeleteItemAsync(item);
             historyPanel.RefreshRequested += async (_, _) => await RefreshHistoryFromSystemAsync();
             historyPanel.ActivateNewestRequested += (_, _) => ActivateNewestHistoryItem();
-            historyPanel.ShowTextItemsChanged += (_, enabled) => ToggleShowTextItems(enabled);
-            historyPanel.SetShowTextItems(Properties.Settings.Default.clipboardHistoryShowTextItems);
             historyStore.ItemUpdated += OnStoreItemUpdated;
             historyStore.Changed += OnStoreChanged;
             historyStore.ActiveItemChanged += OnActiveItemChanged;
@@ -431,24 +428,6 @@ namespace screenzap.Components
             UpdateStatusText("Activated newest history item.");
         }
 
-        private void ToggleShowTextItems(bool enabled)
-        {
-            if (Properties.Settings.Default.clipboardHistoryShowTextItems == enabled)
-            {
-                _ = RefreshHistoryFromSystemAsync();
-                return;
-            }
-
-            Properties.Settings.Default.clipboardHistoryShowTextItems = enabled;
-            Properties.Settings.Default.Save();
-            historyPanel.SetShowTextItems(enabled);
-            UpdateStatusText(enabled
-                ? "Showing image and text clipboard history items."
-                : "Showing image clipboard history items only.");
-
-            _ = RefreshHistoryFromSystemAsync();
-        }
-
         private void AddCommandButton(EditorCommandId commandId)
         {
             if (!EditorCommandCatalog.All.TryGetValue(commandId, out var descriptor))
@@ -552,16 +531,7 @@ namespace screenzap.Components
             // Stash first so Annotations + base image are captured. Then flatten for clipboard.
             activePresenter?.StashHistoryItemState(item);
 
-            Bitmap? flattened = null;
-            string? flattenedText = null;
-            if (item.Kind == ClipboardItemKind.Image && activePresenter?.GetCurrentContent() is Bitmap bmp)
-            {
-                flattened = bmp;
-            }
-            else if (item.Kind == ClipboardItemKind.Text)
-            {
-                flattenedText = item.CurrentText ?? string.Empty;
-            }
+            Bitmap? flattened = activePresenter?.GetCurrentContent() as Bitmap;
 
             // Mark internal write so the system-history observer won't create a duplicate entry.
             BeginInternalClipboardWrite();
@@ -573,28 +543,12 @@ namespace screenzap.Components
             {
                 ie.TrackHostClipboardImageWrite(flattened);
             }
-            else if (flattenedText != null && activePresenter is screenzap.TextEditor te)
-            {
-                // TextEditor has its own observer logic; if equivalent suppression hooks exist,
-                // wire them here. (Out of scope for this fix.)
-                _ = te;
-            }
 
             try
             {
-                if (flattened != null)
+                if (flattened != null && allowSystemClipboardWrites)
                 {
-                    if (allowSystemClipboardWrites)
-                    {
-                        Clipboard.SetImage(flattened);
-                    }
-                }
-                else if (flattenedText != null)
-                {
-                    if (allowSystemClipboardWrites)
-                    {
-                        Clipboard.SetText(flattenedText);
-                    }
+                    Clipboard.SetImage(flattened);
                 }
             }
             catch (Exception ex)
@@ -607,10 +561,6 @@ namespace screenzap.Components
             {
                 item.UpdateCurrentImage(flattened);
                 flattened.Dispose();
-            }
-            else if (flattenedText != null)
-            {
-                item.UpdateCurrentText(flattenedText);
             }
 
             if (!string.IsNullOrEmpty(item.SystemHistoryId))
@@ -680,10 +630,6 @@ namespace screenzap.Components
                 item.MarkDirtyExternally();
                 historyStore.NotifyItemUpdated(item);
             }
-            else if (content is string text)
-            {
-                historyStore.NotifyTextEdited(item, text);
-            }
 
             UpdateCommandStates();
         }
@@ -745,38 +691,18 @@ namespace screenzap.Components
             BeginInternalClipboardWrite();
             try
             {
-                if (item.Kind == ClipboardItemKind.Image)
+                // Prefer composited preview so annotation/text-overlay edits are preserved in Set as Active.
+                var imageToWrite = item.PreviewComposite ?? item.CurrentImage;
+                if (imageToWrite != null)
                 {
-                    // Prefer composited preview so annotation/text-overlay edits are preserved in Set as Active.
-                    var imageToWrite = item.PreviewComposite ?? item.CurrentImage;
-                    if (imageToWrite != null)
+                    if (ClipboardImageWriterForDiagnostics != null)
                     {
-                        if (ClipboardImageWriterForDiagnostics != null)
-                        {
-                            using var copy = new Bitmap(imageToWrite);
-                            ClipboardImageWriterForDiagnostics(copy);
-                        }
-                        else
-                        {
-                            if (allowSystemClipboardWrites)
-                            {
-                                Clipboard.SetImage(imageToWrite);
-                            }
-                        }
+                        using var copy = new Bitmap(imageToWrite);
+                        ClipboardImageWriterForDiagnostics(copy);
                     }
-                }
-                else if (item.Kind == ClipboardItemKind.Text && item.CurrentText != null)
-                {
-                    if (ClipboardTextWriterForDiagnostics != null)
+                    else if (allowSystemClipboardWrites)
                     {
-                        ClipboardTextWriterForDiagnostics(item.CurrentText);
-                    }
-                    else
-                    {
-                        if (allowSystemClipboardWrites)
-                        {
-                            Clipboard.SetText(item.CurrentText);
-                        }
+                        Clipboard.SetImage(imageToWrite);
                     }
                 }
             }
@@ -1176,9 +1102,7 @@ namespace screenzap.Components
             bool removedFromSystem = false;
             try
             {
-                using var deletionItem = ClipboardHistoryItem.FromText(string.Empty);
-                deletionItem.AssignSystemHistoryId(systemHistoryId);
-                removedFromSystem = await TryDeleteFromSystemHistoryAsync(deletionItem);
+                removedFromSystem = await TryDeleteFromSystemHistoryAsync(systemHistoryId);
             }
             catch (Exception ex)
             {

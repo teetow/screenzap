@@ -25,7 +25,6 @@ namespace screenzap
         private KeyCombo seqCaptureCombo;
         private bool isCapturing;
         private ImageEditor? imageEditor;
-        private TextEditor? textEditor;
         private ClipboardEditorHostForm? clipboardEditorHost;
         private DateTime lastErrorNotificationUtc;
         private readonly List<int> rectCaptureHotkeyIds = new();
@@ -492,15 +491,6 @@ namespace screenzap
                             seeded.IsSeededFallback = true;
                         }
                     }
-                    else if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
-                    {
-                        var text = Clipboard.GetText(TextDataFormat.UnicodeText);
-                        if (!string.IsNullOrEmpty(text))
-                        {
-                            var seeded = host.HistoryStore.AddObservedText(text);
-                            seeded.IsSeededFallback = true;
-                        }
-                    }
                 }
                 catch (ExternalException ex)
                 {
@@ -516,7 +506,7 @@ namespace screenzap
                 try { dataObject = Clipboard.GetDataObject(); } catch { }
                 if (dataObject == null || !host.TryShowClipboardData(dataObject))
                 {
-                    notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain text or image data.", ToolTipIcon.Info);
+                    notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain image data.", ToolTipIcon.Info);
                     return;
                 }
                 if (!host.Visible) host.Show();
@@ -535,8 +525,7 @@ namespace screenzap
             if (clipboardEditorHost == null || clipboardEditorHost.IsDisposed)
             {
                 var imagePresenter = EnsureImageEditor();
-                var textPresenter = EnsureTextEditor();
-                clipboardEditorHost = new ClipboardEditorHostForm(imagePresenter, textPresenter);
+                clipboardEditorHost = new ClipboardEditorHostForm(imagePresenter);
                 clipboardEditorHost.FormClosed += OnClipboardHostClosed;
                 InitializeSystemClipboardHistoryForHost(clipboardEditorHost);
             }
@@ -556,8 +545,7 @@ namespace screenzap
                     host,
                     onItemObserved: host.OnObservedClipboardItem,
                     tryBindPendingCommittedItem: host.TryBindPendingCommittedSystemItem,
-                    isInternalWriteWindow: host.IsInternalClipboardWriteWindow,
-                    includeNonBitmapItems: () => Properties.Settings.Default.clipboardHistoryShowTextItems);
+                    isInternalWriteWindow: host.IsInternalClipboardWriteWindow);
 
                 host.RefreshSystemHistoryAsync = () =>
                     systemHistoryService?.RefreshAsync() ?? System.Threading.Tasks.Task.CompletedTask;
@@ -571,9 +559,9 @@ namespace screenzap
                     Logger.Log("Windows clipboard history is disabled or unavailable; Screenzap history will be populated on demand only.");
                 }
 
-                host.TryDeleteFromSystemHistoryAsync = async item =>
+                host.TryDeleteFromSystemHistoryAsync = async systemHistoryId =>
                     systemHistoryService != null
-                    && await systemHistoryService.TryDeleteSystemItemAsync(item.SystemHistoryId);
+                    && await systemHistoryService.TryDeleteSystemItemAsync(systemHistoryId);
             }
             catch (Exception ex)
             {
@@ -593,7 +581,6 @@ namespace screenzap
 
             clipboardEditorHost = null;
             imageEditor = null;
-            textEditor = null;
         }
 
         private ImageEditor EnsureImageEditor()
@@ -603,19 +590,7 @@ namespace screenzap
                 imageEditor = new ImageEditor();
             }
 
-            imageEditor.RequestTextEditor = EnsureTextEditor;
             return imageEditor;
-        }
-
-        private TextEditor EnsureTextEditor()
-        {
-            if (textEditor == null || textEditor.IsDisposed)
-            {
-                textEditor = new TextEditor();
-            }
-
-            textEditor.RequestImageEditor = EnsureImageEditor;
-            return textEditor;
         }
 
         private static string? TryGetClipboardText()

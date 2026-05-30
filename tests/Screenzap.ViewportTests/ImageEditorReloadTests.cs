@@ -51,14 +51,12 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var imageEditor = new screenzap.ImageEditor();
-                using var textEditor = new screenzap.TextEditor();
-                using var host = new ClipboardEditorHostForm(true, imageEditor, textEditor)
+                using var host = new ClipboardEditorHostForm(true, imageEditor)
                 {
                     SuppressActivation = true,
                     ShowInTaskbar = false
                 };
 
-                imageEditor.RequestTextEditor = () => textEditor;
                 host.CreateControl();
 
                 using var initialImage = new Bitmap(20, 10);
@@ -88,40 +86,5 @@ namespace Screenzap.ViewportTests
             });
         }
 
-        [Fact]
-        public void Reload_WithPendingText_SwitchesToTextEditorAndClearsIndicator()
-        {
-            StaTest.Run(() =>
-            {
-                using var imageEditor = new screenzap.ImageEditor();
-                using var textEditor = new screenzap.TextEditor();
-                using var host = new ClipboardEditorHostForm(true, imageEditor, textEditor)
-                {
-                    SuppressActivation = true,
-                    ShowInTaskbar = false
-                };
-
-                imageEditor.RequestTextEditor = () => textEditor;
-                host.CreateControl();
-
-                using var initialImage = new Bitmap(16, 16);
-                var imageData = new DataObject();
-                imageData.SetData(DataFormats.Bitmap, true, initialImage);
-                Assert.True(host.TryShowClipboardData(imageData));
-                Assert.IsType<screenzap.ImageEditor>(host.ActivePresenter);
-
-                imageEditor.SetPendingReloadForDiagnostics(hasPendingReload: true, useTextTarget: true);
-                imageEditor.ConfirmReloadWhenDirtyOverrideForDiagnostics = () => true;
-                imageEditor.ClipboardImageProviderForDiagnostics = () => null;
-                imageEditor.ClipboardTextProviderForDiagnostics = () => "clipboard text";
-
-                var presenter = (IClipboardDocumentPresenter)imageEditor;
-                Assert.True(presenter.TryExecute(EditorCommandId.Reload));
-
-                Assert.IsType<screenzap.TextEditor>(host.ActivePresenter);
-                Assert.Equal("clipboard text", textEditor.CurrentTextForDiagnostics);
-                Assert.False(host.HasPendingReloadIndicator);
-            });
-        }
     }
 }

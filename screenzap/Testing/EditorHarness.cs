@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using ImagePresenter = screenzap.ImageEditor;
-using TextPresenter = screenzap.TextEditor;
 
 namespace screenzap.Testing
 {
@@ -19,8 +18,7 @@ namespace screenzap.Testing
         {
             Logger.Log("Editor harness starting...");
             using var imagePresenter = new ImagePresenter();
-            using var textPresenter = new TextPresenter();
-            using var host = new ClipboardEditorHostForm(true, imagePresenter, textPresenter)
+            using var host = new ClipboardEditorHostForm(true, imagePresenter)
             {
                 SuppressActivation = true,
                 ShowInTaskbar = false
@@ -29,7 +27,6 @@ namespace screenzap.Testing
             host.CreateControl();
 
             var failures = new List<string>();
-            ValidateTextFlow(host, failures);
             ValidateImageFlow(host, imagePresenter, failures);
             ValidateHostServices(failures);
 
@@ -45,25 +42,6 @@ namespace screenzap.Testing
             }
 
             return 1;
-        }
-
-        private static void ValidateTextFlow(ClipboardEditorHostForm host, List<string> failures)
-        {
-            var data = CreateTextData();
-            if (!host.TryShowClipboardData(data))
-            {
-                failures.Add("Text presenter rejected Unicode text payload.");
-                return;
-            }
-
-            if (host.ActivePresenter is not TextPresenter)
-            {
-                failures.Add("Text presenter was not activated after loading text data.");
-                return;
-            }
-
-            ValidateCommand(host, EditorCommandId.Find, failures, "Text presenter");
-            ValidateCommand(host, EditorCommandId.Copy, failures, "Text presenter");
         }
 
         private static void ValidateImageFlow(ClipboardEditorHostForm host, ImagePresenter imagePresenter, List<string> failures)
@@ -570,13 +548,6 @@ namespace screenzap.Testing
             {
                 failures.Add($"{context}: executing {commandId} returned false.");
             }
-        }
-
-        private static IDataObject CreateTextData()
-        {
-            var data = new DataObject();
-            data.SetData(DataFormats.UnicodeText, true, "Harness sample text\nSecond line");
-            return data;
         }
 
         private static IDataObject CreateImageData()
