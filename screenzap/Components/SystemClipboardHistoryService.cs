@@ -530,8 +530,15 @@ namespace screenzap.Components
                 }
                 else
                 {
-                    // System item no longer in history and not dirty — drop it.
-                    item.Dispose();
+                    // System item no longer present in the Windows clipboard history. This happens on
+                    // an OS reboot, a "Clear" in clipboard settings, or when Windows evicts old entries
+                    // at its own size cap — none of which mean the user wanted it gone. We hold our own
+                    // persisted copy, so demote it to a local-only entry and keep it rather than discard
+                    // data. (Deletions initiated inside Screenzap go through the suppression path above,
+                    // so this does not resurrect those.)
+                    item.SystemHistoryId = null;
+                    InsertByTimestamp(finalOrder, finalTimestamps, item, ToHistoryTimestamp(item));
+                    handled.Add(item.Id);
                 }
             }
 
