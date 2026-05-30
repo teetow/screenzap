@@ -259,6 +259,91 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void SystemHistoryRefresh_DoesNotDuplicateCommittedLocalItemOnReimport()
+        {
+            StaTest.Run(() =>
+            {
+                var store = new ClipboardHistoryStore();
+                using var host = new Form();
+                host.CreateControl();
+
+                // A "set as active"/committed item: local-only (no SystemHistoryId), not a seeded
+                // fallback, carrying a suppressed old system id. This is the on-disk shape of 539e706c.
+                using var committedImage = CreateSolidBitmap(Color.SteelBlue);
+                var committed = store.AddObservedImage(committedImage);
+                committed.AddSuppressedSystemHistoryId("old-system-id");
+
+                // Windows re-imports the SAME content under a fresh system id — e.g. the entry created
+                // by the set-as-active write that never rebound because the app restarted (the pending-
+                // commit window is in-memory only). tryBindPendingCommittedItem is null here to model
+                // that lost state.
+                using var reimportImage = CreateSolidBitmap(Color.SteelBlue);
+                var reimport = ClipboardHistoryItem.FromImage(reimportImage);
+                reimport.AssignSystemHistoryId("new-system-id");
+
+                using var service = new SystemClipboardHistoryService(
+                    store,
+                    host,
+                    onItemObserved: null,
+                    tryBindPendingCommittedItem: null,
+                    isInternalWriteWindow: null,
+                    includeNonBitmapItems: null);
+
+                ApplySystemSnapshot(
+                    service,
+                    new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>
+                    {
+                        ("new-system-id", DateTimeOffset.UtcNow.AddSeconds(1), reimport)
+                    });
+
+                // The committed item should absorb the re-imported system id rather than produce a
+                // second row with identical content.
+                Assert.Single(store.Items);
+                Assert.Equal("new-system-id", store.Items[0].SystemHistoryId);
+            });
+        }
+
+        [Fact]
+        public void SystemHistoryRefresh_KeepsUserDuplicateDistinctFromReimport()
+        {
+            StaTest.Run(() =>
+            {
+                var store = new ClipboardHistoryStore();
+                using var host = new Form();
+                host.CreateControl();
+
+                using var image = CreateSolidBitmap(Color.SeaGreen);
+                var original = store.AddObservedImage(image);
+                var userDuplicate = store.Duplicate(original); // explicit user copy -> IsUserDuplicate
+
+                // Same content re-imported from Windows history under a fresh system id.
+                using var reimportImage = CreateSolidBitmap(Color.SeaGreen);
+                var reimport = ClipboardHistoryItem.FromImage(reimportImage);
+                reimport.AssignSystemHistoryId("sys-id");
+
+                using var service = new SystemClipboardHistoryService(
+                    store,
+                    host,
+                    onItemObserved: null,
+                    tryBindPendingCommittedItem: null,
+                    isInternalWriteWindow: null,
+                    includeNonBitmapItems: null);
+
+                ApplySystemSnapshot(
+                    service,
+                    new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>
+                    {
+                        ("sys-id", DateTimeOffset.UtcNow.AddSeconds(1), reimport)
+                    });
+
+                // The non-duplicate original absorbs the system id; the intentional duplicate stays.
+                Assert.Equal(2, store.Items.Count);
+                Assert.Contains(store.Items, item => item.IsUserDuplicate);
+                Assert.Contains(store.Items, item => item.SystemHistoryId == "sys-id" && !item.IsUserDuplicate);
+            });
+        }
+
+        [Fact]
         public void HistoryThumbnailClick_StashesAndRestoresImageLayerState()
         {
             Exception? failure = null;

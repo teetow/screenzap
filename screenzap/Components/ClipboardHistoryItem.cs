@@ -51,6 +51,13 @@ namespace screenzap.Components
         /// </summary>
         internal bool IsSeededFallback { get; set; }
 
+        /// <summary>
+        /// True when this item was created by an explicit user "duplicate" action. Such items are
+        /// intentional copies, so the system-history sync must not collapse them into an equivalent
+        /// re-imported clipboard entry. Persisted so the distinction survives restarts.
+        /// </summary>
+        internal bool IsUserDuplicate { get; set; }
+
         // Originals (immutable after construction via setters from store).
         public Bitmap? OriginalImage { get; private set; }
         public string? OriginalText { get; private set; }
@@ -265,6 +272,7 @@ namespace screenzap.Components
             var clone = new ClipboardHistoryItem(Kind);
             clone.SystemHistoryId = null;
             clone.IsSeededFallback = false;
+            clone.IsUserDuplicate = true;
 
             foreach (var suppressedId in suppressedSystemHistoryIds)
             {

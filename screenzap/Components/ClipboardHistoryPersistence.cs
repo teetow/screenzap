@@ -166,6 +166,7 @@ namespace screenzap.Components
                 SystemHistoryId = item.SystemHistoryId,
                 SuppressedSystemHistoryIds = item.SuppressedSystemHistoryIds.ToList(),
                 IsSeededFallback = item.IsSeededFallback,
+                IsUserDuplicate = item.IsUserDuplicate,
                 Annotations = item.Annotations?.Select(ToDto).ToList(),
                 TextAnnotations = item.TextAnnotations?.Select(ToDto).ToList()
             };
@@ -245,6 +246,7 @@ namespace screenzap.Components
         private void ApplyCommonEntryState(ClipboardHistoryItem item, ClipboardHistoryItemEntry entry)
         {
             item.IsSeededFallback = entry.IsSeededFallback;
+            item.IsUserDuplicate = entry.IsUserDuplicate;
             item.AssignSystemHistoryId(entry.SystemHistoryId);
 
             if (entry.SuppressedSystemHistoryIds != null)
@@ -361,6 +363,7 @@ namespace screenzap.Components
             public DateTime CreatedUtc { get; set; }
             public bool IsDirty { get; set; }
             public bool IsSeededFallback { get; set; }
+            public bool IsUserDuplicate { get; set; }
             public string? SystemHistoryId { get; set; }
             public List<string>? SuppressedSystemHistoryIds { get; set; }
             public string? OriginalImagePath { get; set; }

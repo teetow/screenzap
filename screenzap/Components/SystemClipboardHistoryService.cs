@@ -495,8 +495,32 @@ namespace screenzap.Components
                 }
                 else if (built != null)
                 {
-                    finalOrder.Add(built);
-                    finalTimestamps[built.Id] = timestamp;
+                    // A system entry can re-appear for content we already hold as a local-only item —
+                    // e.g. the entry produced by a "set as active"/commit write whose in-memory rebind
+                    // window was lost across a restart. Absorb it into that item (claim the new system
+                    // id) instead of creating an identical twin. Seeded fallbacks are handled by the
+                    // dedup pass below; user-created duplicates are exempt so intentional copies survive.
+                    var absorbTarget = store.Items.FirstOrDefault(candidate =>
+                        !handled.Contains(candidate.Id)
+                        && string.IsNullOrEmpty(candidate.SystemHistoryId)
+                        && !candidate.IsDirty
+                        && !candidate.IsSeededFallback
+                        && !candidate.IsUserDuplicate
+                        && candidate.ContentMatches(built));
+
+                    if (absorbTarget != null)
+                    {
+                        absorbTarget.AssignSystemHistoryId(built.SystemHistoryId);
+                        finalOrder.Add(absorbTarget);
+                        finalTimestamps[absorbTarget.Id] = timestamp;
+                        handled.Add(absorbTarget.Id);
+                        built.Dispose();
+                    }
+                    else
+                    {
+                        finalOrder.Add(built);
+                        finalTimestamps[built.Id] = timestamp;
+                    }
                 }
                 // else: decode was skipped for a known id, but the item is no longer in the store
                 // (removed between snapshot publish and now). Drop silently; the next refresh sees
