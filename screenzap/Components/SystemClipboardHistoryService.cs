@@ -30,6 +30,21 @@ namespace screenzap.Components
         private bool disposed;
         private bool subscribed;
 
+        // Single-flight + debounce guard. A burst of HistoryChanged events collapses into at most
+        // one in-flight refresh plus one queued rerun, instead of N overlapping full scans all
+        // hammering the single-threaded clipboard service (cbdhsvc) concurrently.
+        private readonly object refreshGate = new object();
+        private bool refreshInProgress;
+        private bool refreshRequested;
+        private TaskCompletionSource<bool>? refreshDrain;
+
+        // Snapshot of SystemHistoryIds currently held in the store, published from ApplySnapshot
+        // (UI thread). DoRefreshOnceAsync reads it to skip re-decoding bitmaps we already have.
+        private volatile HashSet<string> knownSystemHistoryIds = new(StringComparer.Ordinal);
+
+        private const int RefreshDebounceMs = 120;
+        private const int WinRtOperationTimeoutMs = 4000;
+
         public SystemClipboardHistoryService(
             ClipboardHistoryStore store,
             Control uiDispatcher,
@@ -76,32 +91,102 @@ namespace screenzap.Components
             _ = RefreshAsync();
         }
 
-        public async Task RefreshAsync()
+        /// <summary>
+        /// Requests a refresh of the system clipboard history. Coalescing: if a refresh is already
+        /// running, this only marks a rerun rather than starting an overlapping scan, so a burst of
+        /// clipboard changes never piles concurrent full scans onto the single-threaded clipboard
+        /// service. The returned task completes when the in-flight/just-started cycle drains.
+        /// </summary>
+        public Task RefreshAsync()
+        {
+            lock (refreshGate)
+            {
+                if (disposed) return Task.CompletedTask;
+
+                refreshDrain ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var drain = refreshDrain.Task;
+
+                if (refreshInProgress)
+                {
+                    refreshRequested = true;
+                    return drain;
+                }
+
+                refreshInProgress = true;
+                _ = Task.Run(RefreshLoopAsync);
+                return drain;
+            }
+        }
+
+        private async Task RefreshLoopAsync()
+        {
+            while (true)
+            {
+                try
+                {
+                    // Brief debounce so a rapid burst of HistoryChanged events settles into one scan.
+                    await Task.Delay(RefreshDebounceMs).ConfigureAwait(false);
+                    await DoRefreshOnceAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Clipboard history refresh failed: {ex.Message}");
+                }
+
+                TaskCompletionSource<bool>? toSignal;
+                lock (refreshGate)
+                {
+                    if (refreshRequested && !disposed)
+                    {
+                        refreshRequested = false;
+                        continue;
+                    }
+
+                    refreshInProgress = false;
+                    toSignal = refreshDrain;
+                    refreshDrain = null;
+                }
+
+                toSignal?.TrySetResult(true);
+                return;
+            }
+        }
+
+        private async Task DoRefreshOnceAsync()
         {
             if (disposed) return;
-            WinRtClipboardHistoryItemsResult? result = null;
-            try
+
+            var result = await AwaitWithTimeout(WinRtClipboard.GetHistoryItemsAsync(), "GetHistoryItemsAsync").ConfigureAwait(false);
+            if (result == null)
             {
-                result = await WinRtClipboard.GetHistoryItemsAsync();
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"WinRT GetHistoryItemsAsync failed: {ex.Message}");
+                Logger.Log("WinRT GetHistoryItemsAsync returned null or timed out.");
                 return;
             }
 
-            if (result == null || result.Status.ToString() != "Success")
+            if (result.Status.ToString() != "Success")
             {
-                var status = result == null ? "null" : result.Status.ToString();
-                Logger.Log($"WinRT GetHistoryItemsAsync returned non-success status: {status}");
+                Logger.Log($"WinRT GetHistoryItemsAsync returned non-success status: {result.Status}");
                 return;
             }
+
+            var known = knownSystemHistoryIds;
 
             // Translate WinRT items and then order by WinRT timestamp (newest first).
-            var translated = new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>();
+            var translated = new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem? built)?>();
             foreach (var sys in result.Items)
             {
-                var converted = await TryConvertAsync(sys);
+                if (disposed) return;
+
+                // Skip the expensive bitmap decode for items we already hold; ApplySnapshot reuses
+                // the existing store item by SystemHistoryId. Avoids re-streaming every image out of
+                // the single-threaded clipboard service on every change.
+                if (!string.IsNullOrEmpty(sys.Id) && known.Contains(sys.Id))
+                {
+                    translated.Add((sys.Id, sys.Timestamp, (ClipboardHistoryItem?)null));
+                    continue;
+                }
+
+                var converted = await TryConvertAsync(sys).ConfigureAwait(false);
                 if (converted.HasValue)
                 {
                     translated.Add((converted.Value.id, sys.Timestamp, converted.Value.built));
@@ -117,6 +202,29 @@ namespace screenzap.Components
                 .ToList();
 
             poster.Post(() => ApplySnapshot(translated));
+        }
+
+        private static async Task<T?> AwaitWithTimeout<T>(Windows.Foundation.IAsyncOperation<T> operation, string label)
+            where T : class
+        {
+            var task = operation.AsTask();
+            var winner = await Task.WhenAny(task, Task.Delay(WinRtOperationTimeoutMs)).ConfigureAwait(false);
+            if (winner != task)
+            {
+                Logger.Log($"WinRT operation timed out after {WinRtOperationTimeoutMs}ms: {label}");
+                try { operation.Cancel(); } catch { /* best effort */ }
+                return null;
+            }
+
+            try
+            {
+                return await task.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"WinRT operation failed ({label}): {ex.Message}");
+                return null;
+            }
         }
 
         private async Task<(string id, ClipboardHistoryItem built)?> TryConvertAsync(WinRtClipboardHistoryItem sys)
@@ -153,7 +261,7 @@ namespace screenzap.Components
 
                 if (dp.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text))
                 {
-                    var text = await dp.GetTextAsync();
+                    var text = await AwaitWithTimeout(dp.GetTextAsync(), "GetTextAsync").ConfigureAwait(false);
                     var item = ClipboardHistoryItem.FromText(text ?? string.Empty);
                     item.AssignSystemHistoryId(sys.Id);
                     return (sys.Id, item);
@@ -235,8 +343,10 @@ namespace screenzap.Components
         {
             try
             {
-                var bmpRef = await dataPackage.GetBitmapAsync();
-                using var stream = await bmpRef.OpenReadAsync();
+                var bmpRef = await AwaitWithTimeout(dataPackage.GetBitmapAsync(), "GetBitmapAsync").ConfigureAwait(false);
+                if (bmpRef == null) return null;
+                using var stream = await AwaitWithTimeout(bmpRef.OpenReadAsync(), "BitmapReference.OpenReadAsync").ConfigureAwait(false);
+                if (stream == null) return null;
                 using var ms = new MemoryStream();
                 using (var dotNetStream = stream.AsStreamForRead())
                 {
@@ -270,7 +380,7 @@ namespace screenzap.Components
 
             try
             {
-                var storageItems = await dataPackage.GetStorageItemsAsync();
+                var storageItems = await AwaitWithTimeout(dataPackage.GetStorageItemsAsync(), "GetStorageItemsAsync").ConfigureAwait(false);
                 if (storageItems == null || storageItems.Count == 0)
                 {
                     return null;
@@ -300,7 +410,8 @@ namespace screenzap.Components
                         continue;
                     }
 
-                    using var stream = await file.OpenReadAsync();
+                    using var stream = await AwaitWithTimeout(file.OpenReadAsync(), "StorageFile.OpenReadAsync").ConfigureAwait(false);
+                    if (stream == null) continue;
                     using var ms = new MemoryStream();
                     using (var dotNetStream = stream.AsStreamForRead())
                     {
@@ -328,7 +439,7 @@ namespace screenzap.Components
             return null;
         }
 
-        private void ApplySnapshot(List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?> translated)
+        private void ApplySnapshot(List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem? built)?> translated)
         {
             if (disposed) return;
 
@@ -359,11 +470,11 @@ namespace screenzap.Components
 
                 if (store.ContainsSuppressedSystemHistoryId(sysId))
                 {
-                    built.Dispose();
+                    built?.Dispose();
                     continue;
                 }
 
-                if (tryBindPendingCommittedItem?.Invoke(built) is ClipboardHistoryItem rebound)
+                if (built != null && tryBindPendingCommittedItem?.Invoke(built) is ClipboardHistoryItem rebound)
                 {
                     if (!handled.Contains(rebound.Id))
                     {
@@ -380,13 +491,16 @@ namespace screenzap.Components
                     finalOrder.Add(existing);
                     finalTimestamps[existing.Id] = timestamp;
                     handled.Add(existing.Id);
-                    built.Dispose();
+                    built?.Dispose();
                 }
-                else
+                else if (built != null)
                 {
                     finalOrder.Add(built);
                     finalTimestamps[built.Id] = timestamp;
                 }
+                // else: decode was skipped for a known id, but the item is no longer in the store
+                // (removed between snapshot publish and now). Drop silently; the next refresh sees
+                // it as unknown and re-fetches it.
             }
 
             // Preserve local-only items (user-created duplicates, fallback seed, dirty edits) without
@@ -422,6 +536,17 @@ namespace screenzap.Components
             }
 
             store.ReplaceAll(finalOrder);
+
+            // Publish the set of system ids we now hold so the next refresh can skip re-decoding them.
+            var updatedKnown = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in finalOrder)
+            {
+                if (!string.IsNullOrEmpty(entry.SystemHistoryId))
+                {
+                    updatedKnown.Add(entry.SystemHistoryId!);
+                }
+            }
+            knownSystemHistoryIds = updatedKnown;
 
             // Notify host of the newly observed top item so it can decide whether to auto-switch.
             if (!suppressActivation && newTopId != null)
