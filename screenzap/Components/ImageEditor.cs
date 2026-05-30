@@ -508,6 +508,16 @@ namespace screenzap
 
         private void HandleClipboardUpdated()
         {
+            // When hosted inside the clipboard editor, the host's WinRT history sync is the single
+            // source of truth for clipboard changes — it observes new content and pushes the right
+            // history item into this editor. Reacting independently here would reload the new content
+            // into whatever item is currently active and clobber it (and create a duplicate alongside
+            // the host's freshly-synced item). Manual reload (the toolbar button) still works.
+            if (isHostedView)
+            {
+                return;
+            }
+
             ClipboardReloadTarget detectedTarget = ClipboardReloadTarget.None;
             try
             {
@@ -1885,6 +1895,14 @@ namespace screenzap
         {
             ReloadFromClipboard();
         }
+
+        /// <summary>Fires the automatic WM_CLIPBOARDUPDATE reaction path (not the manual reload button).</summary>
+        internal void FireClipboardUpdatedForDiagnostics()
+        {
+            HandleClipboardUpdated();
+        }
+
+        internal bool IsHostedViewForDiagnostics => isHostedView;
 
         internal bool CopySelectionToClipboardForDiagnostics()
         {

@@ -344,6 +344,58 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void HostedEditor_ExternalClipboardUpdate_DoesNotClobberActiveItem()
+        {
+            Exception? failure = null;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    using var kit = new UiTestKit(new Size(400, 300), withHost: true, visible: false);
+                    kit.Host!.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+
+                    var active = kit.LoadCanvas(64, 48, Color.MidnightBlue);
+                    Assert.True(kit.Editor.IsHostedViewForDiagnostics);
+
+                    // Simulate an external clipboard change to a different image (a new screenshot).
+                    using var incoming = new Bitmap(120, 90);
+                    using (var g = Graphics.FromImage(incoming)) g.Clear(Color.OrangeRed);
+                    kit.Editor.ConfirmReloadWhenDirtyOverrideForDiagnostics = () => true;
+                    kit.Editor.ClipboardImageProviderForDiagnostics = () => new Bitmap(120, 90);
+                    Clipboard.SetImage(incoming); // so the reload path's detection sees an image
+
+                    kit.Editor.FireClipboardUpdatedForDiagnostics();
+                    kit.PumpUi();
+
+                    // Switch away so the previously-active item is stashed (where a clobber persists).
+                    using var otherImg = new Bitmap(30, 30);
+                    using (var g = Graphics.FromImage(otherImg)) g.Clear(Color.Green);
+                    var other = kit.Host.HistoryStore.AddObservedImage(otherImg);
+                    kit.Host.ActivateHistoryItem(other);
+                    kit.PumpUi();
+
+                    // Hosted editor must ignore external clipboard changes (the host's sync owns that):
+                    // the previously-active item keeps its own content rather than being overwritten.
+                    Assert.Equal(64, active.CurrentImage!.Width);
+                    Assert.Equal(48, active.CurrentImage!.Height);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            if (failure != null)
+            {
+                throw failure;
+            }
+        }
+
+        [Fact]
         public void HistoryThumbnailClick_StashesAndRestoresImageLayerState()
         {
             Exception? failure = null;
