@@ -22,6 +22,7 @@ namespace screenzap
     {
         internal Func<ImageEditor>? RequestImageEditor { get; set; }
         private EditorHostServices? hostServices;
+        private bool isHostedView;
         private const string WindowTitleBase = "Screenzap Text Editor";
         private const string ThemeFileName = "text-editor-theme.json";
         private static readonly string PrimaryKeywords = string.Join(' ', new[]
@@ -277,6 +278,15 @@ namespace screenzap
 
         private void ClipboardMonitor_OnUpdateText(object? sender, string text)
         {
+            // When hosted in the clipboard editor, the host's WinRT history sync is the single source
+            // of truth for clipboard changes. Reacting here would drift the editor onto unrelated
+            // content and corrupt the active history item when it is stashed. (Standalone mode still
+            // auto-reloads.)
+            if (isHostedView)
+            {
+                return;
+            }
+
             if (InvokeRequired)
             {
                 BeginInvoke(new Action<object?, string>(ClipboardMonitor_OnUpdateText), sender, text);
@@ -318,6 +328,14 @@ namespace screenzap
 
         private void ClipboardMonitor_OnUpdateImage(object? sender, Bitmap image)
         {
+            // See ClipboardMonitor_OnUpdateText: hosted presenters must not independently react to
+            // clipboard changes — that drifts the shared image editor and clobbers the active item.
+            if (isHostedView)
+            {
+                image.Dispose();
+                return;
+            }
+
             void HandleUpdate()
             {
                 if (suppressClipboardAutoReloadUntilUtc.HasValue && DateTime.UtcNow > suppressClipboardAutoReloadUntilUtc.Value)
@@ -355,6 +373,14 @@ namespace screenzap
             {
                 HandleUpdate();
             }
+        }
+
+        internal bool IsHostedViewForDiagnostics => isHostedView;
+
+        /// <summary>Fires the clipboard-image monitor reaction (the path that, when hosted, must stay inert).</summary>
+        internal void FireClipboardImageUpdateForDiagnostics(Bitmap image)
+        {
+            ClipboardMonitor_OnUpdateImage(this, image);
         }
 
         private void UpdateReloadIndicator()
@@ -1019,6 +1045,8 @@ namespace screenzap
 
         private void ApplyHostChromeVisibility(bool isHosted)
         {
+            isHostedView = isHosted;
+
             if (mainToolStrip != null)
             {
                 mainToolStrip.Visible = !isHosted;

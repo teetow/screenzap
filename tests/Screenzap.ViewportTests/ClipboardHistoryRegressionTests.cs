@@ -344,6 +344,53 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void HostedTextEditor_IgnoresClipboardImageUpdate()
+        {
+            Exception? failure = null;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    using var textEditor = new TextEditor();
+                    textEditor.CreateControl();
+                    _ = textEditor.Handle;
+
+                    // Host the text editor (sets isHostedView).
+                    ((IClipboardDocumentPresenter)textEditor).AttachHostServices(new EditorHostServices());
+                    Assert.True(textEditor.IsHostedViewForDiagnostics);
+
+                    bool switchedToImageEditor = false;
+                    textEditor.RequestImageEditor = () =>
+                    {
+                        switchedToImageEditor = true;
+                        return new ImageEditor();
+                    };
+
+                    // A new clipboard image arrives. The handler owns/disposes the bitmap.
+                    textEditor.FireClipboardImageUpdateForDiagnostics(new Bitmap(50, 40));
+                    Application.DoEvents();
+
+                    // Hosted: the text editor must NOT react (which would drift the shared image editor
+                    // and clobber the active history item when it is stashed).
+                    Assert.False(switchedToImageEditor, "hosted text editor must ignore external clipboard image changes");
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            if (failure != null)
+            {
+                throw failure;
+            }
+        }
+
+        [Fact]
         public void HostedEditor_ExternalClipboardUpdate_DoesNotClobberActiveItem()
         {
             Exception? failure = null;
