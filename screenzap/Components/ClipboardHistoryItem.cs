@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
-using System.Windows.Forms;
 
 namespace screenzap.Components
 {
@@ -20,11 +20,24 @@ namespace screenzap.Components
     /// Represents a single entry in Screenzap's clipboard history list.
     /// Tracks original + current content, dirty state and stashed undo stack so
     /// users can revisit a thumbnail and pick up where they left off.
+    ///
+    /// Memory model: an item's three image roles (original / committed / current) are stored as
+    /// PNG-compressed byte blobs (<see cref="StoredImage"/>), not live <see cref="Bitmap"/>s. A
+    /// full-resolution screenshot is tens of MB uncompressed; a list of 128 of them holding three
+    /// copies each ran to several GB resident and starved the whole process (the editor's own
+    /// allocations then stalled on GC/paging). Compressed blobs are ~10–50× smaller, identical
+    /// roles share one immutable blob (copy-on-write), and full bitmaps are decoded on demand and
+    /// released when the item is no longer active. Only a small thumbnail source stays resident.
     /// </summary>
     internal sealed class ClipboardHistoryItem : IDisposable
     {
         private const int DefaultThumbnailMaxWidth = 64;
         private const int DefaultThumbnailMaxHeight = 64;
+
+        // Cap for the cached thumbnail source. The panel renders thumbnails at roughly the panel
+        // width (~64–85px even at high DPI); keeping a modest source lets RebuildThumbnail rescale
+        // on panel resize without decoding the full image, while costing only ~256KB per item.
+        private const int ThumbnailSourceMaxEdge = 256;
 
         // Last dimensions used when building the thumbnail, so that no-arg RebuildThumbnail()
         // (called from SetPreviewComposite during item stash) uses the panel's current size
@@ -32,6 +45,21 @@ namespace screenzap.Components
         private int lastThumbMaxWidth = DefaultThumbnailMaxWidth;
         private int lastThumbMaxHeight = DefaultThumbnailMaxHeight;
         private readonly HashSet<string> suppressedSystemHistoryIds = new(StringComparer.Ordinal);
+
+        // Compressed role blobs. Identical roles point at the same instance (copy-on-write).
+        private StoredImage? original;
+        private StoredImage? committed;
+        private StoredImage? current;
+
+        // Lazily-decoded full bitmaps, keyed by the blob they came from so copy-on-write roles share
+        // one decode. Populated by the image getters and released via ReleaseDecodedImages() when the
+        // item is no longer active, bounding resident full bitmaps to roughly the active item.
+        private readonly Dictionary<StoredImage, Bitmap> decodeCache = new(ReferenceEqualityComparer.Instance);
+
+        // Modest-resolution source the panel-sized thumbnail is rescaled from. Built once whenever
+        // content changes (the caller already holds the full bitmap then), so panel resizes never
+        // decode the full image.
+        private Bitmap? thumbnailSource;
 
         private ClipboardHistoryItem(ClipboardItemKind kind, Guid? id = null, DateTime? createdUtc = null)
         {
@@ -59,18 +87,22 @@ namespace screenzap.Components
         /// </summary>
         internal bool IsUserDuplicate { get; set; }
 
-        // Originals (immutable after construction via setters from store).
-        public Bitmap? OriginalImage { get; private set; }
+        // Image getters decode the corresponding blob on demand. The returned bitmap is owned by the
+        // item (cached, released on deactivate / dispose); callers must not dispose it.
+        public Bitmap? OriginalImage => GetDecoded(original);
+        public Bitmap? CommittedImage => GetDecoded(committed);
+        public Bitmap? CurrentImage => GetDecoded(current);
 
-        // Last committed baseline (what "Accept edits" wrote to clipboard).
-        public Bitmap? CommittedImage { get; private set; }
-
-        // Current edited state.
-        public Bitmap? CurrentImage { get; private set; }
+        // Raw compressed bytes for persistence — written straight to disk, no decode/re-encode. The
+        // byte[] reference is stable while content is unchanged, so persistence can cheaply skip
+        // rewriting unchanged files by reference-comparing these.
+        internal byte[]? OriginalPngBytes => original?.Png;
+        internal byte[]? CommittedPngBytes => committed?.Png;
+        internal byte[]? CurrentPngBytes => current?.Png;
 
         public bool IsDirty { get; private set; }
         public IReadOnlyCollection<string> SuppressedSystemHistoryIds => suppressedSystemHistoryIds;
-        public bool CanRevertToOriginal => IsDirty || !AreImagesEqual(OriginalImage, CommittedImage);
+        public bool CanRevertToOriginal => IsDirty || !StoredImage.ContentEquals(original, committed);
 
         /// <summary>32x32 thumbnail. Owned by the item; regenerated on content change.</summary>
         public Bitmap? Thumbnail { get; private set; }
@@ -125,49 +157,67 @@ namespace screenzap.Components
         {
             PreviewComposite?.Dispose();
             PreviewComposite = composite == null ? null : new Bitmap(composite);
-            RebuildThumbnail();
+            RefreshThumbnailSource();
         }
 
         public static ClipboardHistoryItem FromImage(Bitmap source)
         {
             var item = new ClipboardHistoryItem(ClipboardItemKind.Image);
-            item.OriginalImage = new Bitmap(source);
-            item.CommittedImage = new Bitmap(source);
-            item.CurrentImage = new Bitmap(source);
-            item.RebuildThumbnail();
+            var stored = StoredImage.FromBitmap(source);
+            item.original = stored;
+            item.committed = stored;
+            item.current = stored;
+            item.SetThumbnailSourceFrom(source);
             return item;
         }
 
-        internal static ClipboardHistoryItem FromPersistedImage(Guid id, DateTime createdUtc, Bitmap original, Bitmap committed, Bitmap current)
+        internal static ClipboardHistoryItem FromPersistedPng(Guid id, DateTime createdUtc, byte[] original, byte[] committed, byte[] current)
         {
-            var item = new ClipboardHistoryItem(ClipboardItemKind.Image, id, createdUtc)
+            var item = new ClipboardHistoryItem(ClipboardItemKind.Image, id, createdUtc);
+
+            // Clean items persist three byte-identical files (the roles shared one blob in memory),
+            // so dedup by raw byte-equality before decoding — the common case decodes once, not thrice.
+            var originalStored = StoredImage.FromPng(original);
+            var committedStored = BytesEqual(original, committed) ? originalStored : StoredImage.FromPng(committed);
+            StoredImage currentStored;
+            if (BytesEqual(committed, current))
             {
-                OriginalImage = new Bitmap(original),
-                CommittedImage = new Bitmap(committed),
-                CurrentImage = new Bitmap(current)
-            };
-            item.IsDirty = !AreImagesEqual(item.CommittedImage, item.CurrentImage);
-            item.RebuildThumbnail();
+                currentStored = committedStored;
+            }
+            else if (BytesEqual(original, current))
+            {
+                currentStored = originalStored;
+            }
+            else
+            {
+                currentStored = StoredImage.FromPng(current);
+            }
+
+            item.original = originalStored;
+            item.committed = committedStored;
+            item.current = currentStored;
+            item.IsDirty = !StoredImage.ContentEquals(committedStored, currentStored);
+            item.RefreshThumbnailSource();
             return item;
         }
+
+        private static bool BytesEqual(byte[] a, byte[] b) => ReferenceEquals(a, b) || a.AsSpan().SequenceEqual(b);
 
         public void UpdateCurrentImage(Bitmap updated)
         {
             if (Kind != ClipboardItemKind.Image) return;
-            var replacement = new Bitmap(updated);
-            CurrentImage?.Dispose();
-            CurrentImage = replacement;
-            IsDirty = !AreImagesEqual(CommittedImage, CurrentImage);
-            RebuildThumbnail();
+            current = StoredImage.FromBitmap(updated);
+            PruneDecodeCache();
+            IsDirty = !StoredImage.ContentEquals(committed, current);
+            SetThumbnailSourceFrom(PreviewComposite ?? updated);
         }
 
         /// <summary>Update only the base image without recomputing dirty state (caller manages dirty).</summary>
         internal void UpdateCurrentImageWithoutDirty(Bitmap updated)
         {
             if (Kind != ClipboardItemKind.Image) return;
-            var replacement = new Bitmap(updated);
-            CurrentImage?.Dispose();
-            CurrentImage = replacement;
+            current = StoredImage.FromBitmap(updated);
+            PruneDecodeCache();
         }
 
         /// <summary>Mark the item as dirty from an external signal (e.g. annotation-only edit).</summary>
@@ -179,10 +229,10 @@ namespace screenzap.Components
         public void MarkClean()
         {
             // Treat current state as the new committed baseline, but keep OriginalImage immutable.
-            if (CurrentImage != null)
+            // Sharing the immutable blob means no extra copy.
+            if (current != null)
             {
-                CommittedImage?.Dispose();
-                CommittedImage = new Bitmap(CurrentImage);
+                committed = current;
             }
 
             // UndoSnapshot is intentionally preserved so undo/revert remain available after commit.
@@ -191,18 +241,17 @@ namespace screenzap.Components
             Annotations = null;
             TextAnnotations = null;
             ImageLayers = null;
+            PruneDecodeCache();
             SetPreviewComposite(null);
             IsDirty = false;
         }
 
         public void RevertToOriginal()
         {
-            if (OriginalImage != null)
+            if (original != null)
             {
-                CurrentImage?.Dispose();
-                CurrentImage = new Bitmap(OriginalImage);
-                CommittedImage?.Dispose();
-                CommittedImage = new Bitmap(OriginalImage);
+                current = original;
+                committed = original;
             }
 
             IsDirty = false;
@@ -210,8 +259,8 @@ namespace screenzap.Components
             Annotations = null;
             TextAnnotations = null;
             ImageLayers = null;
+            PruneDecodeCache();
             SetPreviewComposite(null);
-            RebuildThumbnail();
         }
 
         public ClipboardHistoryItem CloneCurrentAsNew()
@@ -226,9 +275,11 @@ namespace screenzap.Components
                 clone.suppressedSystemHistoryIds.Add(suppressedId);
             }
 
-            clone.OriginalImage = OriginalImage == null ? null : new Bitmap(OriginalImage);
-            clone.CommittedImage = CommittedImage == null ? null : new Bitmap(CommittedImage);
-            clone.CurrentImage = CurrentImage == null ? null : new Bitmap(CurrentImage);
+            // Blobs are immutable, so the clone shares them outright (copy-on-write splits them only
+            // if the clone is later edited). No decode, no re-encode, no large allocation.
+            clone.original = original;
+            clone.committed = committed;
+            clone.current = current;
             clone.PreviewComposite = PreviewComposite == null ? null : new Bitmap(PreviewComposite);
 
             clone.Annotations = Annotations?.Select(shape => shape.Clone()).ToList();
@@ -236,7 +287,7 @@ namespace screenzap.Components
             clone.ImageLayers = ImageLayers?.Select(layer => layer.Clone()).ToList();
             clone.UndoSnapshot = UndoRedo.CloneSnapshot(UndoSnapshot);
             clone.IsDirty = IsDirty;
-            clone.RebuildThumbnail();
+            clone.RefreshThumbnailSource();
             return clone;
         }
 
@@ -271,12 +322,27 @@ namespace screenzap.Components
         internal bool ContentMatches(ClipboardHistoryItem other)
         {
             if (other == null) return false;
-            return AreImagesEqual(CurrentImage, other.CurrentImage);
+            // Compares cached 16×16 signatures — never decodes the full images.
+            return StoredImage.ContentEquals(current, other.current);
         }
 
         internal void SetDirtyFlagForRestore(bool isDirty)
         {
             IsDirty = isDirty;
+        }
+
+        /// <summary>
+        /// Dispose any decoded full bitmaps, keeping the compressed blobs and thumbnail. Call when the
+        /// item is no longer the active/edited entry so resident full bitmaps stay bounded.
+        /// </summary>
+        internal void ReleaseDecodedImages()
+        {
+            if (decodeCache.Count == 0) return;
+            foreach (var bmp in decodeCache.Values)
+            {
+                bmp.Dispose();
+            }
+            decodeCache.Clear();
         }
 
         public void RebuildThumbnail()
@@ -294,9 +360,72 @@ namespace screenzap.Components
 
             using var perf = LoggerPerfScope(maxWidth, maxHeight);
 
+            // Rescale from the small cached source — no full-image decode on panel resize.
             var previous = Thumbnail;
-            Thumbnail = RenderImageThumbnail(PreviewComposite ?? CurrentImage, maxWidth, maxHeight);
+            Thumbnail = RenderImageThumbnail(thumbnailSource, maxWidth, maxHeight);
             previous?.Dispose();
+        }
+
+        private Bitmap? GetDecoded(StoredImage? stored)
+        {
+            if (stored == null) return null;
+            if (decodeCache.TryGetValue(stored, out var cached))
+            {
+                return cached;
+            }
+
+            var bmp = stored.Decode();
+            decodeCache[stored] = bmp;
+            return bmp;
+        }
+
+        // Drop decoded bitmaps whose blob is no longer referenced by any role (e.g. after an edit
+        // replaced `current`).
+        private void PruneDecodeCache()
+        {
+            if (decodeCache.Count == 0) return;
+            List<StoredImage>? dead = null;
+            foreach (var key in decodeCache.Keys)
+            {
+                if (!ReferenceEquals(key, original) && !ReferenceEquals(key, committed) && !ReferenceEquals(key, current))
+                {
+                    (dead ??= new List<StoredImage>()).Add(key);
+                }
+            }
+            if (dead == null) return;
+            foreach (var key in dead)
+            {
+                decodeCache[key].Dispose();
+                decodeCache.Remove(key);
+            }
+        }
+
+        // Rebuild the thumbnail source from whatever content is current, decoding once if needed.
+        private void RefreshThumbnailSource()
+        {
+            if (PreviewComposite != null)
+            {
+                SetThumbnailSourceFrom(PreviewComposite);
+                return;
+            }
+
+            if (current == null)
+            {
+                SetThumbnailSourceFrom(null);
+                return;
+            }
+
+            // One-shot decode (not cached) just to derive the small source; the full bitmap is freed
+            // immediately so it doesn't add to resident memory.
+            using var full = current.Decode();
+            SetThumbnailSourceFrom(full);
+        }
+
+        private void SetThumbnailSourceFrom(Bitmap? full)
+        {
+            thumbnailSource?.Dispose();
+            thumbnailSource = full == null ? null : RenderImageThumbnail(full, ThumbnailSourceMaxEdge, ThumbnailSourceMaxEdge);
+            RebuildThumbnail(lastThumbMaxWidth, lastThumbMaxHeight);
         }
 
         private IDisposable LoggerPerfScope(int maxWidth, int maxHeight)
@@ -334,52 +463,102 @@ namespace screenzap.Components
             return thumb;
         }
 
-        private static bool AreImagesEqual(Bitmap? a, Bitmap? b)
-        {
-            if (ReferenceEquals(a, b)) return true;
-            if (a == null || b == null) return false;
-            if (a.Size != b.Size) return false;
-            // Cheap signature: hash of downsampled bytes.
-            return ImageSignature(a).SequenceEqual(ImageSignature(b));
-        }
-
-        private static byte[] ImageSignature(Bitmap bmp)
-        {
-            // Downsample to 16x16 and dump ARGB bytes for a cheap equality check.
-            using var small = new Bitmap(16, 16, PixelFormat.Format32bppArgb);
-            using (var g = Graphics.FromImage(small))
-            {
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.DrawImage(bmp, new Rectangle(0, 0, 16, 16));
-            }
-            var rect = new Rectangle(0, 0, 16, 16);
-            var data = small.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            try
-            {
-                var buffer = new byte[16 * 16 * 4];
-                System.Runtime.InteropServices.Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
-                return buffer;
-            }
-            finally
-            {
-                small.UnlockBits(data);
-            }
-        }
-
         public void Dispose()
         {
-            OriginalImage?.Dispose();
-            CommittedImage?.Dispose();
-            CurrentImage?.Dispose();
+            ReleaseDecodedImages();
+            thumbnailSource?.Dispose();
             PreviewComposite?.Dispose();
             Thumbnail?.Dispose();
             ImageLayers = null; // setter disposes layer bitmaps
-            OriginalImage = null;
-            CommittedImage = null;
-            CurrentImage = null;
+            original = null;
+            committed = null;
+            current = null;
+            thumbnailSource = null;
             PreviewComposite = null;
             Thumbnail = null;
             suppressedSystemHistoryIds.Clear();
+        }
+
+        /// <summary>
+        /// Immutable, PNG-compressed image content plus a cheap 16×16 signature for equality checks.
+        /// Shared across roles and across cloned items (copy-on-write) since it never mutates.
+        /// </summary>
+        private sealed class StoredImage
+        {
+            public byte[] Png { get; }
+            public Size PixelSize { get; }
+            private readonly byte[] signature; // 16×16 ARGB downsample
+
+            private StoredImage(byte[] png, Size pixelSize, byte[] signature)
+            {
+                Png = png;
+                PixelSize = pixelSize;
+                this.signature = signature;
+            }
+
+            public static StoredImage FromBitmap(Bitmap bmp)
+            {
+                byte[] png;
+                using (var ms = new MemoryStream())
+                {
+                    bmp.Save(ms, ImageFormat.Png);
+                    png = ms.ToArray();
+                }
+                return new StoredImage(png, bmp.Size, ComputeSignature(bmp));
+            }
+
+            public static StoredImage FromPng(byte[] png)
+            {
+                using var ms = new MemoryStream(png, writable: false);
+                using var bmp = new Bitmap(ms);
+                return new StoredImage((byte[])png.Clone(), bmp.Size, ComputeSignature(bmp));
+            }
+
+            public Bitmap Decode()
+            {
+                using var ms = new MemoryStream(Png, writable: false);
+                using var decoded = new Bitmap(ms);
+                // Detach from the backing stream so the returned bitmap owns its pixels.
+                return new Bitmap(decoded);
+            }
+
+            public static bool ContentEquals(StoredImage? a, StoredImage? b)
+            {
+                if (ReferenceEquals(a, b)) return true;
+                if (a == null || b == null) return false;
+                if (a.PixelSize != b.PixelSize) return false;
+                return a.signature.AsSpan().SequenceEqual(b.signature);
+            }
+
+            private static byte[] ComputeSignature(Bitmap bmp)
+            {
+                // Downsample to 16x16 and dump ARGB bytes for a cheap, re-encode-tolerant equality check.
+                using var small = new Bitmap(16, 16, PixelFormat.Format32bppArgb);
+                using (var g = Graphics.FromImage(small))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(bmp, new Rectangle(0, 0, 16, 16));
+                }
+                var rect = new Rectangle(0, 0, 16, 16);
+                var data = small.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                try
+                {
+                    var buffer = new byte[16 * 16 * 4];
+                    System.Runtime.InteropServices.Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
+                    return buffer;
+                }
+                finally
+                {
+                    small.UnlockBits(data);
+                }
+            }
+        }
+
+        private sealed class ReferenceEqualityComparer : IEqualityComparer<StoredImage>
+        {
+            public static readonly ReferenceEqualityComparer Instance = new();
+            public bool Equals(StoredImage? x, StoredImage? y) => ReferenceEquals(x, y);
+            public int GetHashCode(StoredImage obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
         }
     }
 }

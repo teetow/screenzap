@@ -475,6 +475,21 @@ namespace screenzap.Components
             return historyPanel.ClickItemForDiagnostics(item.Id);
         }
 
+        internal bool SendKeyToHistoryItemForDiagnostics(ClipboardHistoryItem item, Keys keyData)
+        {
+            if (item == null)
+            {
+                return false;
+            }
+
+            return historyPanel.SendKeyToItemForDiagnostics(item.Id, keyData);
+        }
+
+        internal ClipboardHistoryItem? FocusedHistoryItemForDiagnostics => historyPanel.FocusedItemForDiagnostics;
+
+        internal bool SendKeyThroughHistoryFocusForDiagnostics(Keys keyData)
+            => historyPanel.SendKeyThroughFocusForDiagnostics(keyData);
+
         private bool ExecuteCommand(EditorCommandId commandId)
         {
             switch (commandId)

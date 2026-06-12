@@ -18,6 +18,14 @@ namespace screenzap.Components
             WriteIndented = false
         };
 
+        // Maps a saved image file name to the exact PNG byte[] last written to it. An item's role
+        // blobs are replaced with brand-new arrays whenever their content changes, so reference
+        // identity is a reliable "unchanged since last save" signal. This lets Save() skip rewriting
+        // the up-to-384 files that didn't change — O(changed images) instead of O(all images) when
+        // the history is full. Items now hold PNG-compressed bytes, so saving is a straight byte
+        // copy with no encode and no decode.
+        private readonly Dictionary<string, byte[]> lastSavedBytesByFile = new(StringComparer.OrdinalIgnoreCase);
+
         public ClipboardHistoryPersistence()
         {
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -110,6 +118,16 @@ namespace screenzap.Components
                         File.Delete(file);
                     }
                 }
+
+                // Drop cache entries for files no longer referenced so the dictionary doesn't pin
+                // byte arrays for removed items.
+                if (lastSavedBytesByFile.Count > keepFiles.Count)
+                {
+                    foreach (var stale in lastSavedBytesByFile.Keys.Where(k => !keepFiles.Contains(k)).ToList())
+                    {
+                        lastSavedBytesByFile.Remove(stale);
+                    }
+                }
             }
             catch
             {
@@ -171,29 +189,43 @@ namespace screenzap.Components
                 TextAnnotations = item.TextAnnotations?.Select(ToDto).ToList()
             };
 
-            entry.OriginalImagePath = SaveImage(item.Id, "original", item.OriginalImage, keepFiles);
-            entry.CommittedImagePath = SaveImage(item.Id, "committed", item.CommittedImage, keepFiles);
-            entry.CurrentImagePath = SaveImage(item.Id, "current", item.CurrentImage, keepFiles);
+            entry.OriginalImagePath = SaveImageBytes(item.Id, "original", item.OriginalPngBytes, keepFiles);
+            entry.CommittedImagePath = SaveImageBytes(item.Id, "committed", item.CommittedPngBytes, keepFiles);
+            entry.CurrentImagePath = SaveImageBytes(item.Id, "current", item.CurrentPngBytes, keepFiles);
 
             return entry;
         }
 
-        private string? SaveImage(Guid itemId, string role, Bitmap? image, HashSet<string> keepFiles)
+        private string? SaveImageBytes(Guid itemId, string role, byte[]? png, HashSet<string> keepFiles)
         {
-            if (image == null)
+            if (png == null)
             {
                 return null;
             }
 
+            var fileName = $"{itemId:N}_{role}.png";
+            var path = Path.Combine(rootDirectory, fileName);
+
+            // Skip rewriting when this exact byte array was already written to this file and the file
+            // still exists. Content can only change by swapping in a new array, so reference identity
+            // guarantees the on-disk copy is current. The bytes are already PNG-compressed by the
+            // item, so a write is a straight copy — no encode.
+            if (lastSavedBytesByFile.TryGetValue(fileName, out var previouslySaved)
+                && ReferenceEquals(previouslySaved, png)
+                && File.Exists(path))
+            {
+                keepFiles.Add(fileName);
+                return fileName;
+            }
+
             using var perf = PerfTrace.Scope(
                 "ClipboardHistoryPersistence.SaveImage",
-                () => $"role={role} size={image.Width}x{image.Height}",
+                () => $"role={role} bytes={png.Length}",
                 slowMs: 30,
                 summaryEvery: 50);
 
-            var fileName = $"{itemId:N}_{role}.png";
-            var path = Path.Combine(rootDirectory, fileName);
-            image.Save(path, ImageFormat.Png);
+            File.WriteAllBytes(path, png);
+            lastSavedBytesByFile[fileName] = png;
             keepFiles.Add(fileName);
             return fileName;
         }
@@ -207,26 +239,18 @@ namespace screenzap.Components
                 return null;
             }
 
-            var original = LoadBitmap(entry.OriginalImagePath);
-            var committed = LoadBitmap(entry.CommittedImagePath);
-            var current = LoadBitmap(entry.CurrentImagePath);
+            var original = LoadBytes(entry.OriginalImagePath);
+            var committed = LoadBytes(entry.CommittedImagePath);
+            var current = LoadBytes(entry.CurrentImagePath);
 
             if (original == null || committed == null || current == null)
             {
-                original?.Dispose();
-                committed?.Dispose();
-                current?.Dispose();
                 return null;
             }
 
-            using (original)
-            using (committed)
-            using (current)
-            {
-                var item = ClipboardHistoryItem.FromPersistedImage(entry.Id, entry.CreatedUtc, original, committed, current);
-                ApplyCommonEntryState(item, entry);
-                return item;
-            }
+            var item = ClipboardHistoryItem.FromPersistedPng(entry.Id, entry.CreatedUtc, original, committed, current);
+            ApplyCommonEntryState(item, entry);
+            return item;
         }
 
         private void ApplyCommonEntryState(ClipboardHistoryItem item, ClipboardHistoryItemEntry entry)
@@ -248,7 +272,7 @@ namespace screenzap.Components
             item.SetDirtyFlagForRestore(entry.IsDirty);
         }
 
-        private Bitmap? LoadBitmap(string? relativePath)
+        private byte[]? LoadBytes(string? relativePath)
         {
             if (string.IsNullOrWhiteSpace(relativePath))
             {
@@ -261,8 +285,7 @@ namespace screenzap.Components
                 return null;
             }
 
-            using var loaded = new Bitmap(path);
-            return new Bitmap(loaded);
+            return File.ReadAllBytes(path);
         }
 
         private static AnnotationShapeDto ToDto(AnnotationShape shape)

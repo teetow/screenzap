@@ -69,6 +69,11 @@ namespace screenzap.Components
                 return;
             }
 
+            // The outgoing item is no longer on screen at full size, so free its decoded full bitmaps;
+            // it keeps its compressed blobs + thumbnail and will re-decode lazily if reactivated. This
+            // is what keeps resident full bitmaps bounded to ~the active item.
+            activeItem?.ReleaseDecodedImages();
+
             activeItem = item;
             ActiveItemChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -172,6 +177,17 @@ namespace screenzap.Components
         public void ReplaceAll(IEnumerable<ClipboardHistoryItem> newOrder)
         {
             var incoming = newOrder.ToList();
+
+            // The WinRT history sync calls this on every Windows HistoryChanged event and usually
+            // reuses the exact same item instances in the exact same order (nothing actually moved).
+            // Short-circuit that no-op so it doesn't fan out into a full panel rebuild and a full
+            // persistence re-save. Reference identity (not Id) is required: identical Ids with
+            // different instances would mean we'd skip disposing the replaced ones.
+            if (IsReferenceIdenticalOrder(incoming))
+            {
+                return;
+            }
+
             var incomingIds = new HashSet<Guid>(incoming.Select(i => i.Id));
 
             // Dispose items that disappear (but weren't transferred to the new list).
@@ -199,6 +215,24 @@ namespace screenzap.Components
             }
 
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        private bool IsReferenceIdenticalOrder(List<ClipboardHistoryItem> incoming)
+        {
+            if (incoming.Count != items.Count)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < incoming.Count; i++)
+            {
+                if (!ReferenceEquals(incoming[i], items[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

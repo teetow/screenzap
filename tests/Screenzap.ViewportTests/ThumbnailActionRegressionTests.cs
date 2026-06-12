@@ -344,6 +344,318 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void DeleteKey_OnFocusedThumbnail_RemovesOnlyThatItem()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubImagePresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+
+                    var first = AddImage(host.HistoryStore, Color.Red);
+                    var second = AddImage(host.HistoryStore, Color.Blue);
+                    var third = AddImage(host.HistoryStore, Color.Green);
+
+                    // Create handles after the buttons exist so the focused-Delete path runs its real
+                    // deferred (BeginInvoke) branch rather than the handleless fallback.
+                    host.CreateControl();
+                    Application.DoEvents();
+
+                    // A non-Delete key on a focused thumbnail must not remove anything.
+                    Assert.True(host.SendKeyToHistoryItemForDiagnostics(second, Keys.A));
+                    Application.DoEvents();
+                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, second));
+
+                    // Delete on the focused thumbnail removes exactly that item (deferred via
+                    // BeginInvoke, hence the DoEvents pump), leaving the others untouched.
+                    Assert.True(host.SendKeyToHistoryItemForDiagnostics(second, Keys.Delete));
+                    Application.DoEvents();
+
+                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, second));
+                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, first));
+                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, third));
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void ClickFocusesThumbnail_AndDeleteThroughFocus_RemovesItemsSerially()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubImagePresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+                    var first = AddImage(host.HistoryStore, Color.Red);
+                    var second = AddImage(host.HistoryStore, Color.Blue);
+                    var third = AddImage(host.HistoryStore, Color.Green);
+
+                    host.CreateControl();
+                    Application.DoEvents();
+
+                    // A real click must leave keyboard focus on the thumbnail — that focus is the
+                    // only thing that routes Delete to the list (regression: it never landed there).
+                    Assert.True(host.ClickHistoryItemForDiagnostics(second));
+                    Assert.Same(second, host.FocusedHistoryItemForDiagnostics);
+
+                    // Route Delete through whatever holds focus, not a hand-picked button.
+                    int index = host.HistoryStore.Items.ToList().FindIndex(i => ReferenceEquals(i, second));
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
+                    Application.DoEvents();
+
+                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, second));
+
+                    // Selection lands on the item now occupying the deleted slot, so Delete chains.
+                    var successor = host.HistoryStore.Items[Math.Min(index, host.HistoryStore.Items.Count - 1)];
+                    Assert.Same(successor, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(successor, host.HistoryStore.ActiveItem);
+
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
+                    Application.DoEvents();
+
+                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, successor));
+                    Assert.Single(host.HistoryStore.Items);
+                    Assert.Same(host.HistoryStore.Items[0], host.FocusedHistoryItemForDiagnostics);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void ArrowKeys_MoveTheSelection_FocusAndActivationTogether()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubImagePresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+                    AddImage(host.HistoryStore, Color.Red);
+                    AddImage(host.HistoryStore, Color.Blue);
+                    AddImage(host.HistoryStore, Color.Green);
+
+                    host.CreateControl();
+                    Application.DoEvents();
+
+                    // Items in display (store) order — flow order mirrors it.
+                    var top = host.HistoryStore.Items[0];
+                    var mid = host.HistoryStore.Items[1];
+                    var bottom = host.HistoryStore.Items[2];
+
+                    Assert.True(host.ClickHistoryItemForDiagnostics(top));
+                    Assert.Same(top, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(top, host.HistoryStore.ActiveItem);
+
+                    // One selection: the keyboard, the focus cue and the active (blue) item all
+                    // travel together.
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
+                    Assert.Same(mid, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(mid, host.HistoryStore.ActiveItem);
+
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
+                    Assert.Same(bottom, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(bottom, host.HistoryStore.ActiveItem);
+
+                    // Clamps at the bottom instead of wrapping or escaping the list.
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
+                    Assert.Same(bottom, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(bottom, host.HistoryStore.ActiveItem);
+
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Up));
+                    Assert.Same(mid, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(mid, host.HistoryStore.ActiveItem);
+
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Home));
+                    Assert.Same(top, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(top, host.HistoryStore.ActiveItem);
+
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.End));
+                    Assert.Same(bottom, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(bottom, host.HistoryStore.ActiveItem);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void ListKeepsFocus_WhenEditorGrabsItAsynchronously_OnLoad()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubImagePresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+                    AddImage(host.HistoryStore, Color.Red);
+                    AddImage(host.HistoryStore, Color.Blue);
+                    AddImage(host.HistoryStore, Color.Green);
+
+                    // CreateControl is a no-op on invisible forms; the deferred (BeginInvoke) focus
+                    // races need a real handle, so force one.
+                    _ = host.Handle;
+                    Application.DoEvents();
+
+                    // Arm the editor-style deferred focus grab (real ImageEditor.LoadImage posts a
+                    // re-center ending in pictureBox1.Focus(), which beats any synchronous reclaim).
+                    var editorFocusTarget = new Button();
+                    presenter.View.Controls.Add(editorFocusTarget);
+                    presenter.AsyncFocusStealTarget = editorFocusTarget;
+
+                    // Click an item that is NOT already active (activating the active item takes a
+                    // short-circuit path that never loads, and so never steals), and not the last
+                    // one so Down has somewhere to go.
+                    var items = host.HistoryStore.Items;
+                    int clickIndex = ReferenceEquals(items[0], host.HistoryStore.ActiveItem) ? 1 : 0;
+                    var clickTarget = items[clickIndex];
+                    var downTarget = items[clickIndex + 1];
+
+                    // Click: even after the editor's posted grab runs, the keyboard must stay on
+                    // the clicked thumbnail — this was the "have to click twice" regression.
+                    Assert.True(host.ClickHistoryItemForDiagnostics(clickTarget));
+                    Assert.Equal(1, presenter.StealsPosted);
+                    Application.DoEvents();
+                    Assert.Equal(1, presenter.StealsRun);
+                    Assert.Same(clickTarget, host.FocusedHistoryItemForDiagnostics);
+
+                    // Same for arrow navigation, which also loads the destination item.
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
+                    Application.DoEvents();
+                    Assert.Equal(2, presenter.StealsRun);
+                    Assert.Same(downTarget, host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(downTarget, host.HistoryStore.ActiveItem);
+
+                    // And for Delete, where the successor's activation loads it into the editor.
+                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
+                    Application.DoEvents();
+                    Assert.Equal(3, presenter.StealsRun);
+                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, downTarget));
+                    Assert.NotNull(host.FocusedHistoryItemForDiagnostics);
+                    Assert.Same(host.HistoryStore.ActiveItem, host.FocusedHistoryItemForDiagnostics);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void DeleteKey_DoesNotReachHistoryList_WhenFocusIsElsewhere()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var presenter = new StubImagePresenter();
+                    using var host = new ClipboardEditorHostForm(true, presenter)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false
+                    };
+
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+                    var first = AddImage(host.HistoryStore, Color.Red);
+                    var second = AddImage(host.HistoryStore, Color.Blue);
+
+                    host.CreateControl();
+                    Application.DoEvents();
+
+                    Assert.True(host.ClickHistoryItemForDiagnostics(second));
+                    Assert.Same(second, host.FocusedHistoryItemForDiagnostics);
+
+                    // Move focus out of the history list, as a click into the editor would.
+                    var editorFocusTarget = new Button();
+                    presenter.View.Controls.Add(editorFocusTarget);
+                    editorFocusTarget.Select();
+                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
+
+                    // With focus elsewhere there is no focused thumbnail for Delete to act on.
+                    Assert.False(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
+                    Application.DoEvents();
+
+                    Assert.Equal(2, host.HistoryStore.Items.Count);
+                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, first));
+                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, second));
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
+
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
         public void DeleteSystemHistoryItem_RemovesLocalItemBeforeSystemDeleteCompletes()
         {
             Exception? failure = null;
@@ -722,9 +1034,35 @@ namespace Screenzap.ViewportTests
                 return item.Kind == ClipboardItemKind.Image;
             }
 
+            /// <summary>
+            /// When set, LoadHistoryItem posts a deferred focus grab on this control — mirroring
+            /// the real ImageEditor, whose LoadImage posts a re-center that ends in
+            /// pictureBox1.Focus() and so steals focus AFTER any synchronous reclaim.
+            /// </summary>
+            public System.Windows.Forms.Control? AsyncFocusStealTarget { get; set; }
+
+            // Let tests assert the steal really happened — a steal that never runs would make any
+            // "list keeps focus" assertion pass vacuously.
+            public int StealsPosted { get; private set; }
+            public int StealsRun { get; private set; }
+
             public void LoadHistoryItem(ClipboardHistoryItem item)
             {
                 CurrentColor = item.CurrentImage != null ? item.CurrentImage.GetPixel(0, 0) : Color.Empty;
+
+                if (AsyncFocusStealTarget is { } steal
+                    && view.FindForm() is { IsHandleCreated: true } form)
+                {
+                    StealsPosted++;
+                    form.BeginInvoke(new Action(() =>
+                    {
+                        if (!steal.IsDisposed)
+                        {
+                            steal.Select();
+                            StealsRun++;
+                        }
+                    }));
+                }
             }
 
             public void StashHistoryItemState(ClipboardHistoryItem item)

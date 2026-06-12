@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
@@ -19,6 +20,7 @@ namespace screenzap.Components
         private readonly FlowLayoutPanel flow;
         private readonly ToolTip tooltip = new ToolTip();
         private readonly Dictionary<Guid, ThumbnailButton> buttons = new();
+        private readonly Dictionary<Guid, string> tooltipTextById = new();
         private readonly ContextMenuStrip listMenu;
         private readonly ToolStripMenuItem refreshFromWindowsHistoryItem;
         private readonly ToolStripMenuItem activateNewestItem;
@@ -150,7 +152,102 @@ namespace screenzap.Components
             if (buttons.TryGetValue(item.Id, out var btn))
             {
                 btn.Rebind(item, ReferenceEquals(store?.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
+                UpdateToolTip(btn, item);
             }
+        }
+
+        private void UpdateToolTip(ThumbnailButton btn, ClipboardHistoryItem item)
+        {
+            // SetToolTip re-registers the control with the win32 tooltip and is comparatively slow,
+            // so only call it when the text actually changed (dirty flag / timestamp).
+            var text = BuildToolTip(item);
+            if (tooltipTextById.TryGetValue(item.Id, out var existing) && existing == text)
+            {
+                return;
+            }
+
+            tooltipTextById[item.Id] = text;
+            tooltip.SetToolTip(btn, text);
+        }
+
+        private void DeleteAndReclaimFocus(ThumbnailButton source, ClipboardHistoryItem item)
+        {
+            // Capture focus/position before the delete disposes the button.
+            bool reclaim = HasLogicalFocus(source);
+            int index = flow.Controls.GetChildIndex(source);
+
+            ItemDelete?.Invoke(this, item);
+
+            // Deleting the active item activates its successor, which focuses the editor canvas.
+            // Pull focus onto the button now occupying the deleted slot so serial Deletes work.
+            if (!reclaim || flow.Controls.Count == 0) return;
+            var successor = flow.Controls[Math.Min(index, flow.Controls.Count - 1)];
+            KeepFocusOn(successor);
+        }
+
+        // Up/Down (Left/Right as aliases — the list is a single column) move the SELECTION:
+        // the destination item is activated, so the blue border, the editor content and the
+        // keyboard all travel together. Home/End jump to the ends.
+        private void NavigateFocusFrom(ThumbnailButton source, Keys key)
+        {
+            int count = flow.Controls.Count;
+            if (count == 0) return;
+
+            int index = flow.Controls.GetChildIndex(source);
+            int target = key switch
+            {
+                Keys.Up or Keys.Left => Math.Max(0, index - 1),
+                Keys.Down or Keys.Right => Math.Min(count - 1, index + 1),
+                Keys.Home => 0,
+                Keys.End => count - 1,
+                _ => index
+            };
+
+            if (target == index) return;
+            if (flow.Controls[target] is not ThumbnailButton destination) return;
+
+            if (destination.Item != null)
+                ItemActivated?.Invoke(this, destination.Item);
+            if (!destination.IsDisposed)
+                KeepFocusOn(destination);
+        }
+
+        // Focus a thumbnail and KEEP it focused. Activating an item makes the editor load it, and
+        // ImageEditor.LoadImage posts a deferred re-center that ends in pictureBox1.Focus() — so a
+        // plain synchronous Select() here always loses the race. Post our own reclaim too: it is
+        // queued after the editor's (the activation that posted theirs ran before this call), so
+        // it deterministically runs last. The sync Select still covers handleless (test) runs.
+        private void KeepFocusOn(Control target)
+        {
+            target.Select();
+            flow.ScrollControlIntoView(target);
+
+            if (FindForm() is not { IsHandleCreated: true } form) return;
+            form.BeginInvoke(new Action(() =>
+            {
+                if (!target.IsDisposed && !IsDisposed)
+                {
+                    target.Select();
+                }
+            }));
+        }
+
+        // ContainsFocus is OS-focus based and stays false on forms that have never been shown
+        // (tests, pre-Show init), so logical focus also consults the ActiveControl chain.
+        private static bool HasLogicalFocus(Control control)
+        {
+            if (control.ContainsFocus) return true;
+            return control.FindForm() is Form form && GetLeafActiveControl(form) == control;
+        }
+
+        private static Control? GetLeafActiveControl(ContainerControl container)
+        {
+            Control? active = container.ActiveControl;
+            while (active is ContainerControl nested && nested.ActiveControl != null)
+            {
+                active = nested.ActiveControl;
+            }
+            return active;
         }
 
         private void UpdateActiveSelection()
@@ -197,11 +294,13 @@ namespace screenzap.Components
             try
             {
                 var existingIds = buttons.Keys.ToHashSet();
-                var liveIds = new HashSet<Guid>();
+                var items = store.Items;
+                var liveIds = new HashSet<Guid>(items.Count);
 
-                flow.Controls.Clear();
-
-                foreach (var item in store.Items)
+                // Incremental update: reuse existing buttons, only create/remove what changed and
+                // fix the child order in place. Avoids tearing down and re-adding every control (and
+                // re-registering every tooltip) on each change — costly when the history is full.
+                foreach (var item in items)
                 {
                     liveIds.Add(item.Id);
                     bool isNewButton = !buttons.TryGetValue(item.Id, out var btn);
@@ -212,12 +311,18 @@ namespace screenzap.Components
                         {
                             if (btn.Item != null)
                                 ItemActivated?.Invoke(this, btn.Item);
+                            // Activation hands focus to the editor; keep the keyboard on the selected
+                            // thumbnail instead (KeepFocusOn also beats the editor's deferred grab).
+                            if (!btn.IsDisposed)
+                                KeepFocusOn(btn);
                         };
                         btn.OnSetActive  = i => ItemSetActive?.Invoke(this, i);
                         btn.OnDuplicate  = i => ItemDuplicate?.Invoke(this, i);
                         btn.OnRevert     = i => ItemRevert?.Invoke(this, i);
-                        btn.OnDelete     = i => ItemDelete?.Invoke(this, i);
+                        btn.OnDelete     = i => DeleteAndReclaimFocus(btn, i);
+                        btn.OnNavigate   = NavigateFocusFrom;
                         buttons[item.Id] = btn;
+                        flow.Controls.Add(btn);
                     }
 
                     if (isNewButton || item.Thumbnail == null)
@@ -225,8 +330,7 @@ namespace screenzap.Components
                         item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
                     }
                     btn!.Rebind(item, ReferenceEquals(store.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
-                    tooltip.SetToolTip(btn, BuildToolTip(item));
-                    flow.Controls.Add(btn);
+                    UpdateToolTip(btn, item);
                 }
 
                 // Dispose buttons for removed items.
@@ -235,7 +339,18 @@ namespace screenzap.Components
                     if (buttons.TryGetValue(goneId, out var orphan))
                     {
                         buttons.Remove(goneId);
+                        tooltipTextById.Remove(goneId);
+                        flow.Controls.Remove(orphan);
                         orphan.Dispose();
+                    }
+                }
+
+                // Align the flow's child order with the store order (cheap when already correct).
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (buttons.TryGetValue(items[i].Id, out var ordered))
+                    {
+                        flow.Controls.SetChildIndex(ordered, i);
                     }
                 }
             }
@@ -327,6 +442,39 @@ namespace screenzap.Components
             return true;
         }
 
+        internal bool SendKeyToItemForDiagnostics(Guid itemId, Keys keyData)
+        {
+            if (!buttons.TryGetValue(itemId, out var btn))
+            {
+                return false;
+            }
+
+            btn.SendKeyForDiagnostics(keyData);
+            return true;
+        }
+
+        /// <summary>The history item whose thumbnail holds (logical) keyboard focus, if any.</summary>
+        internal ClipboardHistoryItem? FocusedItemForDiagnostics =>
+            FindForm() is Form form && GetLeafActiveControl(form) is ThumbnailButton { IsDisposed: false } btn
+                ? btn.Item
+                : null;
+
+        /// <summary>
+        /// Deliver a key the way the OS would: to whatever holds focus. Returns false (and delivers
+        /// nothing) when no thumbnail is focused — mirroring that Delete can't reach the list then.
+        /// </summary>
+        internal bool SendKeyThroughFocusForDiagnostics(Keys keyData)
+        {
+            if (FindForm() is not Form form
+                || GetLeafActiveControl(form) is not ThumbnailButton { IsDisposed: false } btn)
+            {
+                return false;
+            }
+
+            btn.SendKeyForDiagnostics(keyData);
+            return true;
+        }
+
         internal Size GetItemButtonSizeForDiagnostics(Guid itemId)
         {
             return buttons.TryGetValue(itemId, out var btn)
@@ -361,6 +509,7 @@ namespace screenzap.Components
             public Action<ClipboardHistoryItem>? OnDuplicate;
             public Action<ClipboardHistoryItem>? OnRevert;
             public Action<ClipboardHistoryItem>? OnDelete;
+            public Action<ThumbnailButton, Keys>? OnNavigate;
 
             public ClipboardHistoryItem? Item { get; private set; }
 
@@ -371,6 +520,7 @@ namespace screenzap.Components
                 Margin = new Padding(0, 0, 0, 4);
                 Cursor = Cursors.Hand;
                 BackColor = Color.FromArgb(24, 24, 28);
+                TabStop = true; // reachable via Tab so the keyboard Delete shortcut has somewhere to land
 
                 setActiveItem = new ToolStripMenuItem("Set as Active") { Image = MakeIcon(IconChar.Clipboard, Color.FromArgb(180, 220, 255)) };
                 setActiveItem.Click += (s, e) => { if (Item != null) OnSetActive?.Invoke(Item); };
@@ -392,6 +542,72 @@ namespace screenzap.Components
 
             private static Bitmap MakeIcon(IconChar icon, Color color)
                 => FormsIconHelper.ToBitmap(icon, color, 16, 0, FlipOrientation.Normal);
+
+            // Raw Control doesn't take keyboard focus on click (that's ButtonBase behavior), so take
+            // it explicitly — the click → Delete flow needs the key to land on this button.
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                Select();
+                base.OnMouseDown(e);
+            }
+
+            // Make sure Delete and the arrow keys reach OnKeyDown instead of being treated as
+            // dialog-navigation keys (which would move focus to unrelated controls form-wide).
+            protected override bool IsInputKey(Keys keyData)
+                => (keyData & Keys.KeyCode) is Keys.Delete or Keys.Up or Keys.Down or Keys.Left or Keys.Right
+                    || base.IsInputKey(keyData);
+
+            protected override void OnKeyDown(KeyEventArgs e)
+            {
+                // Delete the focused history item. This handler lives on the thumbnail button, so it
+                // can ONLY run while this button holds keyboard focus — focus is singular, so it can
+                // never fire while the image editor is focused for editing. That scoping (not a flag)
+                // is the safety guarantee: there is no path where an in-editor Delete reaches here.
+                if (e.KeyCode == Keys.Delete && Item != null && OnDelete is { } handler)
+                {
+                    // Capture the item — the button may be reused/disposed by the time we delete.
+                    var target = Item;
+                    if (IsHandleCreated)
+                    {
+                        // Invoking now would run the store mutation that disposes THIS button (via the
+                        // panel rebuild) in the middle of its own key event. Post it so the key event
+                        // unwinds first.
+                        BeginInvoke((Action)(() => handler(target)));
+                    }
+                    else
+                    {
+                        // No window handle means this isn't a live focused control (only reachable
+                        // from diagnostics), so nothing is unwinding our WndProc — a direct call is safe.
+                        handler(target);
+                    }
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    return;
+                }
+
+                if (e.KeyCode is Keys.Up or Keys.Down or Keys.Left or Keys.Right or Keys.Home or Keys.End
+                    && OnNavigate is { } navigate)
+                {
+                    navigate(this, e.KeyCode);
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    return;
+                }
+
+                base.OnKeyDown(e);
+            }
+
+            protected override void OnGotFocus(EventArgs e)
+            {
+                base.OnGotFocus(e);
+                Invalidate();
+            }
+
+            protected override void OnLostFocus(EventArgs e)
+            {
+                base.OnLostFocus(e);
+                Invalidate();
+            }
 
             public void Rebind(ClipboardHistoryItem item, bool active)
             {
@@ -430,7 +646,15 @@ namespace screenzap.Components
 
             internal void ClickForDiagnostics()
             {
+                // Mirror a real click's event order: mouse-down (which takes focus) precedes the click.
+                OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, 1, 1, 0));
                 OnClick(EventArgs.Empty);
+                OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, 1, 1, 0));
+            }
+
+            internal void SendKeyForDiagnostics(Keys keyData)
+            {
+                OnKeyDown(new KeyEventArgs(keyData));
             }
 
             protected override void OnPaint(PaintEventArgs e)
@@ -454,6 +678,14 @@ namespace screenzap.Components
                     g.FillEllipse(dirtyBrush, new Rectangle(Width - 11, 2, 8, 8));
                     using var border = new Pen(Color.Black, 1f);
                     g.DrawEllipse(border, new Rectangle(Width - 11, 2, 8, 8));
+                }
+
+                // Keyboard-focus cue: a dotted ring around the whole button, distinct from the solid
+                // blue "active" border, so the user can see which item the Delete key will remove.
+                if (Focused)
+                {
+                    using var focusPen = new Pen(Color.White, 1f) { DashStyle = DashStyle.Dot };
+                    g.DrawRectangle(focusPen, new Rectangle(1, 1, Width - 3, Height - 3));
                 }
             }
         }

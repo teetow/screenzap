@@ -290,10 +290,25 @@ namespace screenzap.Components.Shared
             Invalidate();
         }
 
+        /// <summary>
+        /// Opt-in file logging for viewport diagnostics. Off by default: LogDebug runs on every
+        /// pan/zoom/resize, and writing to disk there (open + append + close on the UI thread, on
+        /// every mouse-move frame) introduces visible interaction jank. Flip this only while
+        /// actively chasing a viewport bug.
+        /// </summary>
+        public static bool EnableFileLogging;
+
+        [Conditional("DEBUG")]
         private static void LogDebug(string message)
         {
             var line = $"[{DateTime.Now:HH:mm:ss.fff}] [ImageViewport] {message}";
             Debug.WriteLine(line);
+
+            if (!EnableFileLogging)
+            {
+                return;
+            }
+
             try
             {
                 var logPath = System.IO.Path.Combine(

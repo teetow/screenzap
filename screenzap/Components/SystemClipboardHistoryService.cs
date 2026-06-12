@@ -323,7 +323,10 @@ namespace screenzap.Components
                 ms.Position = 0;
                 try
                 {
-                    return new Bitmap(ms);
+                    // Detach from ms: a stream-backed Bitmap breaks once ms is disposed (draw-copies
+                    // happen to work, but Save() throws a generic GDI+ error on PNG re-encode).
+                    using var streamBacked = new Bitmap(ms);
+                    return new Bitmap(streamBacked);
                 }
                 catch
                 {
@@ -388,7 +391,9 @@ namespace screenzap.Components
                     ms.Position = 0;
                     try
                     {
-                        return new Bitmap(ms);
+                        // Detach from ms — see TryDecodeBitmapFromBitmapReferenceAsync.
+                        using var streamBacked = new Bitmap(ms);
+                        return new Bitmap(streamBacked);
                     }
                     catch
                     {
@@ -568,7 +573,9 @@ namespace screenzap.Components
             {
                 if (string.IsNullOrEmpty(item.SystemHistoryId)) continue;
 
-                if (AreImagesEquivalent(item.CurrentImage, candidate.CurrentImage))
+                // ContentMatches compares cached 16×16 signatures, so this scan never decodes the
+                // full (compressed) images — important because it runs per item on every sync.
+                if (item.ContentMatches(candidate))
                 {
                     return true;
                 }
@@ -608,37 +615,6 @@ namespace screenzap.Components
                 ? item.CreatedUtc
                 : DateTime.SpecifyKind(item.CreatedUtc, DateTimeKind.Utc);
             return new DateTimeOffset(createdUtc);
-        }
-
-        private static bool AreImagesEquivalent(Bitmap? a, Bitmap? b)
-        {
-            if (ReferenceEquals(a, b)) return true;
-            if (a == null || b == null) return false;
-            if (a.Size != b.Size) return false;
-            return ImageSignature(a).SequenceEqual(ImageSignature(b));
-        }
-
-        private static byte[] ImageSignature(Bitmap bmp)
-        {
-            using var small = new Bitmap(16, 16, PixelFormat.Format32bppArgb);
-            using (var g = Graphics.FromImage(small))
-            {
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.DrawImage(bmp, new Rectangle(0, 0, 16, 16));
-            }
-
-            var rect = new Rectangle(0, 0, 16, 16);
-            var data = small.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            try
-            {
-                var buffer = new byte[16 * 16 * 4];
-                System.Runtime.InteropServices.Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
-                return buffer;
-            }
-            finally
-            {
-                small.UnlockBits(data);
-            }
         }
 
         /// <summary>
