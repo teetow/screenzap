@@ -924,6 +924,26 @@ namespace screenzap.Components
             Bounds = clamped;
         }
 
+        /// <summary>
+        /// Brings the host on screen: restores from minimized, shows if hidden, then activates.
+        /// Activate() alone does not un-minimize (the window stays Visible while minimized), which
+        /// made tray double-clicks look like no-ops.
+        /// </summary>
+        internal void ShowAndActivate()
+        {
+            if (WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+
+            if (!Visible)
+            {
+                Show();
+            }
+
+            Activate();
+        }
+
         private void FocusHostWindow()
         {
             if (InvokeRequired)
@@ -938,17 +958,7 @@ namespace screenzap.Components
                 return;
             }
 
-            if (WindowState == FormWindowState.Minimized)
-            {
-                WindowState = FormWindowState.Normal;
-            }
-
-            if (!Visible)
-            {
-                Show();
-            }
-
-            Activate();
+            ShowAndActivate();
             FocusActivePresenter();
         }
 

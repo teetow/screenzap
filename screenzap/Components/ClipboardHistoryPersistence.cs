@@ -39,6 +39,10 @@ namespace screenzap.Components
 
         public (List<ClipboardHistoryItem> Items, Guid? ActiveItemId) Load()
         {
+            using var perf = PerfTrace.Scope(
+                "ClipboardHistoryPersistence.Load",
+                slowMs: 200);
+
             try
             {
                 var manifestPath = Path.Combine(rootDirectory, ManifestFileName);
@@ -193,7 +197,54 @@ namespace screenzap.Components
             entry.CommittedImagePath = SaveImageBytes(item.Id, "committed", item.CommittedPngBytes, keepFiles);
             entry.CurrentImagePath = SaveImageBytes(item.Id, "current", item.CurrentPngBytes, keepFiles);
 
+            // Size + signature per role and a small thumbnail file let Load rebuild the item
+            // without decoding any full image.
+            entry.OriginalImageMeta = ToMetaDto(item.OriginalImageMeta);
+            entry.CommittedImageMeta = ToMetaDto(item.CommittedImageMeta);
+            entry.CurrentImageMeta = ToMetaDto(item.CurrentImageMeta);
+            entry.ThumbnailImagePath = SaveImageBytes(item.Id, "thumb", item.ThumbnailSourcePngBytes, keepFiles);
+
             return entry;
+        }
+
+        private static ImageRoleMetaDto? ToMetaDto(RoleImageMeta? meta)
+        {
+            if (meta == null)
+            {
+                return null;
+            }
+
+            return new ImageRoleMetaDto
+            {
+                Width = meta.Value.PixelSize.Width,
+                Height = meta.Value.PixelSize.Height,
+                Signature = Convert.ToBase64String(meta.Value.Signature)
+            };
+        }
+
+        private static RoleImageMeta? FromMetaDto(ImageRoleMetaDto? dto)
+        {
+            if (dto == null || dto.Width <= 0 || dto.Height <= 0 || string.IsNullOrEmpty(dto.Signature))
+            {
+                return null;
+            }
+
+            byte[] signature;
+            try
+            {
+                signature = Convert.FromBase64String(dto.Signature);
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+
+            if (signature.Length != RoleImageMeta.SignatureByteLength)
+            {
+                return null;
+            }
+
+            return new RoleImageMeta(new Size(dto.Width, dto.Height), signature);
         }
 
         private string? SaveImageBytes(Guid itemId, string role, byte[]? png, HashSet<string> keepFiles)
@@ -248,7 +299,16 @@ namespace screenzap.Components
                 return null;
             }
 
-            var item = ClipboardHistoryItem.FromPersistedPng(entry.Id, entry.CreatedUtc, original, committed, current);
+            var item = ClipboardHistoryItem.FromPersistedPng(
+                entry.Id,
+                entry.CreatedUtc,
+                original,
+                committed,
+                current,
+                FromMetaDto(entry.OriginalImageMeta),
+                FromMetaDto(entry.CommittedImageMeta),
+                FromMetaDto(entry.CurrentImageMeta),
+                LoadBytes(entry.ThumbnailImagePath));
             ApplyCommonEntryState(item, entry);
             return item;
         }
@@ -378,8 +438,19 @@ namespace screenzap.Components
             public string? OriginalImagePath { get; set; }
             public string? CommittedImagePath { get; set; }
             public string? CurrentImagePath { get; set; }
+            public ImageRoleMetaDto? OriginalImageMeta { get; set; }
+            public ImageRoleMetaDto? CommittedImageMeta { get; set; }
+            public ImageRoleMetaDto? CurrentImageMeta { get; set; }
+            public string? ThumbnailImagePath { get; set; }
             public List<AnnotationShapeDto>? Annotations { get; set; }
             public List<TextAnnotationDto>? TextAnnotations { get; set; }
+        }
+
+        private sealed class ImageRoleMetaDto
+        {
+            public int Width { get; set; }
+            public int Height { get; set; }
+            public string? Signature { get; set; }
         }
 
         private sealed class AnnotationShapeDto

@@ -509,15 +509,13 @@ namespace screenzap
                     notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain image data.", ToolTipIcon.Info);
                     return;
                 }
-                if (!host.Visible) host.Show();
-                host.Activate();
+                host.ShowAndActivate();
                 return;
             }
 
             host.ActivatePreferredHistoryItem();
             host.FitToContent();
-            if (!host.Visible) host.Show();
-            host.Activate();
+            host.ShowAndActivate();
         }
 
         private ClipboardEditorHostForm EnsureClipboardHost()

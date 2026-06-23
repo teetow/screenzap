@@ -10,6 +10,7 @@ namespace screenzap.lib
         private static readonly string LogDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Screenzap");
         private static readonly string LogPath = Path.Combine(LogDirectory, "screenzap.log");
         private const long MaxBytes = 1_000_000; // ~1 MB cap
+        private const int ArchiveRetentionDays = 30;
         private static bool sessionInitialized;
 
         internal static void Log(string message)
@@ -42,6 +43,7 @@ namespace screenzap.lib
                         TryResetLogFile();
                     }
 
+                    PurgeOldArchives();
                     sessionInitialized = false;
                     EnsureSessionHeader();
                 }
@@ -96,6 +98,41 @@ namespace screenzap.lib
                 {
                     // Last resort: leave the old log in place.
                 }
+            }
+        }
+
+        private static void PurgeOldArchives()
+        {
+            try
+            {
+                if (!Directory.Exists(LogDirectory))
+                {
+                    return;
+                }
+
+                var cutoffUtc = DateTime.UtcNow.AddDays(-ArchiveRetentionDays);
+
+                // The underscore in the pattern matches both archive forms (session archives
+                // screenzap_*.prev.log and size rotations screenzap_*.log) while never matching
+                // the live screenzap.log.
+                foreach (var file in Directory.GetFiles(LogDirectory, "screenzap_*.log"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(file) < cutoffUtc)
+                        {
+                            File.Delete(file);
+                        }
+                    }
+                    catch
+                    {
+                        // Skip files we can't inspect or delete.
+                    }
+                }
+            }
+            catch
+            {
+                // Purging must never prevent app startup.
             }
         }
 

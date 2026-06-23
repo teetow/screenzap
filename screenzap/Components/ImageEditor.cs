@@ -728,10 +728,20 @@ namespace screenzap
             }
         }
 
+        // File output is gated behind ImageViewportControl.EnableFileLogging (one switch for all
+        // viewport diagnostics) — unconditional appends here grew viewport-debug.log by ~15 lines
+        // per image load in release builds, reaching 100+ MB.
+        [System.Diagnostics.Conditional("DEBUG")]
         private static void LogViewportDebug(string message)
         {
             var line = $"[{DateTime.Now:HH:mm:ss.fff}] [ImageEditor] {message}";
             System.Diagnostics.Debug.WriteLine(line);
+
+            if (!ImageViewportControl.EnableFileLogging)
+            {
+                return;
+            }
+
             try
             {
                 var logPath = Path.Combine(

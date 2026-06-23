@@ -17,6 +17,24 @@ namespace screenzap.Components
     }
 
     /// <summary>
+    /// Pixel size + 16×16 ARGB signature of a stored image blob. Persisted alongside the PNG so
+    /// restore can rebuild a <see cref="ClipboardHistoryItem"/> without decoding full images.
+    /// </summary>
+    internal readonly struct RoleImageMeta
+    {
+        internal const int SignatureByteLength = 16 * 16 * 4;
+
+        public RoleImageMeta(Size pixelSize, byte[] signature)
+        {
+            PixelSize = pixelSize;
+            Signature = signature;
+        }
+
+        public Size PixelSize { get; }
+        public byte[] Signature { get; }
+    }
+
+    /// <summary>
     /// Represents a single entry in Screenzap's clipboard history list.
     /// Tracks original + current content, dirty state and stashed undo stack so
     /// users can revisit a thumbnail and pick up where they left off.
@@ -61,6 +79,10 @@ namespace screenzap.Components
         // decode the full image.
         private Bitmap? thumbnailSource;
 
+        // Lazily-encoded PNG of thumbnailSource for persistence. Invalidated when the source
+        // changes; reference-stable while unchanged so persistence can skip rewriting the file.
+        private byte[]? thumbnailSourcePngCache;
+
         private ClipboardHistoryItem(ClipboardItemKind kind, Guid? id = null, DateTime? createdUtc = null)
         {
             Id = id ?? Guid.NewGuid();
@@ -99,6 +121,34 @@ namespace screenzap.Components
         internal byte[]? OriginalPngBytes => original?.Png;
         internal byte[]? CommittedPngBytes => committed?.Png;
         internal byte[]? CurrentPngBytes => current?.Png;
+
+        // Size + signature per role, persisted so restore can skip the full-image decode that
+        // computing them from the PNG would require.
+        internal RoleImageMeta? OriginalImageMeta => ToMeta(original);
+        internal RoleImageMeta? CommittedImageMeta => ToMeta(committed);
+        internal RoleImageMeta? CurrentImageMeta => ToMeta(current);
+
+        private static RoleImageMeta? ToMeta(StoredImage? stored)
+            => stored == null ? (RoleImageMeta?)null : new RoleImageMeta(stored.PixelSize, stored.SignatureBytes);
+
+        /// <summary>
+        /// PNG-encoded thumbnail source for persistence. Encoded lazily and cached; the reference is
+        /// stable while the source is unchanged so persistence can skip rewriting the file.
+        /// </summary>
+        internal byte[]? ThumbnailSourcePngBytes
+        {
+            get
+            {
+                if (thumbnailSourcePngCache == null && thumbnailSource != null)
+                {
+                    using var ms = new MemoryStream();
+                    thumbnailSource.Save(ms, ImageFormat.Png);
+                    thumbnailSourcePngCache = ms.ToArray();
+                }
+
+                return thumbnailSourcePngCache;
+            }
+        }
 
         public bool IsDirty { get; private set; }
         public IReadOnlyCollection<string> SuppressedSystemHistoryIds => suppressedSystemHistoryIds;
@@ -171,14 +221,23 @@ namespace screenzap.Components
             return item;
         }
 
-        internal static ClipboardHistoryItem FromPersistedPng(Guid id, DateTime createdUtc, byte[] original, byte[] committed, byte[] current)
+        internal static ClipboardHistoryItem FromPersistedPng(
+            Guid id,
+            DateTime createdUtc,
+            byte[] original,
+            byte[] committed,
+            byte[] current,
+            RoleImageMeta? originalMeta = null,
+            RoleImageMeta? committedMeta = null,
+            RoleImageMeta? currentMeta = null,
+            byte[]? thumbnailSourcePng = null)
         {
             var item = new ClipboardHistoryItem(ClipboardItemKind.Image, id, createdUtc);
 
             // Clean items persist three byte-identical files (the roles shared one blob in memory),
-            // so dedup by raw byte-equality before decoding — the common case decodes once, not thrice.
-            var originalStored = StoredImage.FromPng(original);
-            var committedStored = BytesEqual(original, committed) ? originalStored : StoredImage.FromPng(committed);
+            // so dedup by raw byte-equality before building — the common case builds once, not thrice.
+            var originalStored = CreateStored(original, originalMeta);
+            var committedStored = BytesEqual(original, committed) ? originalStored : CreateStored(committed, committedMeta);
             StoredImage currentStored;
             if (BytesEqual(committed, current))
             {
@@ -190,15 +249,52 @@ namespace screenzap.Components
             }
             else
             {
-                currentStored = StoredImage.FromPng(current);
+                currentStored = CreateStored(current, currentMeta);
             }
 
             item.original = originalStored;
             item.committed = committedStored;
             item.current = currentStored;
             item.IsDirty = !StoredImage.ContentEquals(committedStored, currentStored);
-            item.RefreshThumbnailSource();
+
+            // Prefer the persisted thumbnail source; only a missing/corrupt one costs a full decode.
+            if (!item.TryRestoreThumbnailSource(thumbnailSourcePng))
+            {
+                item.RefreshThumbnailSource();
+            }
+
             return item;
+        }
+
+        // With persisted metadata the blob needs no decode at all; without it (older manifest)
+        // fall back to decoding the PNG to derive size + signature.
+        private static StoredImage CreateStored(byte[] png, RoleImageMeta? meta)
+            => meta.HasValue
+                ? StoredImage.FromPngTrusted(png, meta.Value.PixelSize, meta.Value.Signature)
+                : StoredImage.FromPng(png);
+
+        private bool TryRestoreThumbnailSource(byte[]? thumbnailSourcePng)
+        {
+            if (thumbnailSourcePng == null || thumbnailSourcePng.Length == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                using var ms = new MemoryStream(thumbnailSourcePng, writable: false);
+                using var decoded = new Bitmap(ms);
+                thumbnailSource?.Dispose();
+                // Detach from the backing stream so the bitmap owns its pixels.
+                thumbnailSource = new Bitmap(decoded);
+                thumbnailSourcePngCache = thumbnailSourcePng;
+                RebuildThumbnail(lastThumbMaxWidth, lastThumbMaxHeight);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool BytesEqual(byte[] a, byte[] b) => ReferenceEquals(a, b) || a.AsSpan().SequenceEqual(b);
@@ -425,6 +521,7 @@ namespace screenzap.Components
         {
             thumbnailSource?.Dispose();
             thumbnailSource = full == null ? null : RenderImageThumbnail(full, ThumbnailSourceMaxEdge, ThumbnailSourceMaxEdge);
+            thumbnailSourcePngCache = null;
             RebuildThumbnail(lastThumbMaxWidth, lastThumbMaxHeight);
         }
 
@@ -474,6 +571,7 @@ namespace screenzap.Components
             committed = null;
             current = null;
             thumbnailSource = null;
+            thumbnailSourcePngCache = null;
             PreviewComposite = null;
             Thumbnail = null;
             suppressedSystemHistoryIds.Clear();
@@ -513,6 +611,17 @@ namespace screenzap.Components
                 using var bmp = new Bitmap(ms);
                 return new StoredImage((byte[])png.Clone(), bmp.Size, ComputeSignature(bmp));
             }
+
+            /// <summary>
+            /// Wraps persisted bytes with their persisted size + signature — no decode. Takes
+            /// ownership of <paramref name="png"/>; callers must not mutate it afterwards.
+            /// </summary>
+            public static StoredImage FromPngTrusted(byte[] png, Size pixelSize, byte[] signature)
+            {
+                return new StoredImage(png, pixelSize, signature);
+            }
+
+            public byte[] SignatureBytes => signature;
 
             public Bitmap Decode()
             {
