@@ -56,7 +56,19 @@ namespace screenzap.Components
             this.onItemObserved = onItemObserved;
             this.tryBindPendingCommittedItem = tryBindPendingCommittedItem;
             this.isInternalWriteWindow = isInternalWriteWindow;
+
+            // The store may already contain the persisted queue when this service is constructed.
+            // Prime the snapshot now so the first WinRT refresh reuses those entries instead of
+            // re-streaming and re-encoding every image once before ApplySnapshot can populate it.
+            knownSystemHistoryIds = new HashSet<string>(
+                store.Items
+                    .Select(item => item.SystemHistoryId)
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .Select(id => id!),
+                StringComparer.Ordinal);
         }
+
+        internal IReadOnlyCollection<string> KnownSystemHistoryIdsForDiagnostics => knownSystemHistoryIds;
 
         public bool IsAvailable
         {

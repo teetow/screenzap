@@ -158,6 +158,45 @@ namespace screenzap.Components
         internal bool HasPendingReloadIndicator => hasPendingReloadIndicator;
         internal string? CurrentStatusText => statusLabel.Text;
 
+        protected override bool ShowWithoutActivation => SuppressActivation;
+
+        /// <summary>
+        /// Creates and paints the hidden control tree once so the first user-visible Show does not
+        /// pay WinForms handle creation, FontAwesome rendering, layout, and initial thumbnail paint.
+        /// </summary>
+        internal void WarmForFirstShow()
+        {
+            if (IsDisposed || Visible)
+            {
+                return;
+            }
+
+            bool previousSuppressActivation = SuppressActivation;
+            bool previousShowInTaskbar = ShowInTaskbar;
+            double previousOpacity = Opacity;
+
+            SuppressActivation = true;
+            ShowInTaskbar = false;
+            Opacity = 0;
+            try
+            {
+                Show();
+                Refresh();
+                Hide();
+            }
+            finally
+            {
+                if (Visible)
+                {
+                    Hide();
+                }
+
+                Opacity = previousOpacity;
+                ShowInTaskbar = previousShowInTaskbar;
+                SuppressActivation = previousSuppressActivation;
+            }
+        }
+
         public void AddPresenter(IClipboardDocumentPresenter presenter)
         {
             if (presenter == null)

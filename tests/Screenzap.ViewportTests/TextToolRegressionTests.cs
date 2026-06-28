@@ -12,6 +12,22 @@ namespace Screenzap.ViewportTests
     public class TextToolRegressionTests
     {
         [Fact]
+        public void EditorConstruction_DefersInstalledFontEnumeration()
+        {
+            RunInSta(() =>
+            {
+                using var editor = new screenzap.ImageEditor();
+
+                Assert.False(editor.FontChoicesLoadedForDiagnostics);
+
+                editor.LoadFontChoicesForDiagnostics();
+
+                Assert.True(editor.FontChoicesLoadedForDiagnostics);
+                Assert.NotEmpty(GetPrivateField<ToolStripComboBox>(editor, "fontComboBox").Items);
+            });
+        }
+
+        [Fact]
         public void SelectingExistingTextAnnotation_RecallsToolbarSettings()
         {
             RunInSta(() =>

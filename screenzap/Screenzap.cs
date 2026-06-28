@@ -26,6 +26,8 @@ namespace screenzap
         private bool isCapturing;
         private ImageEditor? imageEditor;
         private ClipboardEditorHostForm? clipboardEditorHost;
+        private System.Windows.Forms.Timer? clipboardEditorWarmupTimer;
+        private bool isShuttingDown;
         private DateTime lastErrorNotificationUtc;
         private readonly List<int> rectCaptureHotkeyIds = new();
         private readonly List<int> seqCaptureHotkeyIds = new();
@@ -69,6 +71,16 @@ namespace screenzap
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            isShuttingDown = true;
+            clipboardEditorWarmupTimer?.Stop();
+            clipboardEditorWarmupTimer?.Dispose();
+            clipboardEditorWarmupTimer = null;
+            systemHistoryService?.Dispose();
+            systemHistoryService = null;
+            clipboardEditorHost?.Dispose();
+            clipboardEditorHost = null;
+            imageEditor = null;
+
             base.OnFormClosed(e);
 
             if (clipboardMonitor != null)
@@ -247,6 +259,7 @@ namespace screenzap
             Hide();
             Opacity = 0;
             ShowInTaskbar = false;
+            ScheduleClipboardEditorWarmup();
         }
 
         void updateTooltips(KeyCombo keyCombo)
@@ -475,6 +488,12 @@ namespace screenzap
 
         private void ShowClipboardEditorForCurrentData()
         {
+            using var perf = PerfTrace.Scope(
+                "Screenzap.ShowClipboardEditor",
+                () => $"items={clipboardEditorHost?.HistoryStore.Items.Count ?? 0} warmed={clipboardEditorHost?.IsHandleCreated == true}",
+                slowMs: 50,
+                summaryEvery: 1);
+
             var host = EnsureClipboardHost();
 
             // Seed the history with the current clipboard content if the list is empty (first-time open).
@@ -516,6 +535,54 @@ namespace screenzap
             host.ActivatePreferredHistoryItem();
             host.FitToContent();
             host.ShowAndActivate();
+        }
+
+        private void ScheduleClipboardEditorWarmup()
+        {
+            if (isShuttingDown || (clipboardEditorHost != null && !clipboardEditorHost.IsDisposed))
+            {
+                return;
+            }
+
+            if (clipboardEditorWarmupTimer == null)
+            {
+                clipboardEditorWarmupTimer = new System.Windows.Forms.Timer
+                {
+                    Interval = 250
+                };
+                clipboardEditorWarmupTimer.Tick += (_, _) =>
+                {
+                    clipboardEditorWarmupTimer?.Stop();
+                    WarmClipboardEditor();
+                };
+            }
+
+            clipboardEditorWarmupTimer.Stop();
+            clipboardEditorWarmupTimer.Start();
+        }
+
+        private void WarmClipboardEditor()
+        {
+            if (isShuttingDown || (clipboardEditorHost != null && !clipboardEditorHost.IsDisposed))
+            {
+                return;
+            }
+
+            using var perf = PerfTrace.Scope(
+                "Screenzap.WarmClipboardEditor",
+                () => $"items={clipboardEditorHost?.HistoryStore.Items.Count ?? 0}",
+                slowMs: 100,
+                summaryEvery: 1);
+
+            try
+            {
+                var host = EnsureClipboardHost();
+                host.WarmForFirstShow();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Clipboard editor warmup failed: {ex.Message}");
+            }
         }
 
         private ClipboardEditorHostForm EnsureClipboardHost()
@@ -579,6 +646,7 @@ namespace screenzap
 
             clipboardEditorHost = null;
             imageEditor = null;
+            ScheduleClipboardEditorWarmup();
         }
 
         private ImageEditor EnsureImageEditor()

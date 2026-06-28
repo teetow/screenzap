@@ -25,6 +25,12 @@ namespace screenzap.Components
         private readonly ToolStripMenuItem refreshFromWindowsHistoryItem;
         private readonly ToolStripMenuItem activateNewestItem;
         private readonly ToolStripMenuItem scrollToActiveItem;
+        private readonly ContextMenuStrip thumbnailMenu;
+        private readonly ToolStripMenuItem setActiveThumbnailItem;
+        private readonly ToolStripMenuItem duplicateThumbnailItem;
+        private readonly ToolStripMenuItem revertThumbnailItem;
+        private readonly ToolStripMenuItem deleteThumbnailItem;
+        private ThumbnailButton? contextThumbnailButton;
         private ClipboardHistoryStore? store;
         private int currentThumbMaxWidth = 64;
         private int currentThumbMaxHeight = 64;
@@ -94,6 +100,66 @@ namespace screenzap.Components
             flow.ContextMenuStrip = listMenu;
             ContextMenuStrip = listMenu;
 
+            // All rows share one context menu. A full history can contain 128 controls; creating
+            // four menu items and rendering four FontAwesome bitmaps for every row dominated panel
+            // construction even though only one menu can ever be open.
+            setActiveThumbnailItem = new ToolStripMenuItem("Set as Active")
+            {
+                Image = MakeIcon(IconChar.Clipboard, Color.FromArgb(180, 220, 255))
+            };
+            duplicateThumbnailItem = new ToolStripMenuItem("Duplicate")
+            {
+                Image = MakeIcon(IconChar.Clone, SystemColors.ControlText)
+            };
+            revertThumbnailItem = new ToolStripMenuItem("Revert")
+            {
+                Image = MakeIcon(IconChar.ArrowRotateLeft, SystemColors.ControlText)
+            };
+            deleteThumbnailItem = new ToolStripMenuItem("Delete")
+            {
+                Image = MakeIcon(IconChar.Trash, Color.FromArgb(220, 80, 80))
+            };
+            thumbnailMenu = new ContextMenuStrip();
+            thumbnailMenu.Items.AddRange(new ToolStripItem[]
+            {
+                setActiveThumbnailItem,
+                duplicateThumbnailItem,
+                revertThumbnailItem,
+                new ToolStripSeparator(),
+                deleteThumbnailItem
+            });
+            thumbnailMenu.Opening += (_, e) =>
+            {
+                contextThumbnailButton = thumbnailMenu.SourceControl as ThumbnailButton;
+                if (contextThumbnailButton?.Item == null)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+
+                revertThumbnailItem.Enabled = contextThumbnailButton.Item.CanRevertToOriginal;
+            };
+            setActiveThumbnailItem.Click += (_, _) =>
+            {
+                if (contextThumbnailButton?.Item is { } item)
+                    ItemSetActive?.Invoke(this, item);
+            };
+            duplicateThumbnailItem.Click += (_, _) =>
+            {
+                if (contextThumbnailButton?.Item is { } item)
+                    ItemDuplicate?.Invoke(this, item);
+            };
+            revertThumbnailItem.Click += (_, _) =>
+            {
+                if (contextThumbnailButton?.Item is { } item)
+                    ItemRevert?.Invoke(this, item);
+            };
+            deleteThumbnailItem.Click += (_, _) =>
+            {
+                if (contextThumbnailButton?.Item is { } item)
+                    DeleteAndReclaimFocus(contextThumbnailButton, item);
+            };
+
             SizeChanged += (_, _) => UpdateThumbnailSizing();
             flow.SizeChanged += (_, _) => UpdateThumbnailSizing();
         }
@@ -148,7 +214,13 @@ namespace screenzap.Components
 
         private void RefreshItem(ClipboardHistoryItem item)
         {
-            item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
+            // Metadata-only updates (for example binding a Windows history id) must not pull an
+            // off-screen persisted thumbnail into memory. Edited/new items already own a thumbnail.
+            if (item.Thumbnail != null)
+            {
+                item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
+            }
+
             if (buttons.TryGetValue(item.Id, out var btn))
             {
                 btn.Rebind(item, ReferenceEquals(store?.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
@@ -316,19 +388,13 @@ namespace screenzap.Components
                             if (!btn.IsDisposed)
                                 KeepFocusOn(btn);
                         };
-                        btn.OnSetActive  = i => ItemSetActive?.Invoke(this, i);
-                        btn.OnDuplicate  = i => ItemDuplicate?.Invoke(this, i);
-                        btn.OnRevert     = i => ItemRevert?.Invoke(this, i);
                         btn.OnDelete     = i => DeleteAndReclaimFocus(btn, i);
                         btn.OnNavigate   = NavigateFocusFrom;
+                        btn.ContextMenuStrip = thumbnailMenu;
                         buttons[item.Id] = btn;
                         flow.Controls.Add(btn);
                     }
 
-                    if (isNewButton || item.Thumbnail == null)
-                    {
-                        item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
-                    }
                     btn!.Rebind(item, ReferenceEquals(store.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
                     UpdateToolTip(btn, item);
                 }
@@ -385,7 +451,12 @@ namespace screenzap.Components
             {
                 foreach (var item in store.Items)
                 {
-                    item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
+                    // Keep file-backed, off-screen thumbnails lazy across panel resizes.
+                    if (item.Thumbnail != null)
+                    {
+                        item.RebuildThumbnail(currentThumbMaxWidth, currentThumbMaxHeight);
+                    }
+
                     if (buttons.TryGetValue(item.Id, out var btn))
                     {
                         btn.Rebind(item, ReferenceEquals(store.ActiveItem, item), currentThumbMaxWidth, currentThumbMaxHeight);
@@ -498,16 +569,10 @@ namespace screenzap.Components
             private static readonly Color ActiveBorder = Color.DeepSkyBlue;
             private static readonly Color IdleBorder = Color.FromArgb(70, 70, 75);
             private bool isActive;
-            private readonly ContextMenuStrip menu;
-            private readonly ToolStripMenuItem setActiveItem;
-            private readonly ToolStripMenuItem duplicateItem;
-            private readonly ToolStripMenuItem revertItem;
-            private readonly ToolStripMenuItem deleteItem;
             private Bitmap? lastThumbnail;
+            private int maxThumbWidth = 64;
+            private int maxThumbHeight = 64;
 
-            public Action<ClipboardHistoryItem>? OnSetActive;
-            public Action<ClipboardHistoryItem>? OnDuplicate;
-            public Action<ClipboardHistoryItem>? OnRevert;
             public Action<ClipboardHistoryItem>? OnDelete;
             public Action<ThumbnailButton, Keys>? OnNavigate;
 
@@ -521,27 +586,7 @@ namespace screenzap.Components
                 Cursor = Cursors.Hand;
                 BackColor = Color.FromArgb(24, 24, 28);
                 TabStop = true; // reachable via Tab so the keyboard Delete shortcut has somewhere to land
-
-                setActiveItem = new ToolStripMenuItem("Set as Active") { Image = MakeIcon(IconChar.Clipboard, Color.FromArgb(180, 220, 255)) };
-                setActiveItem.Click += (s, e) => { if (Item != null) OnSetActive?.Invoke(Item); };
-
-                duplicateItem = new ToolStripMenuItem("Duplicate") { Image = MakeIcon(IconChar.Clone, SystemColors.ControlText) };
-                duplicateItem.Click += (s, e) => { if (Item != null) OnDuplicate?.Invoke(Item); };
-
-                revertItem = new ToolStripMenuItem("Revert") { Image = MakeIcon(IconChar.ArrowRotateLeft, SystemColors.ControlText) };
-                revertItem.Click += (s, e) => { if (Item != null) OnRevert?.Invoke(Item); };
-
-                deleteItem = new ToolStripMenuItem("Delete") { Image = MakeIcon(IconChar.Trash, Color.FromArgb(220, 80, 80)) };
-                deleteItem.Click += (s, e) => { if (Item != null) OnDelete?.Invoke(Item); };
-
-                menu = new ContextMenuStrip();
-                menu.Items.AddRange(new ToolStripItem[] { setActiveItem, duplicateItem, revertItem, new ToolStripSeparator(), deleteItem });
-                menu.Opening += (s, e) => { revertItem.Enabled = Item?.CanRevertToOriginal == true; };
-                ContextMenuStrip = menu;
             }
-
-            private static Bitmap MakeIcon(IconChar icon, Color color)
-                => FormsIconHelper.ToBitmap(icon, color, 16, 0, FlipOrientation.Normal);
 
             // Raw Control doesn't take keyboard focus on click (that's ButtonBase behavior), so take
             // it explicitly — the click → Delete flow needs the key to land on this button.
@@ -619,10 +664,12 @@ namespace screenzap.Components
                 bool changed = !ReferenceEquals(Item, item) || isActive != active;
                 Item = item;
                 isActive = active;
+                this.maxThumbWidth = Math.Max(1, maxThumbWidth);
+                this.maxThumbHeight = Math.Max(1, maxThumbHeight);
 
                 var thumb = item.Thumbnail;
-                int buttonWidth = Math.Max(1, maxThumbWidth) + ChromePadding;
-                int contentHeight = thumb?.Height ?? Math.Max(1, maxThumbHeight);
+                int buttonWidth = this.maxThumbWidth + ChromePadding;
+                int contentHeight = thumb?.Height ?? item.GetThumbnailDisplaySize(this.maxThumbWidth, this.maxThumbHeight).Height;
                 int buttonHeight = Math.Max(MinButtonHeight, contentHeight + ChromePadding);
                 var newSize = new Size(buttonWidth, buttonHeight);
                 if (Size != newSize)
@@ -662,6 +709,15 @@ namespace screenzap.Components
                 base.OnPaint(e);
                 var g = e.Graphics;
                 g.Clear(BackColor);
+
+                // WinForms only paints child controls intersecting the visible viewport. This is
+                // therefore the virtualization boundary: persisted thumbnail PNGs are decoded as
+                // they scroll into view instead of all 128 being decoded while the form opens.
+                if (Item != null && Item.Thumbnail == null)
+                {
+                    Item.RebuildThumbnail(maxThumbWidth, maxThumbHeight);
+                    lastThumbnail = Item.Thumbnail;
+                }
 
                 if (Item?.Thumbnail is Bitmap thumb)
                 {

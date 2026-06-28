@@ -14,6 +14,53 @@ namespace Screenzap.ViewportTests
     public class ThumbnailActionRegressionTests
     {
         [Fact]
+        public void HistoryRows_ShareOneContextMenu()
+        {
+            RunInSta(() =>
+            {
+                using var panel = new ClipboardHistoryPanel();
+                var store = new ClipboardHistoryStore();
+                panel.AttachStore(store);
+
+                AddImage(store, Color.Red);
+                AddImage(store, Color.Blue);
+                AddImage(store, Color.Green);
+
+                var buttonsField = typeof(ClipboardHistoryPanel).GetField("buttons", BindingFlags.Instance | BindingFlags.NonPublic);
+                var buttons = Assert.IsAssignableFrom<System.Collections.IDictionary>(buttonsField!.GetValue(panel));
+                var menus = buttons.Values
+                    .Cast<Control>()
+                    .Select(button => button.ContextMenuStrip)
+                    .ToList();
+
+                Assert.Equal(3, menus.Count);
+                Assert.NotNull(menus[0]);
+                Assert.All(menus, menu => Assert.Same(menus[0], menu));
+            });
+        }
+
+        [Fact]
+        public void WarmForFirstShow_PrimesHiddenHostWithoutChangingVisibility()
+        {
+            RunInSta(() =>
+            {
+                using var presenter = new StubImagePresenter();
+                using var host = new ClipboardEditorHostForm(true, presenter)
+                {
+                    SuppressActivation = true,
+                    ShowInTaskbar = false
+                };
+
+                host.WarmForFirstShow();
+
+                Assert.True(host.IsHandleCreated);
+                Assert.False(host.Visible);
+                Assert.False(host.ShowInTaskbar);
+                Assert.True(host.SuppressActivation);
+            });
+        }
+
+        [Fact]
         public void RevertToOriginal_ClearsPreviewComposite()
         {
             using var source = new Bitmap(8, 8);

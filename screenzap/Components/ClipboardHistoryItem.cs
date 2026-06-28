@@ -35,17 +35,87 @@ namespace screenzap.Components
     }
 
     /// <summary>
+    /// Immutable PNG content that can stay file-backed until its bytes are genuinely needed.
+    /// Persisted history contains hundreds of PNGs; retaining their paths avoids reading the whole
+    /// queue into managed memory while the editor is opening.
+    /// </summary>
+    internal sealed class PngContent
+    {
+        private readonly object loadGate = new();
+        private byte[]? bytes;
+
+        private PngContent(byte[]? bytes, string? backingFilePath)
+        {
+            this.bytes = bytes;
+            BackingFilePath = backingFilePath;
+        }
+
+        internal string? BackingFilePath { get; }
+
+        internal bool HasLoadedBytes
+        {
+            get
+            {
+                lock (loadGate)
+                {
+                    return bytes != null;
+                }
+            }
+        }
+
+        internal static PngContent FromBytes(byte[] bytes)
+            => new PngContent(bytes ?? throw new ArgumentNullException(nameof(bytes)), null);
+
+        internal static PngContent FromFile(string path)
+            => new PngContent(null, Path.GetFullPath(path ?? throw new ArgumentNullException(nameof(path))));
+
+        internal byte[] GetBytes()
+        {
+            lock (loadGate)
+            {
+                if (bytes == null)
+                {
+                    if (BackingFilePath == null)
+                    {
+                        throw new InvalidOperationException("PNG content has neither bytes nor a backing file.");
+                    }
+
+                    bytes = File.ReadAllBytes(BackingFilePath);
+                }
+
+                return bytes;
+            }
+        }
+
+        internal Stream OpenRead()
+        {
+            lock (loadGate)
+            {
+                if (bytes != null)
+                {
+                    return new MemoryStream(bytes, writable: false);
+                }
+            }
+
+            if (BackingFilePath == null)
+            {
+                throw new InvalidOperationException("PNG content has neither bytes nor a backing file.");
+            }
+
+            return new FileStream(BackingFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        }
+    }
+
+    /// <summary>
     /// Represents a single entry in Screenzap's clipboard history list.
     /// Tracks original + current content, dirty state and stashed undo stack so
     /// users can revisit a thumbnail and pick up where they left off.
     ///
-    /// Memory model: an item's three image roles (original / committed / current) are stored as
-    /// PNG-compressed byte blobs (<see cref="StoredImage"/>), not live <see cref="Bitmap"/>s. A
-    /// full-resolution screenshot is tens of MB uncompressed; a list of 128 of them holding three
-    /// copies each ran to several GB resident and starved the whole process (the editor's own
-    /// allocations then stalled on GC/paging). Compressed blobs are ~10–50× smaller, identical
-    /// roles share one immutable blob (copy-on-write), and full bitmaps are decoded on demand and
-    /// released when the item is no longer active. Only a small thumbnail source stays resident.
+    /// Memory model: an item's three image roles (original / committed / current) are immutable
+    /// PNG content (<see cref="StoredImage"/>), not live <see cref="Bitmap"/>s. New/edited content
+    /// is held compressed; restored content remains file-backed. Full bitmaps are decoded on demand
+    /// and released when the item is no longer active, while thumbnails load only as they become
+    /// visible. This keeps a 128-image queue from consuming several GB or blocking startup on I/O.
     /// </summary>
     internal sealed class ClipboardHistoryItem : IDisposable
     {
@@ -79,9 +149,9 @@ namespace screenzap.Components
         // decode the full image.
         private Bitmap? thumbnailSource;
 
-        // Lazily-encoded PNG of thumbnailSource for persistence. Invalidated when the source
-        // changes; reference-stable while unchanged so persistence can skip rewriting the file.
-        private byte[]? thumbnailSourcePngCache;
+        // Lazily-encoded PNG of thumbnailSource for persistence. Restored entries keep this
+        // file-backed, so thumbnails below the visible viewport don't even get read at startup.
+        private PngContent? thumbnailSourcePngContent;
 
         private ClipboardHistoryItem(ClipboardItemKind kind, Guid? id = null, DateTime? createdUtc = null)
         {
@@ -115,12 +185,11 @@ namespace screenzap.Components
         public Bitmap? CommittedImage => GetDecoded(committed);
         public Bitmap? CurrentImage => GetDecoded(current);
 
-        // Raw compressed bytes for persistence — written straight to disk, no decode/re-encode. The
-        // byte[] reference is stable while content is unchanged, so persistence can cheaply skip
-        // rewriting unchanged files by reference-comparing these.
-        internal byte[]? OriginalPngBytes => original?.Png;
-        internal byte[]? CommittedPngBytes => committed?.Png;
-        internal byte[]? CurrentPngBytes => current?.Png;
+        // Immutable compressed content for persistence. Restored roles expose their backing paths,
+        // allowing persistence to retain unchanged files without first loading them.
+        internal PngContent? OriginalPngContent => original?.Content;
+        internal PngContent? CommittedPngContent => committed?.Content;
+        internal PngContent? CurrentPngContent => current?.Content;
 
         // Size + signature per role, persisted so restore can skip the full-image decode that
         // computing them from the PNG would require.
@@ -131,22 +200,18 @@ namespace screenzap.Components
         private static RoleImageMeta? ToMeta(StoredImage? stored)
             => stored == null ? (RoleImageMeta?)null : new RoleImageMeta(stored.PixelSize, stored.SignatureBytes);
 
-        /// <summary>
-        /// PNG-encoded thumbnail source for persistence. Encoded lazily and cached; the reference is
-        /// stable while the source is unchanged so persistence can skip rewriting the file.
-        /// </summary>
-        internal byte[]? ThumbnailSourcePngBytes
+        internal PngContent? ThumbnailSourcePngContent
         {
             get
             {
-                if (thumbnailSourcePngCache == null && thumbnailSource != null)
+                if (thumbnailSourcePngContent == null && thumbnailSource != null)
                 {
                     using var ms = new MemoryStream();
                     thumbnailSource.Save(ms, ImageFormat.Png);
-                    thumbnailSourcePngCache = ms.ToArray();
+                    thumbnailSourcePngContent = PngContent.FromBytes(ms.ToArray());
                 }
 
-                return thumbnailSourcePngCache;
+                return thumbnailSourcePngContent;
             }
         }
 
@@ -257,10 +322,37 @@ namespace screenzap.Components
             item.current = currentStored;
             item.IsDirty = !StoredImage.ContentEquals(committedStored, currentStored);
 
-            // Prefer the persisted thumbnail source; only a missing/corrupt one costs a full decode.
-            if (!item.TryRestoreThumbnailSource(thumbnailSourcePng))
+            // Keep the thumbnail compressed until its control is actually painted.
+            if (thumbnailSourcePng != null && thumbnailSourcePng.Length > 0)
             {
-                item.RefreshThumbnailSource();
+                item.thumbnailSourcePngContent = PngContent.FromBytes(thumbnailSourcePng);
+            }
+
+            return item;
+        }
+
+        internal static ClipboardHistoryItem FromPersistedFiles(
+            Guid id,
+            DateTime createdUtc,
+            string originalPath,
+            string committedPath,
+            string currentPath,
+            RoleImageMeta originalMeta,
+            RoleImageMeta committedMeta,
+            RoleImageMeta currentMeta,
+            string? thumbnailSourcePath)
+        {
+            var item = new ClipboardHistoryItem(ClipboardItemKind.Image, id, createdUtc)
+            {
+                original = StoredImage.FromPngFile(originalPath, originalMeta.PixelSize, originalMeta.Signature),
+                committed = StoredImage.FromPngFile(committedPath, committedMeta.PixelSize, committedMeta.Signature),
+                current = StoredImage.FromPngFile(currentPath, currentMeta.PixelSize, currentMeta.Signature)
+            };
+
+            item.IsDirty = !StoredImage.ContentEquals(item.committed, item.current);
+            if (!string.IsNullOrWhiteSpace(thumbnailSourcePath))
+            {
+                item.thumbnailSourcePngContent = PngContent.FromFile(thumbnailSourcePath);
             }
 
             return item;
@@ -273,26 +365,25 @@ namespace screenzap.Components
                 ? StoredImage.FromPngTrusted(png, meta.Value.PixelSize, meta.Value.Signature)
                 : StoredImage.FromPng(png);
 
-        private bool TryRestoreThumbnailSource(byte[]? thumbnailSourcePng)
+        private bool TryRestoreThumbnailSource()
         {
-            if (thumbnailSourcePng == null || thumbnailSourcePng.Length == 0)
+            if (thumbnailSourcePngContent == null)
             {
                 return false;
             }
 
             try
             {
-                using var ms = new MemoryStream(thumbnailSourcePng, writable: false);
-                using var decoded = new Bitmap(ms);
+                using var stream = thumbnailSourcePngContent.OpenRead();
+                using var decoded = new Bitmap(stream);
                 thumbnailSource?.Dispose();
                 // Detach from the backing stream so the bitmap owns its pixels.
                 thumbnailSource = new Bitmap(decoded);
-                thumbnailSourcePngCache = thumbnailSourcePng;
-                RebuildThumbnail(lastThumbMaxWidth, lastThumbMaxHeight);
                 return true;
             }
             catch
             {
+                thumbnailSourcePngContent = null;
                 return false;
             }
         }
@@ -383,7 +474,11 @@ namespace screenzap.Components
             clone.ImageLayers = ImageLayers?.Select(layer => layer.Clone()).ToList();
             clone.UndoSnapshot = UndoRedo.CloneSnapshot(UndoSnapshot);
             clone.IsDirty = IsDirty;
-            clone.RefreshThumbnailSource();
+            clone.lastThumbMaxWidth = lastThumbMaxWidth;
+            clone.lastThumbMaxHeight = lastThumbMaxHeight;
+            clone.thumbnailSource = thumbnailSource == null ? null : new Bitmap(thumbnailSource);
+            clone.thumbnailSourcePngContent = thumbnailSourcePngContent;
+            clone.Thumbnail = Thumbnail == null ? null : new Bitmap(Thumbnail);
             return clone;
         }
 
@@ -427,6 +522,19 @@ namespace screenzap.Components
             IsDirty = isDirty;
         }
 
+        internal Size GetThumbnailDisplaySize(int maxWidth, int maxHeight)
+        {
+            var sourceSize = thumbnailSource?.Size ?? current?.PixelSize ?? Size.Empty;
+            return CalculateThumbnailSize(sourceSize, maxWidth, maxHeight);
+        }
+
+        internal bool HasLoadedPngBytesForDiagnostics =>
+            (original?.Content.HasLoadedBytes ?? false)
+            || (committed?.Content.HasLoadedBytes ?? false)
+            || (current?.Content.HasLoadedBytes ?? false);
+
+        internal bool HasLoadedThumbnailForDiagnostics => thumbnailSource != null || Thumbnail != null;
+
         /// <summary>
         /// Dispose any decoded full bitmaps, keeping the compressed blobs and thumbnail. Call when the
         /// item is no longer the active/edited entry so resident full bitmaps stay bounded.
@@ -456,6 +564,8 @@ namespace screenzap.Components
 
             using var perf = LoggerPerfScope(maxWidth, maxHeight);
 
+            EnsureThumbnailSource();
+
             // Rescale from the small cached source — no full-image decode on panel resize.
             var previous = Thumbnail;
             Thumbnail = RenderImageThumbnail(thumbnailSource, maxWidth, maxHeight);
@@ -473,6 +583,30 @@ namespace screenzap.Components
             var bmp = stored.Decode();
             decodeCache[stored] = bmp;
             return bmp;
+        }
+
+        private void EnsureThumbnailSource()
+        {
+            if (thumbnailSource != null || TryRestoreThumbnailSource())
+            {
+                return;
+            }
+
+            if (PreviewComposite != null)
+            {
+                thumbnailSource = RenderImageThumbnail(PreviewComposite, ThumbnailSourceMaxEdge, ThumbnailSourceMaxEdge);
+                return;
+            }
+
+            if (current == null)
+            {
+                return;
+            }
+
+            // Legacy/corrupt entries without a persisted thumbnail pay for one full decode only
+            // when they become visible, never while the editor window is being constructed.
+            using var full = current.Decode();
+            thumbnailSource = RenderImageThumbnail(full, ThumbnailSourceMaxEdge, ThumbnailSourceMaxEdge);
         }
 
         // Drop decoded bitmaps whose blob is no longer referenced by any role (e.g. after an edit
@@ -521,7 +655,7 @@ namespace screenzap.Components
         {
             thumbnailSource?.Dispose();
             thumbnailSource = full == null ? null : RenderImageThumbnail(full, ThumbnailSourceMaxEdge, ThumbnailSourceMaxEdge);
-            thumbnailSourcePngCache = null;
+            thumbnailSourcePngContent = null;
             RebuildThumbnail(lastThumbMaxWidth, lastThumbMaxHeight);
         }
 
@@ -544,12 +678,9 @@ namespace screenzap.Components
                 return fallback;
             }
 
-            // Fit inside the thumbnail bounds while preserving aspect ratio.
-            float widthScale = (float)maxWidth / source.Width;
-            float heightScale = (float)maxHeight / source.Height;
-            float scale = Math.Min(widthScale, heightScale);
-            int w = Math.Max(1, (int)Math.Round(source.Width * scale));
-            int h = Math.Max(1, (int)Math.Round(source.Height * scale));
+            var thumbnailSize = CalculateThumbnailSize(source.Size, maxWidth, maxHeight);
+            int w = thumbnailSize.Width;
+            int h = thumbnailSize.Height;
 
             var thumb = new Bitmap(w, h, PixelFormat.Format32bppArgb);
             using var g = Graphics.FromImage(thumb);
@@ -558,6 +689,24 @@ namespace screenzap.Components
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.DrawImage(source, new Rectangle(0, 0, w, h));
             return thumb;
+        }
+
+        private static Size CalculateThumbnailSize(Size sourceSize, int maxWidth, int maxHeight)
+        {
+            maxWidth = Math.Max(1, maxWidth);
+            maxHeight = Math.Max(1, maxHeight);
+            if (sourceSize.Width <= 0 || sourceSize.Height <= 0)
+            {
+                return new Size(maxWidth, maxHeight);
+            }
+
+            // Fit inside the thumbnail bounds while preserving aspect ratio.
+            float widthScale = (float)maxWidth / sourceSize.Width;
+            float heightScale = (float)maxHeight / sourceSize.Height;
+            float scale = Math.Min(widthScale, heightScale);
+            return new Size(
+                Math.Max(1, (int)Math.Round(sourceSize.Width * scale)),
+                Math.Max(1, (int)Math.Round(sourceSize.Height * scale)));
         }
 
         public void Dispose()
@@ -571,7 +720,7 @@ namespace screenzap.Components
             committed = null;
             current = null;
             thumbnailSource = null;
-            thumbnailSourcePngCache = null;
+            thumbnailSourcePngContent = null;
             PreviewComposite = null;
             Thumbnail = null;
             suppressedSystemHistoryIds.Clear();
@@ -583,13 +732,13 @@ namespace screenzap.Components
         /// </summary>
         private sealed class StoredImage
         {
-            public byte[] Png { get; }
+            public PngContent Content { get; }
             public Size PixelSize { get; }
             private readonly byte[] signature; // 16×16 ARGB downsample
 
-            private StoredImage(byte[] png, Size pixelSize, byte[] signature)
+            private StoredImage(PngContent content, Size pixelSize, byte[] signature)
             {
-                Png = png;
+                Content = content;
                 PixelSize = pixelSize;
                 this.signature = signature;
             }
@@ -602,14 +751,14 @@ namespace screenzap.Components
                     bmp.Save(ms, ImageFormat.Png);
                     png = ms.ToArray();
                 }
-                return new StoredImage(png, bmp.Size, ComputeSignature(bmp));
+                return new StoredImage(PngContent.FromBytes(png), bmp.Size, ComputeSignature(bmp));
             }
 
             public static StoredImage FromPng(byte[] png)
             {
                 using var ms = new MemoryStream(png, writable: false);
                 using var bmp = new Bitmap(ms);
-                return new StoredImage((byte[])png.Clone(), bmp.Size, ComputeSignature(bmp));
+                return new StoredImage(PngContent.FromBytes((byte[])png.Clone()), bmp.Size, ComputeSignature(bmp));
             }
 
             /// <summary>
@@ -618,15 +767,20 @@ namespace screenzap.Components
             /// </summary>
             public static StoredImage FromPngTrusted(byte[] png, Size pixelSize, byte[] signature)
             {
-                return new StoredImage(png, pixelSize, signature);
+                return new StoredImage(PngContent.FromBytes(png), pixelSize, signature);
+            }
+
+            public static StoredImage FromPngFile(string path, Size pixelSize, byte[] signature)
+            {
+                return new StoredImage(PngContent.FromFile(path), pixelSize, signature);
             }
 
             public byte[] SignatureBytes => signature;
 
             public Bitmap Decode()
             {
-                using var ms = new MemoryStream(Png, writable: false);
-                using var decoded = new Bitmap(ms);
+                using var stream = Content.OpenRead();
+                using var decoded = new Bitmap(stream);
                 // Detach from the backing stream so the returned bitmap owns its pixels.
                 return new Bitmap(decoded);
             }

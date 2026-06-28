@@ -645,6 +645,8 @@ namespace screenzap
         // Font variant mapping: base name -> list of (display name, full font name)
         private Dictionary<string, List<(string DisplayName, string FullName)>>? fontVariantMap;
         private bool isSyncingTextToolbarControls;
+        internal bool FontChoicesLoadedForDiagnostics => fontVariantMap != null;
+        internal void LoadFontChoicesForDiagnostics() => EnsureFontChoicesLoaded();
 
         private List<TextAnnotation> CloneTextAnnotations()
         {
@@ -2250,41 +2252,23 @@ namespace screenzap
 
         private void InitializeTextToolbar()
         {
-            // Build font variant map
-            fontVariantMap = BuildFontVariantMap();
-
             if (fontComboBox != null)
             {
-                // Add only base font names (those that have variants grouped under them)
-                // plus standalone fonts
-                var allFonts = new InstalledFontCollection();
-                var baseNames = new HashSet<string>(fontVariantMap.Keys, StringComparer.OrdinalIgnoreCase);
-                
-                foreach (var family in allFonts.Families)
-                {
-                    // Add if it's a base name, or if it's not a variant of another font
-                    if (baseNames.Contains(family.Name) || !IsVariantOfAnotherFont(family.Name, baseNames))
-                    {
-                        fontComboBox.Items.Add(family.Name);
-                    }
-                }
-
-                int defaultIndex = fontComboBox.Items.IndexOf(textToolFontFamily);
-                if (defaultIndex >= 0)
-                {
-                    fontComboBox.SelectedIndex = defaultIndex;
-                }
-                else if (fontComboBox.Items.Count > 0)
-                {
-                    fontComboBox.SelectedIndex = 0;
-                    textToolFontFamily = fontComboBox.Items[0]?.ToString() ?? "Segoe UI";
-                }
+                // Enumerating and grouping every installed Windows font took most of editor startup
+                // on font-heavy systems. Display the persisted family immediately and build the
+                // catalog only when the user first interacts with the font picker.
+                fontComboBox.Text = textToolFontFamily;
 
                 // Wire Leave so free-typed names are validated and focus returns to canvas
                 var innerCombo = fontComboBox.Control as ComboBox;
                 if (innerCombo != null)
                 {
-                    innerCombo.Enter += (s, e) => SuspendTextEditingForUiFocus();
+                    innerCombo.Enter += (s, e) =>
+                    {
+                        SuspendTextEditingForUiFocus();
+                        EnsureFontChoicesLoaded();
+                    };
+                    innerCombo.DropDown += (s, e) => EnsureFontChoicesLoaded();
                     innerCombo.Leave += (s, e) => fontComboBox_Leave(s, e);
                     innerCombo.KeyDown += (s, e) => HandleTextToolbarCommitKeyDown(e, () => fontComboBox_Leave(s, EventArgs.Empty));
                     innerCombo.AutoCompleteMode   = AutoCompleteMode.SuggestAppend;
@@ -2321,15 +2305,63 @@ namespace screenzap
                 }
             }
 
-            UpdateFontVariantDropdown();
             UpdateTextColorButtonAppearance();
             UpdateOutlineColorButtonAppearance();
+        }
+
+        private void EnsureFontChoicesLoaded()
+        {
+            if (fontVariantMap != null)
+            {
+                return;
+            }
+
+            var effectiveFamily = GetEffectiveFontFamily();
+            fontVariantMap = BuildFontVariantMap();
+
+            if (fontComboBox != null)
+            {
+                var baseNames = new HashSet<string>(fontVariantMap.Keys, StringComparer.OrdinalIgnoreCase);
+                using var installedFonts = new InstalledFontCollection();
+
+                isSyncingTextToolbarControls = true;
+                try
+                {
+                    foreach (var family in installedFonts.Families)
+                    {
+                        if (baseNames.Contains(family.Name) || !IsVariantOfAnotherFont(family.Name, baseNames))
+                        {
+                            fontComboBox.Items.Add(family.Name);
+                        }
+                    }
+
+                    ResolveTextToolbarFont(effectiveFamily, out var baseFamily, out var variantFullName, out _);
+                    textToolFontFamily = baseFamily;
+                    textToolFontVariant = variantFullName;
+
+                    int defaultIndex = fontComboBox.Items.IndexOf(baseFamily);
+                    if (defaultIndex >= 0)
+                    {
+                        fontComboBox.SelectedIndex = defaultIndex;
+                    }
+                    else
+                    {
+                        fontComboBox.Text = baseFamily;
+                    }
+
+                    UpdateFontVariantDropdown();
+                }
+                finally
+                {
+                    isSyncingTextToolbarControls = false;
+                }
+            }
         }
 
         private Dictionary<string, List<(string DisplayName, string FullName)>> BuildFontVariantMap()
         {
             var map = new Dictionary<string, List<(string DisplayName, string FullName)>>(StringComparer.OrdinalIgnoreCase);
-            var installedFonts = new InstalledFontCollection();
+            using var installedFonts = new InstalledFontCollection();
             var allFontNames = installedFonts.Families.Select(f => f.Name).ToList();
 
             // Common weight/style suffixes to detect variants

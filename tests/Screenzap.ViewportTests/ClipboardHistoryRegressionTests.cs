@@ -97,6 +97,79 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void Load_KeepsPersistedPngsFileBacked_AndSaveDoesNotRewriteThem()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "screenzap-tests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            ClipboardHistoryItem? source = null;
+            List<ClipboardHistoryItem>? restoredItems = null;
+
+            try
+            {
+                using (var image = new Bitmap(320, 180))
+                {
+                    using var graphics = Graphics.FromImage(image);
+                    graphics.Clear(Color.MediumPurple);
+                    source = ClipboardHistoryItem.FromImage(image);
+                }
+
+                new ClipboardHistoryPersistence(root).Save(new[] { source }, source);
+                var pngPaths = Directory.GetFiles(root, "*.png");
+                Assert.Equal(4, pngPaths.Length);
+
+                var untouchedTimestamp = new DateTime(2020, 1, 2, 3, 4, 6, DateTimeKind.Utc);
+                foreach (var path in pngPaths)
+                {
+                    File.SetLastWriteTimeUtc(path, untouchedTimestamp);
+                }
+
+                var persistence = new ClipboardHistoryPersistence(root);
+                var restored = persistence.Load();
+                restoredItems = restored.Items;
+
+                var item = Assert.Single(restored.Items);
+                Assert.False(item.HasLoadedPngBytesForDiagnostics);
+                Assert.False(item.HasLoadedThumbnailForDiagnostics);
+
+                // Decoding the active bitmap streams straight from its backing file; it should not
+                // pull the compressed PNG into the managed blob cache.
+                Assert.Equal(Color.MediumPurple.ToArgb(), item.CurrentImage!.GetPixel(0, 0).ToArgb());
+                Assert.False(item.HasLoadedPngBytesForDiagnostics);
+
+                persistence.Save(restored.Items, item);
+
+                Assert.False(item.HasLoadedPngBytesForDiagnostics);
+                foreach (var path in pngPaths)
+                {
+                    Assert.Equal(untouchedTimestamp, File.GetLastWriteTimeUtc(path));
+                }
+            }
+            finally
+            {
+                source?.Dispose();
+                if (restoredItems != null)
+                {
+                    foreach (var item in restoredItems)
+                    {
+                        item.Dispose();
+                    }
+                }
+
+                try
+                {
+                    if (Directory.Exists(root))
+                    {
+                        Directory.Delete(root, recursive: true);
+                    }
+                }
+                catch
+                {
+                    // Best-effort cleanup for test artifacts.
+                }
+            }
+        }
+
+        [Fact]
         public void MarkClean_PreservesUndoSnapshot_SoUndoRemainsAvailableAfterCommit()
         {
             using var original = new Bitmap(4, 4);
@@ -188,6 +261,35 @@ namespace Screenzap.ViewportTests
                     // Best-effort cleanup for test artifacts.
                 }
             }
+        }
+
+        [Fact]
+        public void SystemHistoryService_PrimesKnownIdsFromExistingStore()
+        {
+            StaTest.Run(() =>
+            {
+                var store = new ClipboardHistoryStore();
+                using var host = new Form();
+                host.CreateControl();
+
+                using var knownImage = CreateSolidBitmap(Color.DarkSlateBlue);
+                var known = store.AddObservedImage(knownImage);
+                known.AssignSystemHistoryId("already-restored");
+
+                using var localImage = CreateSolidBitmap(Color.DarkKhaki);
+                store.AddObservedImage(localImage);
+
+                using var service = new SystemClipboardHistoryService(
+                    store,
+                    host,
+                    onItemObserved: null,
+                    tryBindPendingCommittedItem: null,
+                    isInternalWriteWindow: null);
+
+                Assert.Equal(
+                    new[] { "already-restored" },
+                    service.KnownSystemHistoryIdsForDiagnostics);
+            });
         }
 
         [Fact]

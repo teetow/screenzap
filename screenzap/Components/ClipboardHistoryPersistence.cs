@@ -18,12 +18,10 @@ namespace screenzap.Components
             WriteIndented = false
         };
 
-        // Maps a saved image file name to the exact PNG byte[] last written to it. An item's role
-        // blobs are replaced with brand-new arrays whenever their content changes, so reference
-        // identity is a reliable "unchanged since last save" signal. This lets Save() skip rewriting
-        // the up-to-384 files that didn't change — O(changed images) instead of O(all images) when
-        // the history is full. Items now hold PNG-compressed bytes, so saving is a straight byte
-        // copy with no encode and no decode.
+        // Maps a newly-saved image file to the exact PNG byte[] written to it. In-memory content is
+        // replaced with a new array whenever it changes, making reference identity a reliable
+        // unchanged signal. Restored content takes the even cheaper file-backed path and needs no
+        // byte read at all.
         private readonly Dictionary<string, byte[]> lastSavedBytesByFile = new(StringComparer.OrdinalIgnoreCase);
 
         public ClipboardHistoryPersistence()
@@ -193,16 +191,16 @@ namespace screenzap.Components
                 TextAnnotations = item.TextAnnotations?.Select(ToDto).ToList()
             };
 
-            entry.OriginalImagePath = SaveImageBytes(item.Id, "original", item.OriginalPngBytes, keepFiles);
-            entry.CommittedImagePath = SaveImageBytes(item.Id, "committed", item.CommittedPngBytes, keepFiles);
-            entry.CurrentImagePath = SaveImageBytes(item.Id, "current", item.CurrentPngBytes, keepFiles);
+            entry.OriginalImagePath = SaveImageContent(item.Id, "original", item.OriginalPngContent, keepFiles);
+            entry.CommittedImagePath = SaveImageContent(item.Id, "committed", item.CommittedPngContent, keepFiles);
+            entry.CurrentImagePath = SaveImageContent(item.Id, "current", item.CurrentPngContent, keepFiles);
 
             // Size + signature per role and a small thumbnail file let Load rebuild the item
             // without decoding any full image.
             entry.OriginalImageMeta = ToMetaDto(item.OriginalImageMeta);
             entry.CommittedImageMeta = ToMetaDto(item.CommittedImageMeta);
             entry.CurrentImageMeta = ToMetaDto(item.CurrentImageMeta);
-            entry.ThumbnailImagePath = SaveImageBytes(item.Id, "thumb", item.ThumbnailSourcePngBytes, keepFiles);
+            entry.ThumbnailImagePath = SaveImageContent(item.Id, "thumb", item.ThumbnailSourcePngContent, keepFiles);
 
             return entry;
         }
@@ -247,15 +245,25 @@ namespace screenzap.Components
             return new RoleImageMeta(new Size(dto.Width, dto.Height), signature);
         }
 
-        private string? SaveImageBytes(Guid itemId, string role, byte[]? png, HashSet<string> keepFiles)
+        private string? SaveImageContent(Guid itemId, string role, PngContent? content, HashSet<string> keepFiles)
         {
-            if (png == null)
+            if (content == null)
             {
                 return null;
             }
 
             var fileName = $"{itemId:N}_{role}.png";
             var path = Path.Combine(rootDirectory, fileName);
+
+            // The normal restored-history path is already backed by this exact file. Keep it in
+            // place without reading its bytes and without rewriting hundreds of unchanged PNGs.
+            if (PathsEqual(content.BackingFilePath, path) && File.Exists(path))
+            {
+                keepFiles.Add(fileName);
+                return fileName;
+            }
+
+            var png = content.GetBytes();
 
             // Skip rewriting when this exact byte array was already written to this file and the file
             // still exists. Content can only change by swapping in a new array, so reference identity
@@ -281,6 +289,19 @@ namespace screenzap.Components
             return fileName;
         }
 
+        private static bool PathsEqual(string? first, string second)
+        {
+            if (string.IsNullOrWhiteSpace(first))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                Path.GetFullPath(first),
+                Path.GetFullPath(second),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
         private ClipboardHistoryItem? LoadItem(ClipboardHistoryItemEntry entry)
         {
             if (entry.Kind != ClipboardItemKind.Image)
@@ -290,25 +311,52 @@ namespace screenzap.Components
                 return null;
             }
 
-            var original = LoadBytes(entry.OriginalImagePath);
-            var committed = LoadBytes(entry.CommittedImagePath);
-            var current = LoadBytes(entry.CurrentImagePath);
+            var originalPath = ResolveExistingPath(entry.OriginalImagePath);
+            var committedPath = ResolveExistingPath(entry.CommittedImagePath);
+            var currentPath = ResolveExistingPath(entry.CurrentImagePath);
 
-            if (original == null || committed == null || current == null)
+            if (originalPath == null || committedPath == null || currentPath == null)
             {
                 return null;
             }
 
-            var item = ClipboardHistoryItem.FromPersistedPng(
-                entry.Id,
-                entry.CreatedUtc,
-                original,
-                committed,
-                current,
-                FromMetaDto(entry.OriginalImageMeta),
-                FromMetaDto(entry.CommittedImageMeta),
-                FromMetaDto(entry.CurrentImageMeta),
-                LoadBytes(entry.ThumbnailImagePath));
+            var originalMeta = FromMetaDto(entry.OriginalImageMeta);
+            var committedMeta = FromMetaDto(entry.CommittedImageMeta);
+            var currentMeta = FromMetaDto(entry.CurrentImageMeta);
+            var thumbnailPath = ResolveExistingPath(entry.ThumbnailImagePath);
+
+            ClipboardHistoryItem item;
+            if (originalMeta.HasValue && committedMeta.HasValue && currentMeta.HasValue)
+            {
+                // Current manifests carry enough metadata to rebuild every item as a tiny set of
+                // file-backed descriptors. No full PNG or thumbnail is read on the startup path.
+                item = ClipboardHistoryItem.FromPersistedFiles(
+                    entry.Id,
+                    entry.CreatedUtc,
+                    originalPath,
+                    committedPath,
+                    currentPath,
+                    originalMeta.Value,
+                    committedMeta.Value,
+                    currentMeta.Value,
+                    thumbnailPath);
+            }
+            else
+            {
+                // One-time compatibility path for older manifests. Their first save upgrades the
+                // metadata, after which subsequent starts use the lazy path above.
+                item = ClipboardHistoryItem.FromPersistedPng(
+                    entry.Id,
+                    entry.CreatedUtc,
+                    File.ReadAllBytes(originalPath),
+                    File.ReadAllBytes(committedPath),
+                    File.ReadAllBytes(currentPath),
+                    originalMeta,
+                    committedMeta,
+                    currentMeta,
+                    thumbnailPath == null ? null : File.ReadAllBytes(thumbnailPath));
+            }
+
             ApplyCommonEntryState(item, entry);
             return item;
         }
@@ -332,20 +380,15 @@ namespace screenzap.Components
             item.SetDirtyFlagForRestore(entry.IsDirty);
         }
 
-        private byte[]? LoadBytes(string? relativePath)
+        private string? ResolveExistingPath(string? relativePath)
         {
             if (string.IsNullOrWhiteSpace(relativePath))
             {
                 return null;
             }
 
-            var path = Path.Combine(rootDirectory, relativePath);
-            if (!File.Exists(path))
-            {
-                return null;
-            }
-
-            return File.ReadAllBytes(path);
+            var path = Path.GetFullPath(Path.Combine(rootDirectory, relativePath));
+            return File.Exists(path) ? path : null;
         }
 
         private static AnnotationShapeDto ToDto(AnnotationShape shape)
