@@ -288,7 +288,7 @@ namespace screenzap
         {
             if (arrowSizeComboBox == null)
                 throw new System.InvalidOperationException("arrowSizeComboBox not initialized");
-            int idx = arrowSizeComboBox.Items.IndexOf(size.ToString());
+            int idx = arrowSizeComboBox.Items.IndexOf(ArrowSizeToComboBoxText(size));
             if (idx < 0)
                 throw new System.ArgumentException($"arrow size {size} not in combobox items");
             arrowSizeComboBox.SelectedIndex = idx;

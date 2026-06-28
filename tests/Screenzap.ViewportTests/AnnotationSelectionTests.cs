@@ -411,5 +411,54 @@ namespace Screenzap.ViewportTests
                 Assert.Equal(1, editor.TestAnnotationShapeCount); // still exists
             });
         }
+
+        [Fact]
+        public void HeadNone_RemovesArrowHead_ButKeepsLine()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = new screenzap.ImageEditor();
+                using var canvas = new Bitmap(100, 80);
+                using (var graphics = Graphics.FromImage(canvas))
+                    graphics.Clear(Color.White);
+                editor.LoadImage(canvas);
+
+                editor.TestToggleArrowTool();
+                editor.TestFireMouseDownAtImagePixel(new Point(20, 40), MouseButtons.Left);
+                editor.TestFireMouseMoveAtImagePixel(new Point(70, 40), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(70, 40), MouseButtons.Left);
+
+                using var headedComposite = editor.BuildCompositeImageForTests();
+                int headedInk = CountNonWhitePixels(headedComposite, new Rectangle(48, 30, 27, 21));
+
+                editor.TestSetAnnotationArrowSize(0f);
+
+                Assert.Equal(0f, editor.TestSelectedAnnotation!.ArrowSize);
+                Assert.Equal(0, editor.TestArrowSizeComboBoxSelectedIndex);
+
+                using var lineComposite = editor.BuildCompositeImageForTests();
+                int lineInk = CountNonWhitePixels(lineComposite, new Rectangle(48, 30, 27, 21));
+
+                Assert.True(lineInk > 0, "the line should remain visible when its head is None");
+                Assert.True(
+                    lineInk < headedInk,
+                    $"expected None to remove arrow-head pixels, but headed={headedInk} and none={lineInk}");
+            });
+        }
+
+        private static int CountNonWhitePixels(Bitmap bitmap, Rectangle area)
+        {
+            int count = 0;
+            for (int y = area.Top; y < area.Bottom; y++)
+            {
+                for (int x = area.Left; x < area.Right; x++)
+                {
+                    if (bitmap.GetPixel(x, y).ToArgb() != Color.White.ToArgb())
+                        count++;
+                }
+            }
+
+            return count;
+        }
     }
 }

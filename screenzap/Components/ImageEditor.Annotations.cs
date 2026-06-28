@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
 using screenzap.lib;
@@ -144,6 +145,7 @@ namespace screenzap
         private const float DefaultHighlighterPeakOpacity = 0.40f;
         private const float DefaultHighlighterBodyOpacity = 0.26f;
         private const double HighlighterBodyLevel = DefaultHighlighterBodyOpacity / DefaultHighlighterPeakOpacity;
+        private const string NoArrowHeadText = "None";
 
         // Annotation tool settings
         private float annotationLineThickness = 2f;
@@ -478,8 +480,12 @@ namespace screenzap
             if (annotation.Type == AnnotationType.Arrow)
             {
                 float arrowScale = scale * annotation.ArrowSize;
-                using var arrowCap = new System.Drawing.Drawing2D.AdjustableArrowCap(4f * arrowScale, 6f * arrowScale, true);
-                pen.CustomEndCap = arrowCap;
+                using var arrowCap = annotation.ArrowSize > 0f
+                    ? new System.Drawing.Drawing2D.AdjustableArrowCap(4f * arrowScale, 6f * arrowScale, true)
+                    : null;
+                if (arrowCap != null)
+                    pen.CustomEndCap = arrowCap;
+
                 var start = ConvertAnnotationPoint(annotation.Start, surface);
                 var end = ConvertAnnotationPoint(annotation.End, surface);
                 graphics.DrawLine(pen, start, end);
@@ -1935,9 +1941,11 @@ namespace screenzap
 
             if (arrowSizeComboBox != null)
             {
-                arrowSizeComboBox.Items.AddRange(new object[] { "0.5", "0.75", "1", "1.25", "1.5", "2", "2.5", "3" });
-                int defaultIndex = arrowSizeComboBox.Items.IndexOf(annotationArrowSize.ToString());
-                arrowSizeComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 2; // Default to "1"
+                arrowSizeComboBox.Items.AddRange(new object[] { NoArrowHeadText, "0.5", "0.75", "1", "1.25", "1.5", "2", "2.5", "3" });
+                int defaultIndex = arrowSizeComboBox.Items.IndexOf(ArrowSizeToComboBoxText(annotationArrowSize));
+                arrowSizeComboBox.SelectedIndex = defaultIndex >= 0
+                    ? defaultIndex
+                    : arrowSizeComboBox.Items.IndexOf("1");
             }
 
             if (highlighterThicknessComboBox != null)
@@ -2124,12 +2132,29 @@ namespace screenzap
             {
                 return;
             }
-            if (arrowSizeComboBox?.SelectedItem is string sizeStr &&
-                float.TryParse(sizeStr, out float size) && size > 0)
+            if (TryGetArrowSize(arrowSizeComboBox?.SelectedItem, out float size))
             {
                 annotationArrowSize = size;
                 ApplyArrowSizeToSelection(size);
             }
+        }
+
+        private static string ArrowSizeToComboBoxText(float size) =>
+            size <= 0f
+                ? NoArrowHeadText
+                : size.ToString("0.##", CultureInfo.InvariantCulture);
+
+        private static bool TryGetArrowSize(object? selectedItem, out float size)
+        {
+            size = 0f;
+            if (string.Equals(selectedItem as string, NoArrowHeadText, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return selectedItem is string sizeText
+                && float.TryParse(sizeText, NumberStyles.Float, CultureInfo.InvariantCulture, out size)
+                && size > 0f;
         }
 
         /// <summary>
@@ -2206,8 +2231,9 @@ namespace screenzap
         }
 
         /// <summary>
-        /// Write the arrow head size to every selected arrow shape (rects and texts are
-        /// silently skipped). Arrows that already match the requested value are excluded.
+        /// Write the arrow head size to every selected arrow shape (zero means no head;
+        /// rects and texts are silently skipped). Arrows that already match the requested
+        /// value are excluded.
         /// </summary>
         private void ApplyArrowSizeToSelection(float size)
         {
@@ -2298,7 +2324,7 @@ namespace screenzap
                     float? unanimous = GetUnanimousArrowSize();
                     if (unanimous.HasValue)
                     {
-                        int index = arrowSizeComboBox.Items.IndexOf(unanimous.Value.ToString());
+                        int index = arrowSizeComboBox.Items.IndexOf(ArrowSizeToComboBoxText(unanimous.Value));
                         arrowSizeComboBox.SelectedIndex = index >= 0 ? index : -1;
                     }
                     else
