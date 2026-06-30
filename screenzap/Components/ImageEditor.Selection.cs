@@ -594,6 +594,11 @@ namespace screenzap
 
         private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
         {
+            // The viewport is not a tab stop, so clicking it does not reliably take focus from
+            // sibling controls such as the history thumbnails. Make the user's click authoritative
+            // so editor shortcuts are routed back to this ImageEditor.
+            pictureBox1.Focus();
+
             if (isStraightenToolActive)
             {
                 if (e.Button == MouseButtons.Left)

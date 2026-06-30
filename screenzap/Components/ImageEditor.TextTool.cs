@@ -655,6 +655,11 @@ namespace screenzap
 
         private void SelectTextAnnotation(TextAnnotation? target, bool add = false)
         {
+            if (target != null)
+            {
+                DeselectImageLayerIfAny();
+            }
+
             if (add)
             {
                 if (target == null)

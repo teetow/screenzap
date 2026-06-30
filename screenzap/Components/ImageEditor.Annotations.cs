@@ -219,6 +219,11 @@ namespace screenzap
         /// </summary>
         private void SelectAnnotation(AnnotationShape? target, bool add = false)
         {
+            if (target != null)
+            {
+                DeselectImageLayerIfAny();
+            }
+
             if (add)
             {
                 if (target == null)

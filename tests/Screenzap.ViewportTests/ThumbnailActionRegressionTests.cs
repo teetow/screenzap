@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using screenzap;
 using screenzap.Components;
 using screenzap.Components.Shared;
 using Xunit;
@@ -576,7 +577,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void ListKeepsFocus_WhenEditorGrabsItAsynchronously_OnLoad()
+        public void ThumbnailDoesNotReclaimFocus_AfterUserMovesToEditor()
         {
             Exception? failure = null;
 
@@ -601,42 +602,67 @@ namespace Screenzap.ViewportTests
                     _ = host.Handle;
                     Application.DoEvents();
 
-                    // Arm the editor-style deferred focus grab (real ImageEditor.LoadImage posts a
-                    // re-center ending in pictureBox1.Focus(), which beats any synchronous reclaim).
                     var editorFocusTarget = new Button();
                     presenter.View.Controls.Add(editorFocusTarget);
-                    presenter.AsyncFocusStealTarget = editorFocusTarget;
 
-                    // Click an item that is NOT already active (activating the active item takes a
-                    // short-circuit path that never loads, and so never steals), and not the last
-                    // one so Down has somewhere to go.
                     var items = host.HistoryStore.Items;
                     int clickIndex = ReferenceEquals(items[0], host.HistoryStore.ActiveItem) ? 1 : 0;
                     var clickTarget = items[clickIndex];
-                    var downTarget = items[clickIndex + 1];
 
-                    // Click: even after the editor's posted grab runs, the keyboard must stay on
-                    // the clicked thumbnail — this was the "have to click twice" regression.
                     Assert.True(host.ClickHistoryItemForDiagnostics(clickTarget));
-                    Assert.Equal(1, presenter.StealsPosted);
-                    Application.DoEvents();
-                    Assert.Equal(1, presenter.StealsRun);
                     Assert.Same(clickTarget, host.FocusedHistoryItemForDiagnostics);
 
-                    // Same for arrow navigation, which also loads the destination item.
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
+                    // Model a click into the editor before posted callbacks are drained. The list
+                    // must not remember its old focus claim and take the keyboard back afterward.
+                    editorFocusTarget.Select();
+                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
                     Application.DoEvents();
-                    Assert.Equal(2, presenter.StealsRun);
-                    Assert.Same(downTarget, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(downTarget, host.HistoryStore.ActiveItem);
+                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
+                    Assert.False(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+            });
 
-                    // And for Delete, where the successor's activation loads it into the editor.
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
+            if (failure != null)
+            {
+                throw new TargetInvocationException(failure);
+            }
+        }
+
+        [Fact]
+        public void CanvasMouseDown_TakesFocusFromThumbnail()
+        {
+            Exception? failure = null;
+
+            RunInSta(() =>
+            {
+                try
+                {
+                    using var editor = new ImageEditor();
+                    using var host = new ClipboardEditorHostForm(true, editor)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false,
+                        Opacity = 0
+                    };
+
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+                    AddImage(host.HistoryStore, Color.Red);
+                    var second = AddImage(host.HistoryStore, Color.Blue);
+
+                    host.Show();
                     Application.DoEvents();
-                    Assert.Equal(3, presenter.StealsRun);
-                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, downTarget));
-                    Assert.NotNull(host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(host.HistoryStore.ActiveItem, host.FocusedHistoryItemForDiagnostics);
+
+                    Assert.True(host.ClickHistoryItemForDiagnostics(second));
+                    Application.DoEvents();
+                    Assert.Same(second, host.FocusedHistoryItemForDiagnostics);
+
+                    editor.TestFireMouseDownAtImagePixel(new Point(1, 1), MouseButtons.Left);
+                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
+                    Assert.False(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
                 }
                 catch (Exception ex)
                 {
@@ -1081,35 +1107,9 @@ namespace Screenzap.ViewportTests
                 return item.Kind == ClipboardItemKind.Image;
             }
 
-            /// <summary>
-            /// When set, LoadHistoryItem posts a deferred focus grab on this control — mirroring
-            /// the real ImageEditor, whose LoadImage posts a re-center that ends in
-            /// pictureBox1.Focus() and so steals focus AFTER any synchronous reclaim.
-            /// </summary>
-            public System.Windows.Forms.Control? AsyncFocusStealTarget { get; set; }
-
-            // Let tests assert the steal really happened — a steal that never runs would make any
-            // "list keeps focus" assertion pass vacuously.
-            public int StealsPosted { get; private set; }
-            public int StealsRun { get; private set; }
-
             public void LoadHistoryItem(ClipboardHistoryItem item)
             {
                 CurrentColor = item.CurrentImage != null ? item.CurrentImage.GetPixel(0, 0) : Color.Empty;
-
-                if (AsyncFocusStealTarget is { } steal
-                    && view.FindForm() is { IsHandleCreated: true } form)
-                {
-                    StealsPosted++;
-                    form.BeginInvoke(new Action(() =>
-                    {
-                        if (!steal.IsDisposed)
-                        {
-                            steal.Select();
-                            StealsRun++;
-                        }
-                    }));
-                }
             }
 
             public void StashHistoryItemState(ClipboardHistoryItem item)

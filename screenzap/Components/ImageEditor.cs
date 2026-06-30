@@ -196,12 +196,15 @@ namespace screenzap
 
             InitializeComponent();
             InitializeToolbarLayout();
+            InitializeLayerToolbar();
+            InitializeResizeImageCommand();
             ConfigureToolbarIcons();
 
             MouseWheel += ImageEditor_MouseWheel;
             pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
             pictureBox1.ZoomChanged += pictureBox1_ZoomChanged;
             pictureBox1.MouseDoubleClick += pictureBox1_MouseDoubleClick;
+            InitializeHistoryImageDrop();
 
             ClearSelection();
 
@@ -223,6 +226,11 @@ namespace screenzap
             if (annotationOptionsToolStrip != null)
             {
                 annotationOptionsToolStrip.Visible = false;
+            }
+
+            if (layerOptionsToolStrip != null)
+            {
+                layerOptionsToolStrip.Visible = false;
             }
 
             UpdateCensorToolbarState();
@@ -678,8 +686,6 @@ namespace screenzap
                 BeginInvoke(new Action(() =>
                 {
                     pictureBox1?.CenterImage();
-                    Focus();
-                    pictureBox1?.Focus();
                 }));
             }
         }
@@ -901,6 +907,12 @@ namespace screenzap
             {
                 textOptionsToolStrip.Location = new Point(leftInset, topInset);
                 textOptionsToolStrip.BringToFront();
+            }
+
+            if (layerOptionsToolStrip != null)
+            {
+                layerOptionsToolStrip.Location = new Point(leftInset, topInset);
+                layerOptionsToolStrip.BringToFront();
             }
 
             if (censorToolStrip != null)
@@ -1579,6 +1591,7 @@ namespace screenzap
             {
                 expandCanvasToolStripButton.Enabled = enable;
             }
+            UpdateResizeImageCommandState(enable);
             if (flipHorizontalToolStripButton != null)
             {
                 flipHorizontalToolStripButton.Enabled = enable;
@@ -1972,6 +1985,11 @@ namespace screenzap
         private void ImageEditor_KeyDown(object sender, KeyEventArgs e)
         {
             //Console.WriteLine(e.Modifiers);
+
+            if (HandleLayerToolbarKeyDown(e))
+            {
+                return;
+            }
 
             // Multi-select Delete: when the user has selected more than one annotation
             // (any mix of shapes and texts) and isn't editing text, remove the whole
@@ -2717,58 +2735,82 @@ namespace screenzap
                     return true;
                 }
 
-                // Non-destructive paste: drop the pasted image in as a smart layer rather than rasterizing.
-                // The base bitmap is captured in the undo step (ReplacesImage=true) so undoing across
-                // a future commit-flatten still walks back to the unflattened baseline.
-                var canvasSize = pictureBox1.Image.Size;
-                var frame = !Selection.IsEmpty
-                    ? new RectangleF(Selection.X, Selection.Y, clipboardImage.Width, clipboardImage.Height)
-                    : new RectangleF(
-                        (canvasSize.Width - clipboardImage.Width) / 2f,
-                        (canvasSize.Height - clipboardImage.Height) / 2f,
-                        clipboardImage.Width,
-                        clipboardImage.Height);
-
-                var beforeImage = new Bitmap(pictureBox1.Image);
-                var afterImage = new Bitmap(pictureBox1.Image);
-                var selectionBefore = Selection;
-                var layersBefore = CloneLayers();
-                var annotationStateBefore = CloneAnnotations();
-                var textAnnotationStateBefore = CloneTextAnnotations();
-
-                var newLayer = new ImageLayer(new Bitmap(clipboardImage), frame);
-                imageLayers.Add(newLayer);
-                SelectImageLayer(imageLayers.Count - 1);
-
-                // The image-region Selection is left untouched on paste. Earlier slices set it to
-                // the layer's footprint for a legacy test contract, but that produced a ghost
-                // marching-ants rectangle once the layer moved or resized.
-                ClearSelection();
-
-                var layersAfter = CloneLayers();
-                var annotationStateAfter = CloneAnnotations();
-                var textAnnotationStateAfter = CloneTextAnnotations();
-
-                PushUndoStep(
-                    Rectangle.Empty,
-                    beforeImage,
-                    afterImage,
-                    selectionBefore,
-                    Selection,
-                    replacesImage: true,
-                    shapesBefore: annotationStateBefore,
-                    shapesAfter: annotationStateAfter,
-                    textsBefore: textAnnotationStateBefore,
-                    textsAfter: textAnnotationStateAfter,
-                    layersBefore: layersBefore,
-                    layersAfter: layersAfter);
-
-                isPlaceholderImage = false;
-                UpdateCommandUI();
-                UpdateStatusBar();
-                pictureBox1.Invalidate();
-                return true;
+                return AddFloatingImageLayer(clipboardImage);
             }
+        }
+
+        private bool AddFloatingImageLayer(Image source, PointF? dropCenter = null)
+        {
+            if (!HasEditableImage || pictureBox1.Image == null || source == null)
+            {
+                return false;
+            }
+
+            // Both Ctrl+V and history-thumbnail drops arrive here. The only placement difference
+            // is that a drag supplies its drop point; keyboard paste keeps the established
+            // selection-origin / canvas-center behavior.
+            var canvasSize = pictureBox1.Image.Size;
+            RectangleF frame;
+            if (dropCenter.HasValue)
+            {
+                frame = new RectangleF(
+                    dropCenter.Value.X - source.Width / 2f,
+                    dropCenter.Value.Y - source.Height / 2f,
+                    source.Width,
+                    source.Height);
+            }
+            else
+            {
+                frame = !Selection.IsEmpty
+                    ? new RectangleF(Selection.X, Selection.Y, source.Width, source.Height)
+                    : new RectangleF(
+                        (canvasSize.Width - source.Width) / 2f,
+                        (canvasSize.Height - source.Height) / 2f,
+                        source.Width,
+                        source.Height);
+            }
+
+            // Non-destructive paste: drop the image in as a smart layer rather than rasterizing.
+            // The base bitmap is captured in the undo step (ReplacesImage=true) so undoing across
+            // a future commit-flatten still walks back to the unflattened baseline.
+            var beforeImage = new Bitmap(pictureBox1.Image);
+            var afterImage = new Bitmap(pictureBox1.Image);
+            var selectionBefore = Selection;
+            var layersBefore = CloneLayers();
+            var annotationStateBefore = CloneAnnotations();
+            var textAnnotationStateBefore = CloneTextAnnotations();
+
+            var newLayer = new ImageLayer(new Bitmap(source), frame);
+            imageLayers.Add(newLayer);
+            SelectImageLayer(imageLayers.Count - 1);
+
+            // A layer selection replaces the legacy pixel-region selection so no stale
+            // marching-ants rectangle remains after the layer moves or resizes.
+            ClearSelection();
+
+            var layersAfter = CloneLayers();
+            var annotationStateAfter = CloneAnnotations();
+            var textAnnotationStateAfter = CloneTextAnnotations();
+
+            PushUndoStep(
+                Rectangle.Empty,
+                beforeImage,
+                afterImage,
+                selectionBefore,
+                Selection,
+                replacesImage: true,
+                shapesBefore: annotationStateBefore,
+                shapesAfter: annotationStateAfter,
+                textsBefore: textAnnotationStateBefore,
+                textsAfter: textAnnotationStateAfter,
+                layersBefore: layersBefore,
+                layersAfter: layersAfter);
+
+            isPlaceholderImage = false;
+            UpdateCommandUI();
+            UpdateStatusBar();
+            pictureBox1.Invalidate();
+            return true;
         }
 
         private void ReloadFromClipboard(bool showEmptyClipboardMessage = true)

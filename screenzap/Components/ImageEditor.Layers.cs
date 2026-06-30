@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using screenzap.Components;
 
 namespace screenzap
 {
@@ -29,9 +32,17 @@ namespace screenzap
         private ImageLayerHandle activeLayerHandle = ImageLayerHandle.None;
         private Point layerInteractionOriginPixel;
         private RectangleF layerInteractionStartFrame;
+        private RectangleF layerInteractionStartFill;
         private float layerInteractionStartRotation;
         private List<ImageLayer>? layerInteractionLayersBefore;
         private bool layerChangedDuringInteraction;
+        private ToolStrip? layerOptionsToolStrip;
+        private ToolStripTextBox? layerHeightTextBox;
+        private ToolStripTextBox? layerWidthTextBox;
+        private ToolStripTextBox? layerAngleTextBox;
+        private CheckBox? layerAspectLockCheckBox;
+        private bool isSyncingLayerToolbarControls;
+        private bool isLayerCropModifierHeld_TestOverride;
 
         // Handle dimensions in screen pixels (constant regardless of zoom).
         private const float LayerHandleScreenSize = 8f;
@@ -40,6 +51,10 @@ namespace screenzap
         internal int ImageLayerCountForTests => imageLayers.Count;
 
         internal RectangleF GetImageLayerFrameForTests(int index) => imageLayers[index].Frame;
+
+        internal RectangleF GetImageLayerFillForTests(int index) => imageLayers[index].Fill;
+
+        internal float GetImageLayerRotationForTests(int index) => imageLayers[index].RotationDeg;
 
         internal Bitmap BuildCompositeImageForTests() => BuildCompositeImage();
 
@@ -54,6 +69,41 @@ namespace screenzap
         internal int SelectedLayerIndexForTests => selectedLayerIndex;
 
         internal void SetSelectedLayerForTests(int index) => SelectImageLayer(index);
+
+        internal bool LayerToolbarAvailableForTests => layerOptionsToolStrip != null;
+
+        internal bool LayerToolbarShownForTests => layerOptionsToolStrip?.Visible == true;
+
+        internal bool LayerRotationInputAvailableForTests => layerAngleTextBox != null;
+
+        internal void SetLayerAspectLockForTests(bool locked)
+        {
+            if (layerAspectLockCheckBox != null)
+            {
+                layerAspectLockCheckBox.Checked = locked;
+            }
+        }
+
+        internal void SetLayerCropModifierForTests(bool held) =>
+            isLayerCropModifierHeld_TestOverride = held;
+
+        internal void SetSelectedLayerHeightForTests(float height) =>
+            ApplySelectedLayerDimension(height, updateWidth: false);
+
+        internal void SetSelectedLayerWidthForTests(float width) =>
+            ApplySelectedLayerDimension(width, updateWidth: true);
+
+        internal void SetSelectedLayerAngleForTests(float angle) =>
+            ApplySelectedLayerAngle(angle);
+
+        internal void ResetSelectedLayerForTests() => ResetSelectedLayerDimensions();
+
+        internal bool DropHistoryImageForTests(IDataObject data, Point imagePixel)
+        {
+            return ClipboardHistoryImageDragPayload.TryGetImage(data, out var image)
+                && image != null
+                && AddFloatingImageLayer(image, imagePixel);
+        }
 
         internal bool ApplyFloatingPasteForTests() => ApplyFloatingPaste();
 
@@ -86,6 +136,7 @@ namespace screenzap
                 return;
             }
 
+            int selectionToRestore = selectedLayerIndex;
             ClearImageLayers();
 
             foreach (var layer in source)
@@ -94,9 +145,49 @@ namespace screenzap
             }
 
             // Selection survives if the index is still valid; otherwise reset.
-            if (selectedLayerIndex >= imageLayers.Count)
+            selectedLayerIndex = selectionToRestore >= 0 && selectionToRestore < imageLayers.Count
+                ? selectionToRestore
+                : -1;
+            UpdateLayerToolbarState();
+        }
+
+        private void InitializeHistoryImageDrop()
+        {
+            if (pictureBox1 == null)
             {
-                selectedLayerIndex = -1;
+                return;
+            }
+
+            pictureBox1.AllowDrop = true;
+            pictureBox1.DragEnter += pictureBox1_HistoryImageDragEnter;
+            pictureBox1.DragOver += pictureBox1_HistoryImageDragEnter;
+            pictureBox1.DragDrop += pictureBox1_HistoryImageDragDrop;
+        }
+
+        private void pictureBox1_HistoryImageDragEnter(object? sender, DragEventArgs e)
+        {
+            e.Effect = HasEditableImage
+                && ClipboardHistoryImageDragPayload.TryGetImage(e.Data, out _)
+                    ? DragDropEffects.Copy
+                    : DragDropEffects.None;
+        }
+
+        private void pictureBox1_HistoryImageDragDrop(object? sender, DragEventArgs e)
+        {
+            e.Effect = DragDropEffects.None;
+            if (!HasEditableImage
+                || !ClipboardHistoryImageDragPayload.TryGetImage(e.Data, out var image)
+                || image == null)
+            {
+                return;
+            }
+
+            var clientPoint = pictureBox1.PointToClient(new Point(e.X, e.Y));
+            var imagePixel = FormCoordToPixel(clientPoint);
+            if (AddFloatingImageLayer(image, imagePixel))
+            {
+                e.Effect = DragDropEffects.Copy;
+                pictureBox1.Focus();
             }
         }
 
@@ -111,6 +202,7 @@ namespace screenzap
             isLayerInteractionActive = false;
             activeLayerHandle = ImageLayerHandle.None;
             layerInteractionLayersBefore = null;
+            UpdateLayerToolbarState();
         }
 
         private void SelectImageLayer(int index)
@@ -119,7 +211,11 @@ namespace screenzap
             {
                 index = -1;
             }
-            if (selectedLayerIndex == index) return;
+            if (selectedLayerIndex == index)
+            {
+                UpdateLayerToolbarState();
+                return;
+            }
             selectedLayerIndex = index;
 
             // Selecting a layer clears any annotation / text-annotation selection so
@@ -136,6 +232,7 @@ namespace screenzap
                 }
             }
 
+            UpdateLayerToolbarState();
             pictureBox1?.Invalidate();
         }
 
@@ -280,6 +377,7 @@ namespace screenzap
             isLayerInteractionActive = true;
             layerInteractionOriginPixel = pixelPoint;
             layerInteractionStartFrame = imageLayers[selectedLayerIndex].Frame;
+            layerInteractionStartFill = imageLayers[selectedLayerIndex].Fill;
             layerInteractionStartRotation = imageLayers[selectedLayerIndex].RotationDeg;
             layerInteractionLayersBefore = CloneLayers();
             layerChangedDuringInteraction = false;
@@ -310,6 +408,7 @@ namespace screenzap
                 {
                     rotLayer.RotationDeg = newRotation;
                     layerChangedDuringInteraction = true;
+                    UpdateLayerToolbarState();
                     pictureBox1?.Invalidate();
                 }
                 return;
@@ -318,79 +417,215 @@ namespace screenzap
             float dx = pixelPoint.X - layerInteractionOriginPixel.X;
             float dy = pixelPoint.Y - layerInteractionOriginPixel.Y;
             var start = layerInteractionStartFrame;
-            RectangleF next = start;
-
-            switch (activeLayerHandle)
-            {
-                case ImageLayerHandle.Body:
-                    next = new RectangleF(start.X + dx, start.Y + dy, start.Width, start.Height);
-                    break;
-                case ImageLayerHandle.TopLeft:
-                    next = RectangleF.FromLTRB(start.Left + dx, start.Top + dy, start.Right, start.Bottom);
-                    break;
-                case ImageLayerHandle.Top:
-                    next = RectangleF.FromLTRB(start.Left, start.Top + dy, start.Right, start.Bottom);
-                    break;
-                case ImageLayerHandle.TopRight:
-                    next = RectangleF.FromLTRB(start.Left, start.Top + dy, start.Right + dx, start.Bottom);
-                    break;
-                case ImageLayerHandle.Right:
-                    next = RectangleF.FromLTRB(start.Left, start.Top, start.Right + dx, start.Bottom);
-                    break;
-                case ImageLayerHandle.BottomRight:
-                    next = RectangleF.FromLTRB(start.Left, start.Top, start.Right + dx, start.Bottom + dy);
-                    break;
-                case ImageLayerHandle.Bottom:
-                    next = RectangleF.FromLTRB(start.Left, start.Top, start.Right, start.Bottom + dy);
-                    break;
-                case ImageLayerHandle.BottomLeft:
-                    next = RectangleF.FromLTRB(start.Left + dx, start.Top, start.Right, start.Bottom + dy);
-                    break;
-                case ImageLayerHandle.Left:
-                    next = RectangleF.FromLTRB(start.Left + dx, start.Top, start.Right, start.Bottom);
-                    break;
-            }
-
-            // Shift-key: preserve aspect ratio for corner handles.
-            if (activeLayerHandle != ImageLayerHandle.Body && IsCornerHandle(activeLayerHandle)
-                && System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift)
-                && start.Width > 0f && start.Height > 0f)
-            {
-                float scaleByW = next.Width / start.Width;
-                float scaleByH = next.Height / start.Height;
-                float scale = (System.Math.Abs(scaleByW - 1f) >= System.Math.Abs(scaleByH - 1f)) ? scaleByW : scaleByH;
-                if (scale <= 0f) scale = 0.001f;
-                float targetW = start.Width * scale;
-                float targetH = start.Height * scale;
-                // Anchor at the fixed corner (opposite to the dragged corner).
-                switch (activeLayerHandle)
-                {
-                    case ImageLayerHandle.TopLeft:
-                        next = RectangleF.FromLTRB(next.Right - targetW, next.Bottom - targetH, next.Right, next.Bottom);
-                        break;
-                    case ImageLayerHandle.TopRight:
-                        next = RectangleF.FromLTRB(next.Left, next.Bottom - targetH, next.Left + targetW, next.Bottom);
-                        break;
-                    case ImageLayerHandle.BottomLeft:
-                        next = RectangleF.FromLTRB(next.Right - targetW, next.Top, next.Right, next.Top + targetH);
-                        break;
-                    case ImageLayerHandle.BottomRight:
-                        next = RectangleF.FromLTRB(next.Left, next.Top, next.Left + targetW, next.Top + targetH);
-                        break;
-                }
-            }
-
-            // Disallow zero/negative dimensions; clamp to a 1px minimum.
-            if (next.Width < 1f) next.Width = 1f;
-            if (next.Height < 1f) next.Height = 1f;
-
             var layer = imageLayers[selectedLayerIndex];
+            if (activeLayerHandle == ImageLayerHandle.Body)
+            {
+                var moved = new RectangleF(start.X + dx, start.Y + dy, start.Width, start.Height);
+                if (layer.Frame != moved)
+                {
+                    layer.Frame = moved;
+                    layerChangedDuringInteraction = true;
+                    UpdateLayerToolbarState();
+                    pictureBox1?.Invalidate();
+                }
+                return;
+            }
+
+            bool isCropping = activeLayerHandle != ImageLayerHandle.Body
+                && IsLayerCropModifierDown;
+            if (isCropping)
+            {
+                ApplyLayerCropDrag(layer, pixelPoint);
+                return;
+            }
+
+            bool preserveAspect = IsCornerHandle(activeLayerHandle)
+                && (LayerAspectRatioLocked
+                    || System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift));
+            GetLayerResizeDimensions(pixelPoint, preserveAspect, out float targetWidth, out float targetHeight);
+            var next = CreateAnchoredResizeFrame(targetWidth, targetHeight);
+
             if (layer.Frame != next)
             {
                 layer.Frame = next;
                 layerChangedDuringInteraction = true;
+                UpdateLayerToolbarState();
                 pictureBox1?.Invalidate();
             }
+        }
+
+        private bool IsLayerCropModifierDown =>
+            isLayerCropModifierHeld_TestOverride
+            || System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Control);
+
+        private bool LayerAspectRatioLocked => layerAspectLockCheckBox?.Checked == true;
+
+        private void GetLayerResizeDimensions(
+            Point pixelPoint,
+            bool preserveAspect,
+            out float targetWidth,
+            out float targetHeight)
+        {
+            var frame = layerInteractionStartFrame;
+            float worldDx = pixelPoint.X - layerInteractionOriginPixel.X;
+            float worldDy = pixelPoint.Y - layerInteractionOriginPixel.Y;
+            double radians = layerInteractionStartRotation * Math.PI / 180.0;
+            float cos = (float)Math.Cos(radians);
+            float sin = (float)Math.Sin(radians);
+
+            // Project the pointer delta onto the layer's own rotated axes. Applying canvas
+            // X/Y directly to Frame sides made a rotated resize drift away from its fixed handle.
+            float localDx = worldDx * cos + worldDy * sin;
+            float localDy = -worldDx * sin + worldDy * cos;
+
+            targetWidth = frame.Width;
+            targetHeight = frame.Height;
+            if (HandleMovesLeft(activeLayerHandle)) targetWidth -= localDx;
+            if (HandleMovesRight(activeLayerHandle)) targetWidth += localDx;
+            if (HandleMovesTop(activeLayerHandle)) targetHeight -= localDy;
+            if (HandleMovesBottom(activeLayerHandle)) targetHeight += localDy;
+
+            if (preserveAspect && frame.Width > 0f && frame.Height > 0f)
+            {
+                float scaleByWidth = targetWidth / frame.Width;
+                float scaleByHeight = targetHeight / frame.Height;
+                float scale = Math.Abs(scaleByWidth - 1f) >= Math.Abs(scaleByHeight - 1f)
+                    ? scaleByWidth
+                    : scaleByHeight;
+                scale = Math.Max(0.001f, scale);
+                targetWidth = frame.Width * scale;
+                targetHeight = frame.Height * scale;
+            }
+
+            targetWidth = Math.Max(1f, targetWidth);
+            targetHeight = Math.Max(1f, targetHeight);
+        }
+
+        private RectangleF CreateAnchoredResizeFrame(float width, float height)
+        {
+            var start = layerInteractionStartFrame;
+            var startCenter = new PointF(
+                start.X + start.Width / 2f,
+                start.Y + start.Height / 2f);
+            var originalFixedOffset = GetResizeFixedAnchorOffset(start.Width, start.Height, activeLayerHandle);
+            var fixedAnchor = Add(startCenter, RotateVector(originalFixedOffset, layerInteractionStartRotation));
+
+            var newFixedOffset = GetResizeFixedAnchorOffset(width, height, activeLayerHandle);
+            var newCenter = Subtract(fixedAnchor, RotateVector(newFixedOffset, layerInteractionStartRotation));
+            return new RectangleF(
+                newCenter.X - width / 2f,
+                newCenter.Y - height / 2f,
+                width,
+                height);
+        }
+
+        private static PointF GetResizeFixedAnchorOffset(
+            float width,
+            float height,
+            ImageLayerHandle draggedHandle)
+        {
+            float x = HandleMovesLeft(draggedHandle)
+                ? width / 2f
+                : HandleMovesRight(draggedHandle) ? -width / 2f : 0f;
+            float y = HandleMovesTop(draggedHandle)
+                ? height / 2f
+                : HandleMovesBottom(draggedHandle) ? -height / 2f : 0f;
+            return new PointF(x, y);
+        }
+
+        private static PointF RotateVector(PointF vector, float degrees)
+        {
+            double radians = degrees * Math.PI / 180.0;
+            float cos = (float)Math.Cos(radians);
+            float sin = (float)Math.Sin(radians);
+            return new PointF(
+                vector.X * cos - vector.Y * sin,
+                vector.X * sin + vector.Y * cos);
+        }
+
+        private static PointF Add(PointF a, PointF b) => new PointF(a.X + b.X, a.Y + b.Y);
+
+        private static PointF Subtract(PointF a, PointF b) => new PointF(a.X - b.X, a.Y - b.Y);
+
+        private static bool HandleMovesLeft(ImageLayerHandle handle) =>
+            handle == ImageLayerHandle.TopLeft
+            || handle == ImageLayerHandle.BottomLeft
+            || handle == ImageLayerHandle.Left;
+
+        private static bool HandleMovesRight(ImageLayerHandle handle) =>
+            handle == ImageLayerHandle.TopRight
+            || handle == ImageLayerHandle.BottomRight
+            || handle == ImageLayerHandle.Right;
+
+        private static bool HandleMovesTop(ImageLayerHandle handle) =>
+            handle == ImageLayerHandle.TopLeft
+            || handle == ImageLayerHandle.TopRight
+            || handle == ImageLayerHandle.Top;
+
+        private static bool HandleMovesBottom(ImageLayerHandle handle) =>
+            handle == ImageLayerHandle.BottomLeft
+            || handle == ImageLayerHandle.BottomRight
+            || handle == ImageLayerHandle.Bottom;
+
+        private void ApplyLayerCropDrag(ImageLayer layer, Point pixelPoint)
+        {
+            var frame = layerInteractionStartFrame;
+            var fill = layerInteractionStartFill;
+            if (frame.Width <= 0f || frame.Height <= 0f || fill.Width <= 0f || fill.Height <= 0f)
+            {
+                return;
+            }
+
+            float sourcePerFrameX = fill.Width / frame.Width;
+            float sourcePerFrameY = fill.Height / frame.Height;
+            float left = fill.Left;
+            float top = fill.Top;
+            float right = fill.Right;
+            float bottom = fill.Bottom;
+            bool movesLeft = HandleMovesLeft(activeLayerHandle);
+            bool movesRight = HandleMovesRight(activeLayerHandle);
+            bool movesTop = HandleMovesTop(activeLayerHandle);
+            bool movesBottom = HandleMovesBottom(activeLayerHandle);
+            GetLayerResizeDimensions(pixelPoint, preserveAspect: false, out float desiredWidth, out float desiredHeight);
+
+            // Keep the destination/source scale fixed. Moving an edge changes the source fill
+            // by the same scaled amount; clamping to Source lets an outward drag reveal pixels
+            // that were cropped earlier without ever sampling outside the pasted bitmap.
+            if (movesLeft)
+            {
+                float proposed = fill.Right - desiredWidth * sourcePerFrameX;
+                left = Math.Clamp(proposed, 0f, fill.Right - sourcePerFrameX);
+            }
+            if (movesRight)
+            {
+                float proposed = fill.Left + desiredWidth * sourcePerFrameX;
+                right = Math.Clamp(proposed, fill.Left + sourcePerFrameX, layer.Source.Width);
+            }
+            if (movesTop)
+            {
+                float proposed = fill.Bottom - desiredHeight * sourcePerFrameY;
+                top = Math.Clamp(proposed, 0f, fill.Bottom - sourcePerFrameY);
+            }
+            if (movesBottom)
+            {
+                float proposed = fill.Top + desiredHeight * sourcePerFrameY;
+                bottom = Math.Clamp(proposed, fill.Top + sourcePerFrameY, layer.Source.Height);
+            }
+
+            var nextFill = RectangleF.FromLTRB(left, top, right, bottom);
+            float actualWidth = nextFill.Width / sourcePerFrameX;
+            float actualHeight = nextFill.Height / sourcePerFrameY;
+            var nextFrame = CreateAnchoredResizeFrame(actualWidth, actualHeight);
+            if (layer.Frame == nextFrame && layer.Fill == nextFill)
+            {
+                return;
+            }
+
+            layer.Frame = nextFrame;
+            layer.Fill = nextFill;
+            layerChangedDuringInteraction = true;
+            UpdateLayerToolbarState();
+            pictureBox1?.Invalidate();
         }
 
         private void EndLayerInteraction()
@@ -440,6 +675,7 @@ namespace screenzap
 
             layerInteractionLayersBefore = null;
             layerChangedDuringInteraction = false;
+            UpdateLayerToolbarState();
             _ = handleAtBegin; // currently unused; kept for future per-handle metadata.
         }
 
@@ -589,6 +825,7 @@ namespace screenzap
                 layersAfter: layersAfter);
 
             UpdateCommandUI();
+            UpdateLayerToolbarState();
             pictureBox1.Invalidate();
             return true;
         }
@@ -604,6 +841,7 @@ namespace screenzap
             imageLayers.RemoveAt(selectedLayerIndex);
             doomed.Dispose();
             selectedLayerIndex = -1;
+            UpdateLayerToolbarState();
             var layersAfter = CloneLayers();
 
             Bitmap? baseClone = pictureBox1?.Image is Bitmap b ? new Bitmap(b) : null;
@@ -631,8 +869,370 @@ namespace screenzap
         {
             if (!HasSelectedLayer) return false;
             selectedLayerIndex = -1;
+            UpdateLayerToolbarState();
             pictureBox1?.Invalidate();
             return true;
+        }
+
+        private void InitializeLayerToolbar()
+        {
+            if (mainToolStrip == null || layerOptionsToolStrip != null)
+            {
+                return;
+            }
+
+            layerOptionsToolStrip = new ToolStrip
+            {
+                Name = "layerOptionsToolStrip",
+                Dock = DockStyle.None,
+                GripStyle = ToolStripGripStyle.Hidden,
+                AutoSize = true,
+                ImageScalingSize = mainToolStrip.ImageScalingSize,
+                Padding = new Padding(4, 2, 0, 2),
+                Visible = false,
+                CanOverflow = false
+            };
+
+            layerHeightTextBox = CreateLayerDimensionTextBox(
+                "layerHeightTextBox",
+                "Layer height in pixels",
+                () => CommitLayerDimensionText(layerHeightTextBox, updateWidth: false));
+            layerWidthTextBox = CreateLayerDimensionTextBox(
+                "layerWidthTextBox",
+                "Layer width in pixels",
+                () => CommitLayerDimensionText(layerWidthTextBox, updateWidth: true));
+            layerAngleTextBox = CreateLayerDimensionTextBox(
+                "layerAngleTextBox",
+                "Layer rotation angle in degrees",
+                CommitLayerAngleText);
+
+            layerAspectLockCheckBox = new CheckBox
+            {
+                Name = "layerAspectLockCheckBox",
+                Text = "Lock aspect ratio",
+                AutoSize = true,
+                Checked = false,
+                Margin = Padding.Empty
+            };
+            var aspectHost = new ToolStripControlHost(layerAspectLockCheckBox)
+            {
+                Name = "layerAspectLockHost",
+                AutoSize = true,
+                ToolTipText = "Keep the current proportions when resizing"
+            };
+
+            var resetButton = new ToolStripButton
+            {
+                Name = "layerResetButton",
+                Text = "Reset",
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                ToolTipText = "Restore original dimensions, crop, and rotation"
+            };
+            resetButton.Click += (_, _) => ResetSelectedLayerDimensions();
+
+            layerOptionsToolStrip.Items.Add(new ToolStripLabel("H"));
+            layerOptionsToolStrip.Items.Add(layerHeightTextBox);
+            layerOptionsToolStrip.Items.Add(new ToolStripLabel("W"));
+            layerOptionsToolStrip.Items.Add(layerWidthTextBox);
+            layerOptionsToolStrip.Items.Add(new ToolStripLabel("Rotation"));
+            layerOptionsToolStrip.Items.Add(layerAngleTextBox);
+            layerOptionsToolStrip.Items.Add(new ToolStripSeparator());
+            layerOptionsToolStrip.Items.Add(aspectHost);
+            layerOptionsToolStrip.Items.Add(resetButton);
+
+            Controls.Add(layerOptionsToolStrip);
+            UpdateLayerToolbarState();
+        }
+
+        private ToolStripTextBox CreateLayerDimensionTextBox(string name, string toolTip, Action commit)
+        {
+            var textBox = new ToolStripTextBox
+            {
+                Name = name,
+                AutoSize = false,
+                Width = 58,
+                ToolTipText = toolTip
+            };
+
+            textBox.Leave += (_, _) => commit();
+            textBox.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    commit();
+                    pictureBox1?.Focus();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
+                else if (e.KeyCode == Keys.Escape)
+                {
+                    UpdateLayerToolbarState();
+                    pictureBox1?.Focus();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
+            };
+            return textBox;
+        }
+
+        private bool HandleLayerToolbarKeyDown(KeyEventArgs e)
+        {
+            if (layerOptionsToolStrip?.ContainsFocus != true)
+            {
+                return false;
+            }
+
+            ToolStripTextBox? focusedTextBox = null;
+            if (layerHeightTextBox?.Control.Focused == true)
+                focusedTextBox = layerHeightTextBox;
+            else if (layerWidthTextBox?.Control.Focused == true)
+                focusedTextBox = layerWidthTextBox;
+            else if (layerAngleTextBox?.Control.Focused == true)
+                focusedTextBox = layerAngleTextBox;
+
+            if (focusedTextBox != null && e.KeyCode == Keys.Enter)
+            {
+                if (focusedTextBox == layerHeightTextBox)
+                    CommitLayerDimensionText(focusedTextBox, updateWidth: false);
+                else if (focusedTextBox == layerWidthTextBox)
+                    CommitLayerDimensionText(focusedTextBox, updateWidth: true);
+                else
+                    CommitLayerAngleText();
+
+                pictureBox1?.Focus();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+            }
+            else if (focusedTextBox != null && e.KeyCode == Keys.Escape)
+            {
+                UpdateLayerToolbarState();
+                pictureBox1?.Focus();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+            }
+
+            // With KeyPreview enabled, the form sees toolbar keystrokes before the hosted
+            // control. Returning true keeps editor shortcuts (Enter-to-apply, Delete, etc.)
+            // from acting on the document while the user is editing a toolbar value.
+            return true;
+        }
+
+        private void UpdateLayerToolbarState()
+        {
+            if (layerOptionsToolStrip == null)
+            {
+                return;
+            }
+
+            bool show = HasSelectedLayer;
+            layerOptionsToolStrip.Visible = show;
+            if (!show)
+            {
+                return;
+            }
+
+            var layer = imageLayers[selectedLayerIndex];
+            isSyncingLayerToolbarControls = true;
+            try
+            {
+                if (layerHeightTextBox != null)
+                    layerHeightTextBox.Text = FormatLayerToolbarValue(layer.Frame.Height);
+                if (layerWidthTextBox != null)
+                    layerWidthTextBox.Text = FormatLayerToolbarValue(layer.Frame.Width);
+                if (layerAngleTextBox != null)
+                    layerAngleTextBox.Text = FormatLayerToolbarValue(layer.RotationDeg);
+            }
+            finally
+            {
+                isSyncingLayerToolbarControls = false;
+            }
+
+            PositionOverlayToolStrips();
+            layerOptionsToolStrip.BringToFront();
+        }
+
+        private static string FormatLayerToolbarValue(float value) =>
+            value.ToString("0.##", CultureInfo.CurrentCulture);
+
+        private static bool TryParseLayerToolbarValue(string? text, out float value)
+        {
+            return float.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)
+                || float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private void CommitLayerDimensionText(ToolStripTextBox? textBox, bool updateWidth)
+        {
+            if (isSyncingLayerToolbarControls || textBox == null)
+            {
+                return;
+            }
+
+            if (TryParseLayerToolbarValue(textBox.Text, out float value) && value >= 1f)
+            {
+                ApplySelectedLayerDimension(value, updateWidth);
+            }
+            else
+            {
+                UpdateLayerToolbarState();
+            }
+        }
+
+        private void CommitLayerAngleText()
+        {
+            if (isSyncingLayerToolbarControls || layerAngleTextBox == null)
+            {
+                return;
+            }
+
+            if (TryParseLayerToolbarValue(layerAngleTextBox.Text, out float value))
+            {
+                ApplySelectedLayerAngle(value);
+            }
+            else
+            {
+                UpdateLayerToolbarState();
+            }
+        }
+
+        private void ApplySelectedLayerDimension(float value, bool updateWidth)
+        {
+            if (!HasSelectedLayer || !float.IsFinite(value) || value < 1f)
+            {
+                UpdateLayerToolbarState();
+                return;
+            }
+
+            var layer = imageLayers[selectedLayerIndex];
+            var before = CloneLayers();
+            var frame = layer.Frame;
+
+            if (updateWidth)
+            {
+                float height = LayerAspectRatioLocked && frame.Width > 0f
+                    ? Math.Max(1f, value * frame.Height / frame.Width)
+                    : frame.Height;
+                layer.Frame = ResizeFrameKeepingVisualTopLeft(frame, layer.RotationDeg, value, height);
+            }
+            else
+            {
+                float width = LayerAspectRatioLocked && frame.Height > 0f
+                    ? Math.Max(1f, value * frame.Width / frame.Height)
+                    : frame.Width;
+                layer.Frame = ResizeFrameKeepingVisualTopLeft(frame, layer.RotationDeg, width, value);
+            }
+
+            FinishLayerToolbarMutation(before, frame, layer.Fill, layer.RotationDeg);
+        }
+
+        private static RectangleF ResizeFrameKeepingVisualTopLeft(
+            RectangleF frame,
+            float rotationDegrees,
+            float width,
+            float height)
+        {
+            var oldCenter = new PointF(
+                frame.X + frame.Width / 2f,
+                frame.Y + frame.Height / 2f);
+            var fixedTopLeft = Add(
+                oldCenter,
+                RotateVector(new PointF(-frame.Width / 2f, -frame.Height / 2f), rotationDegrees));
+            var newCenter = Subtract(
+                fixedTopLeft,
+                RotateVector(new PointF(-width / 2f, -height / 2f), rotationDegrees));
+            return new RectangleF(
+                newCenter.X - width / 2f,
+                newCenter.Y - height / 2f,
+                width,
+                height);
+        }
+
+        private void ApplySelectedLayerAngle(float angle)
+        {
+            if (!HasSelectedLayer || !float.IsFinite(angle))
+            {
+                UpdateLayerToolbarState();
+                return;
+            }
+
+            var layer = imageLayers[selectedLayerIndex];
+            var before = CloneLayers();
+            var frameBefore = layer.Frame;
+            var fillBefore = layer.Fill;
+            float rotationBefore = layer.RotationDeg;
+            layer.RotationDeg = NormalizeLayerAngle(angle);
+            FinishLayerToolbarMutation(before, frameBefore, fillBefore, rotationBefore);
+        }
+
+        private static float NormalizeLayerAngle(float angle)
+        {
+            angle %= 360f;
+            if (angle > 180f) angle -= 360f;
+            if (angle <= -180f) angle += 360f;
+            return angle;
+        }
+
+        private void ResetSelectedLayerDimensions()
+        {
+            if (!HasSelectedLayer)
+            {
+                return;
+            }
+
+            var layer = imageLayers[selectedLayerIndex];
+            var before = CloneLayers();
+            var frameBefore = layer.Frame;
+            var fillBefore = layer.Fill;
+            float rotationBefore = layer.RotationDeg;
+            layer.Frame = new RectangleF(
+                layer.Frame.X,
+                layer.Frame.Y,
+                layer.Source.Width,
+                layer.Source.Height);
+            layer.Fill = new RectangleF(0f, 0f, layer.Source.Width, layer.Source.Height);
+            layer.RotationDeg = 0f;
+            FinishLayerToolbarMutation(before, frameBefore, fillBefore, rotationBefore);
+        }
+
+        private void FinishLayerToolbarMutation(
+            List<ImageLayer> layersBefore,
+            RectangleF frameBefore,
+            RectangleF fillBefore,
+            float rotationBefore)
+        {
+            var layer = imageLayers[selectedLayerIndex];
+            if (layer.Frame == frameBefore
+                && layer.Fill == fillBefore
+                && layer.RotationDeg == rotationBefore)
+            {
+                DisposeOrphanedLayers(layersBefore);
+                UpdateLayerToolbarState();
+                return;
+            }
+
+            PushLayerOnlyUndoStep(layersBefore);
+            UpdateLayerToolbarState();
+            UpdateCommandUI();
+            pictureBox1?.Invalidate();
+        }
+
+        private void PushLayerOnlyUndoStep(List<ImageLayer> layersBefore)
+        {
+            var layersAfter = CloneLayers();
+            Bitmap? baseClone = pictureBox1?.Image is Bitmap before ? new Bitmap(before) : null;
+            Bitmap? baseClone2 = pictureBox1?.Image is Bitmap after ? new Bitmap(after) : null;
+            PushUndoStep(
+                Rectangle.Empty,
+                baseClone,
+                baseClone2,
+                Selection,
+                Selection,
+                replacesImage: baseClone != null,
+                shapesBefore: null,
+                shapesAfter: null,
+                textsBefore: null,
+                textsAfter: null,
+                layersBefore: layersBefore,
+                layersAfter: layersAfter);
         }
 
         private static Cursor CursorForLayerHandle(ImageLayerHandle handle)

@@ -284,24 +284,13 @@ namespace screenzap.Components
                 KeepFocusOn(destination);
         }
 
-        // Focus a thumbnail and KEEP it focused. Activating an item makes the editor load it, and
-        // ImageEditor.LoadImage posts a deferred re-center that ends in pictureBox1.Focus() — so a
-        // plain synchronous Select() here always loses the race. Post our own reclaim too: it is
-        // queued after the editor's (the activation that posted theirs ran before this call), so
-        // it deterministically runs last. The sync Select still covers handleless (test) runs.
+        // Focus the thumbnail for list-local keyboard commands. Keep this synchronous: a delayed
+        // reclaim can override a later, intentional click into the editor and misroute shortcuts.
+        // Loading presenter content must preserve focus rather than starting a focus race.
         private void KeepFocusOn(Control target)
         {
             target.Select();
             flow.ScrollControlIntoView(target);
-
-            if (FindForm() is not { IsHandleCreated: true } form) return;
-            form.BeginInvoke(new Action(() =>
-            {
-                if (!target.IsDisposed && !IsDisposed)
-                {
-                    target.Select();
-                }
-            }));
         }
 
         // ContainsFocus is OS-focus based and stays false on forms that have never been shown
@@ -383,13 +372,14 @@ namespace screenzap.Components
                         {
                             if (btn.Item != null)
                                 ItemActivated?.Invoke(this, btn.Item);
-                            // Activation hands focus to the editor; keep the keyboard on the selected
-                            // thumbnail instead (KeepFocusOn also beats the editor's deferred grab).
+                            // Activation may select the presenter synchronously; the user's thumbnail
+                            // click is the final focus decision for this input event.
                             if (!btn.IsDisposed)
                                 KeepFocusOn(btn);
                         };
                         btn.OnDelete     = i => DeleteAndReclaimFocus(btn, i);
                         btn.OnNavigate   = NavigateFocusFrom;
+                        btn.OnBeginDrag  = BeginThumbnailDrag;
                         btn.ContextMenuStrip = thumbnailMenu;
                         buttons[item.Id] = btn;
                         flow.Controls.Add(btn);
@@ -553,6 +543,28 @@ namespace screenzap.Components
                 : Size.Empty;
         }
 
+        internal Bitmap? CloneItemDragImageForDiagnostics(Guid itemId)
+        {
+            if (!buttons.TryGetValue(itemId, out var btn))
+            {
+                return null;
+            }
+
+            using var payload = ClipboardHistoryImageDragPayload.Create(btn.Item);
+            return payload == null ? null : new Bitmap(payload.Image);
+        }
+
+        private static void BeginThumbnailDrag(ThumbnailButton source, ClipboardHistoryItem item)
+        {
+            using var payload = ClipboardHistoryImageDragPayload.Create(item);
+            if (payload == null)
+            {
+                return;
+            }
+
+            source.DoDragDrop(payload.CreateDataObject(), DragDropEffects.Copy);
+        }
+
         private static Bitmap MakeIcon(IconChar icon, Color color)
             => FormsIconHelper.ToBitmap(icon, color, 16, 0, FlipOrientation.Normal);
 
@@ -572,9 +584,12 @@ namespace screenzap.Components
             private Bitmap? lastThumbnail;
             private int maxThumbWidth = 64;
             private int maxThumbHeight = 64;
+            private Point? dragStart;
+            private bool suppressClickAfterDrag;
 
             public Action<ClipboardHistoryItem>? OnDelete;
             public Action<ThumbnailButton, Keys>? OnNavigate;
+            public Action<ThumbnailButton, ClipboardHistoryItem>? OnBeginDrag;
 
             public ClipboardHistoryItem? Item { get; private set; }
 
@@ -593,7 +608,55 @@ namespace screenzap.Components
             protected override void OnMouseDown(MouseEventArgs e)
             {
                 Select();
+                suppressClickAfterDrag = false;
+                dragStart = e.Button == MouseButtons.Left && Item?.Kind == ClipboardItemKind.Image
+                    ? e.Location
+                    : null;
                 base.OnMouseDown(e);
+            }
+
+            protected override void OnMouseMove(MouseEventArgs e)
+            {
+                base.OnMouseMove(e);
+                if (e.Button != MouseButtons.Left
+                    || dragStart is not Point origin
+                    || Item == null
+                    || OnBeginDrag is not { } beginDrag)
+                {
+                    return;
+                }
+
+                var dragSize = SystemInformation.DragSize;
+                var threshold = new Rectangle(
+                    origin.X - dragSize.Width / 2,
+                    origin.Y - dragSize.Height / 2,
+                    dragSize.Width,
+                    dragSize.Height);
+                if (threshold.Contains(e.Location))
+                {
+                    return;
+                }
+
+                dragStart = null;
+                suppressClickAfterDrag = true;
+                beginDrag(this, Item);
+            }
+
+            protected override void OnMouseUp(MouseEventArgs e)
+            {
+                dragStart = null;
+                base.OnMouseUp(e);
+            }
+
+            protected override void OnClick(EventArgs e)
+            {
+                if (suppressClickAfterDrag)
+                {
+                    suppressClickAfterDrag = false;
+                    return;
+                }
+
+                base.OnClick(e);
             }
 
             // Make sure Delete and the arrow keys reach OnKeyDown instead of being treated as
