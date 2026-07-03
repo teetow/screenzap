@@ -439,9 +439,10 @@ namespace screenzap
                 return;
             }
 
+            // Shift inverts the aspect lock for the drag: free resize while the lock
+            // is on (the default), proportional while it's off.
             bool preserveAspect = IsCornerHandle(activeLayerHandle)
-                && (LayerAspectRatioLocked
-                    || System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift));
+                && (LayerAspectRatioLocked ^ IsLayerAspectInvertModifierDown);
             GetLayerResizeDimensions(pixelPoint, preserveAspect, out float targetWidth, out float targetHeight);
             var next = CreateAnchoredResizeFrame(targetWidth, targetHeight);
 
@@ -457,6 +458,10 @@ namespace screenzap
         private bool IsLayerCropModifierDown =>
             isLayerCropModifierHeld_TestOverride
             || System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Control);
+
+        private bool IsLayerAspectInvertModifierDown =>
+            isShiftHeld_TestOverride
+            || System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift);
 
         private bool LayerAspectRatioLocked => layerAspectLockCheckBox?.Checked == true;
 
@@ -911,14 +916,14 @@ namespace screenzap
                 Name = "layerAspectLockCheckBox",
                 Text = "Lock aspect ratio",
                 AutoSize = true,
-                Checked = false,
+                Checked = true,
                 Margin = Padding.Empty
             };
             var aspectHost = new ToolStripControlHost(layerAspectLockCheckBox)
             {
                 Name = "layerAspectLockHost",
                 AutoSize = true,
-                ToolTipText = "Keep the current proportions when resizing"
+                ToolTipText = "Keep the current proportions when resizing (hold Shift while dragging to invert)"
             };
 
             var resetButton = new ToolStripButton

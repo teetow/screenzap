@@ -79,6 +79,43 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void CornerDrag_PreservesAspectByDefault()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditor(out var original);
+                var corner = new Point((int)original.Right, (int)original.Bottom);
+
+                Assert.True(editor.BeginLayerInteractionForTests(corner));
+                editor.UpdateLayerInteractionForTests(new Point(corner.X + 10, corner.Y + 2));
+                editor.EndLayerInteractionForTests();
+
+                var resized = editor.GetImageLayerFrameForTests(0);
+                Assert.Equal(30f, resized.Width);
+                Assert.Equal(21f, resized.Height);
+            });
+        }
+
+        [Fact]
+        public void ShiftCornerDrag_InvertsAspectLock()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditor(out var original);
+                editor.TestSetShiftHeld(true);
+                var corner = new Point((int)original.Right, (int)original.Bottom);
+
+                Assert.True(editor.BeginLayerInteractionForTests(corner));
+                editor.UpdateLayerInteractionForTests(new Point(corner.X + 10, corner.Y + 2));
+                editor.EndLayerInteractionForTests();
+
+                var resized = editor.GetImageLayerFrameForTests(0);
+                Assert.Equal(30f, resized.Width);
+                Assert.Equal(16f, resized.Height);
+            });
+        }
+
+        [Fact]
         public void ToolbarAngle_NormalizesDegrees()
         {
             StaTest.Run(() =>
@@ -97,6 +134,7 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var editor = PrepareEditor(out var original);
+                editor.SetLayerAspectLockForTests(false);
                 editor.SetSelectedLayerAngleForTests(90f);
                 var fixedTopLeft = VisualCorner(original, 90f, right: false, bottom: false);
                 var draggedBottomRight = VisualCorner(original, 90f, right: true, bottom: true);
@@ -121,6 +159,7 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var editor = PrepareEditor(out var original);
+                editor.SetLayerAspectLockForTests(false);
                 editor.SetSelectedLayerAngleForTests(90f);
                 var fixedTopLeft = VisualCorner(original, 90f, right: false, bottom: false);
 

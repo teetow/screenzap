@@ -97,9 +97,11 @@ namespace Screenzap.ViewportTests
 
                 editor.UpdateLayerInteractionForTests(new Point(corner.X + 6, corner.Y + 4));
 
+                // Aspect lock is on by default: the wider drag axis (+6 on a 20px width)
+                // sets the scale, so 20x14 becomes 26x18.2.
                 var resized = editor.GetImageLayerFrameForTests(0);
-                Assert.Equal(frame.Width + 6, resized.Width);
-                Assert.Equal(frame.Height + 4, resized.Height);
+                Assert.Equal(frame.Width + 6, resized.Width, 3);
+                Assert.Equal(frame.Height * (frame.Width + 6) / frame.Width, resized.Height, 3);
                 Assert.Equal(frame.X, resized.X);
                 Assert.Equal(frame.Y, resized.Y);
 
