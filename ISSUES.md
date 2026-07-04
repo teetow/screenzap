@@ -1,5 +1,13 @@
 # Screenzap — Known Issues & Bug Tracking
 
+## Changed (revert undoability, July 2026)
+
+Covered by `RevertUndoRegressionTests` (5 tests, incl. the real host command pipeline):
+
+- **Revert to original is now undoable** — `RevertToOriginal` appends an image-replacing undo step (pre-revert base + annotations/texts/layers) to `UndoSnapshot` instead of nulling it. Ctrl+Z after a revert restores the edits; redo re-applies the revert. Completes the design that made commit preserve the undo stack (bugs #2/#3).
+- **Both revert entry points stash live editor state first** — the toolbar command and the thumbnail context-menu revert now capture the presenter's latest edits before reverting (the context-menu path previously reverted the active item from stale stashed state).
+- **Undo/redo now notify the host** — `ApplyUndoStep` fires `MarkDirtyAndNotify`, so undoing (e.g. across a revert or commit) re-dirties the item, re-enables Commit/Revert, and refreshes the thumbnail. Previously undo left the item "clean" with stale command states.
+
 ## Changed (tool-mode hardening phase 2, July 2026)
 
 Interaction-model unification, covered by `ToolModeRegressionTests` (15 tests):

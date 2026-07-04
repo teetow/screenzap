@@ -437,17 +437,58 @@ namespace screenzap.Components
         {
             if (original != null)
             {
+                AppendRevertUndoStep();
                 current = original;
                 committed = original;
             }
 
             IsDirty = false;
-            UndoSnapshot = null;
             Annotations = null;
             TextAnnotations = null;
             ImageLayers = null;
             PruneDecodeCache();
             SetPreviewComposite(null);
+        }
+
+        /// <summary>
+        /// Capture the pre-revert state (base image + annotations/texts/layers) as an
+        /// image-replacing step appended to <see cref="UndoSnapshot"/>, so revert is undoable
+        /// like commit. Must run before the current/committed roles are reset to original.
+        /// </summary>
+        private void AppendRevertUndoStep()
+        {
+            Bitmap? currentBitmap = Kind == ClipboardItemKind.Image ? CurrentImage : null;
+            Bitmap? originalBitmap = Kind == ClipboardItemKind.Image ? OriginalImage : null;
+            if (currentBitmap == null || originalBitmap == null)
+            {
+                // No image state to capture — fall back to wiping the stack rather than
+                // leaving steps that no longer correspond to the item's content.
+                UndoSnapshot = null;
+                return;
+            }
+
+            // Empty (not null) after-lists: null means "leave live state alone" to ApplyLayerState
+            // and friends, but redoing a revert must clear annotations and layers.
+            var step = new ImageUndoStep(
+                Rectangle.Empty,
+                new Bitmap(currentBitmap),
+                new Bitmap(originalBitmap),
+                Rectangle.Empty,
+                Rectangle.Empty,
+                replacesImage: true,
+                shapesBefore: Annotations?.Select(shape => shape.Clone()).ToList() ?? new List<AnnotationShape>(),
+                shapesAfter: new List<AnnotationShape>(),
+                textsBefore: TextAnnotations?.Select(text => text.Clone()).ToList() ?? new List<TextAnnotation>(),
+                textsAfter: new List<TextAnnotation>(),
+                layersBefore: ImageLayers?.Select(layer => layer.Clone()).ToList() ?? new List<ImageLayer>(),
+                layersAfter: new List<ImageLayer>());
+
+            // Route the push through an UndoRedo instance so a pending redo tail is truncated
+            // (and disposed) with the same semantics as any other edit.
+            var stack = new UndoRedo();
+            stack.RestoreState(UndoSnapshot);
+            stack.Push(step);
+            UndoSnapshot = stack.ExtractState();
         }
 
         public ClipboardHistoryItem CloneCurrentAsNew()

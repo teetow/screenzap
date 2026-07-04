@@ -17,7 +17,7 @@ namespace screenzap.Components.Shared
             { EditorCommandId.Redo, new EditorCommandDescriptor { Id = EditorCommandId.Redo, Label = "Redo", ToolTip = "Redo", Icon = IconChar.RotateRight, Shortcut = Keys.Control | Keys.Shift | Keys.Z } },
             { EditorCommandId.Find, new EditorCommandDescriptor { Id = EditorCommandId.Find, Label = "Find", ToolTip = "Find", Icon = IconChar.MagnifyingGlass, Shortcut = Keys.Control | Keys.F } },
             { EditorCommandId.Duplicate, new EditorCommandDescriptor { Id = EditorCommandId.Duplicate, Label = "Duplicate", ToolTip = "Duplicate this item as a new history entry", Icon = IconChar.Clone } },
-            { EditorCommandId.Revert, new EditorCommandDescriptor { Id = EditorCommandId.Revert, Label = "Revert", ToolTip = "Revert to the original clipboard content", Icon = IconChar.ArrowRotateLeft } },
+            { EditorCommandId.Revert, new EditorCommandDescriptor { Id = EditorCommandId.Revert, Label = "Revert", ToolTip = "Revert to the original clipboard content (Ctrl+Z restores your edits)", Icon = IconChar.ArrowRotateLeft } },
             { EditorCommandId.CommitEdits, new EditorCommandDescriptor { Id = EditorCommandId.CommitEdits, Label = "Commit", ToolTip = "Accept edits: push to clipboard and mark clean (undo stack preserved)", Icon = IconChar.Check } },
             { EditorCommandId.Delete, new EditorCommandDescriptor { Id = EditorCommandId.Delete, Label = "Delete", ToolTip = "Remove this item from history", Icon = IconChar.Trash } },
             { EditorCommandId.ApplyFloatingPaste, new EditorCommandDescriptor { Id = EditorCommandId.ApplyFloatingPaste, Label = "Apply", ToolTip = "Apply floating paste: burn layer(s) into the pixel buffer", Icon = IconChar.Stamp, Shortcut = Keys.Enter } }

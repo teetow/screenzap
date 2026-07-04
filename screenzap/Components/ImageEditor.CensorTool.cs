@@ -778,13 +778,19 @@ namespace screenzap
                 var textState = applyAfterState ? textStep.After : textStep.Before;
                 ApplyTextAnnotationState(textState);
                 pictureBox1?.Invalidate();
-                return;
             }
-
-            if (step is ImageUndoStep imageStep)
+            else if (step is ImageUndoStep imageStep)
             {
                 ApplyImageUndoStep(imageStep, applyAfterState);
             }
+            else
+            {
+                return;
+            }
+
+            // Undo/redo changes content like a forward edit: the host needs the notification to
+            // re-enable Commit/Revert and refresh the thumbnail (e.g. after undoing a revert).
+            MarkDirtyAndNotify();
         }
 
         private void ApplyImageUndoStep(ImageUndoStep step, bool applyAfterState)

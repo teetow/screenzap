@@ -649,12 +649,8 @@ namespace screenzap.Components
         private bool RevertActiveItem()
         {
             var item = historyStore.ActiveItem;
-            if (item == null || !item.CanRevertToOriginal) return false;
-            historyStore.Revert(item);
-            activePresenter?.LoadHistoryItem(item);
-            UpdateCommandStates();
-            UpdateStatusText("Reverted to original.");
-            return true;
+            if (item == null) return false;
+            return RevertItemCore(item);
         }
 
         /// <summary>
@@ -782,16 +778,34 @@ namespace screenzap.Components
 
         private void RevertItem(ClipboardHistoryItem item)
         {
+            RevertItemCore(item);
+        }
+
+        private bool RevertItemCore(ClipboardHistoryItem item)
+        {
             if (!item.CanRevertToOriginal)
             {
-                return;
+                return false;
+            }
+
+            bool isActive = ReferenceEquals(historyStore.ActiveItem, item);
+
+            // Stash live editor state first so the revert undo step captures the latest edits
+            // (a non-active item was already stashed when it was deactivated).
+            if (isActive)
+            {
+                activePresenter?.StashHistoryItemState(item);
             }
 
             historyStore.Revert(item);
-            if (ReferenceEquals(historyStore.ActiveItem, item))
+            if (isActive)
+            {
                 activePresenter?.LoadHistoryItem(item);
+            }
+
             UpdateCommandStates();
-            UpdateStatusText("Reverted to original.");
+            UpdateStatusText("Reverted to original — Ctrl+Z to undo.");
+            return true;
         }
 
         private Task DeleteItemAsync(ClipboardHistoryItem item)
