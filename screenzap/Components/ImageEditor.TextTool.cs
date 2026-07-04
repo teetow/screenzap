@@ -1226,6 +1226,13 @@ namespace screenzap
                 return false;
             }
 
+            // While a drawing tool is armed the annotation handler owns the gesture:
+            // drag draws, click selects (ResolveArmedToolClick picks texts up there).
+            if (activeDrawingTool != DrawingTool.None)
+            {
+                return false;
+            }
+
             bool resumingFromToolbarInput = textToolbarInputMode && selectedTextAnnotation != null;
 
             // Check if clicking on existing text annotation (works even when tool isn't active)
@@ -1252,6 +1259,12 @@ namespace screenzap
                     }
                     else if (!selectedTexts.Contains(hit))
                     {
+                        // Plain click replaces the WHOLE selection, shapes included (see
+                        // the mirror-image comment in HandleAnnotationMouseDown).
+                        if (selectedShapes.Count > 0)
+                        {
+                            SelectAnnotation(null);
+                        }
                         SelectTextAnnotation(hit, add: false);
                     }
                     // else: plain click on already-selected text — preserve the multi-
@@ -1660,25 +1673,9 @@ namespace screenzap
                 if (selectedTextAnnotation == null)
                     return false;
 
-                if (e.KeyCode == Keys.Escape)
-                {
-                    SelectTextAnnotation(null);
-                    activeTextAnnotation = null;
-
-                    // While the text tool is active and we just finalized a selected annotation,
-                    // a second Escape returns the editor to Move mode (Figma model: two Escapes
-                    // walk you all the way out — finalize, then exit the tool).
-                    if (isTextToolActive)
-                    {
-                        isTextToolActive = false;
-                        UpdateTextToolButtons();
-                        UpdateTextToolbarVisibility();
-                    }
-
-                    pictureBox1?.Invalidate();
-                    e.Handled = true;
-                    return true;
-                }
+                // Escape deliberately not handled here: it falls through to the unified
+                // ladder in ImageEditor_KeyDown (deselect first, exit the tool on the
+                // NEXT press — one level per Escape).
 
                 if (e.KeyCode == Keys.Delete)
                 {

@@ -93,6 +93,25 @@ namespace screenzap
         }
 
         /// <summary>
+        /// Rail button for ActiveTool.None. Switching to Move cancels whatever tool is
+        /// engaged — SetActiveTool runs the previous tool's deactivator with apply=false,
+        /// so this is the click equivalent of walking the Escape ladder to the bottom.
+        /// </summary>
+        private void moveToolStripButton_Click(object? sender, EventArgs e)
+        {
+            SetActiveTool(ActiveTool.None);
+            pictureBox1?.Focus();
+        }
+
+        private void UpdateMoveToolButton()
+        {
+            if (moveToolStripButton != null)
+            {
+                moveToolStripButton.Checked = activeTool == ActiveTool.None;
+            }
+        }
+
+        /// <summary>
         /// Central tool switcher. Tears down the previously active tool (finalizing
         /// in-flight edits, hiding overlay toolstrips) before flipping the flag, so
         /// activating tool B from tool A always leaves A's UI consistent — even when
@@ -156,6 +175,7 @@ namespace screenzap
             finally
             {
                 insideSetActiveTool = false;
+                UpdateMoveToolButton();
             }
         }
     }

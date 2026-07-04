@@ -19,12 +19,24 @@ namespace screenzap
                 return false;
             }
 
+            if (isStraightenToolActive)
+            {
+                // Already engaged: a second toolbar click / Ctrl+L must not discard the
+                // reference line the user has drawn.
+                return true;
+            }
+
             isStraightenToolActive = true;
             straightenLineStartPixel = null;
             straightenLineEndPixel = null;
             isStraightenLineDragging = false;
 
             Cursor = Cursors.Cross;
+
+            if (straightenToolStripButton != null)
+            {
+                straightenToolStripButton.Checked = true;
+            }
 
             if (straightenToolStrip != null)
             {
@@ -55,6 +67,11 @@ namespace screenzap
             straightenLineStartPixel = null;
             straightenLineEndPixel = null;
             Cursor = Cursors.Default;
+
+            if (straightenToolStripButton != null)
+            {
+                straightenToolStripButton.Checked = false;
+            }
 
             if (straightenToolStrip != null)
             {

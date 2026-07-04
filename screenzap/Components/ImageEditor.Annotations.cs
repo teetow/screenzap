@@ -130,6 +130,11 @@ namespace screenzap
         private AnnotationHandle activeAnnotationHandle = AnnotationHandle.None;
         private Point annotationDragOriginPixel;
         private Point annotationDraftAnchorPixel;
+        // Gesture rule state: a draft that never travels beyond the click slop (in screen
+        // pixels) is resolved as a selection click on mouse-up, not a draw.
+        private Point annotationDraftStartFormPoint;
+        private bool annotationDraftMoved;
+        private const int AnnotationDraftClickSlopPixels = 4;
         private bool annotationTranslateModeActive;
         private Point annotationTranslationOriginPixel;
         private Point annotationTranslationStartSnapshot;
@@ -864,6 +869,13 @@ namespace screenzap
                 return;
             }
 
+            // While a drawing tool is armed, drags draw rather than resize — don't
+            // advertise handles that won't respond.
+            if (activeDrawingTool != DrawingTool.None)
+            {
+                return;
+            }
+
             if (annotation.Type == AnnotationType.Highlighter)
             {
                 // Dashed bounding outline makes the (otherwise edge-less) selection legible; the
@@ -1183,6 +1195,16 @@ namespace screenzap
                 return false;
             }
 
+            // Gesture rule (Blender-style): while a drawing tool is armed, DRAG draws and
+            // CLICK selects — the decision happens on mouse-up (CompleteAnnotationDraft /
+            // ResolveArmedToolClick). The draft starts unconditionally, so the Move-mode
+            // handle / element hit-tests below never see armed-tool input.
+            if (activeDrawingTool != DrawingTool.None)
+            {
+                BeginAnnotationDraft(pixelPoint, formPoint);
+                return true;
+            }
+
             // Selected-annotation handle (resize / move) takes priority — the user
             // is actively manipulating the selection.
             var handle = HitTestAnnotationHandle(formPoint);
@@ -1201,18 +1223,11 @@ namespace screenzap
                 return true;
             }
 
-            // Object selection wins over tool action: clicking on an existing annotation
-            // selects it (and drops the active drawing tool) even when Arrow/Rectangle
-            // is engaged. Without this the drawing tool would draw a new shape on top
-            // of the click, making it impossible to re-select or move existing shapes
-            // without first manually toggling the tool off.
+            // Move mode: clicking on an existing annotation selects it. (With a tool armed
+            // this point is never reached — armed clicks resolve via ResolveArmedToolClick.)
             var hit = HitTestAnnotation(pixelPoint, formPoint);
             if (hit != null)
             {
-                if (activeDrawingTool != DrawingTool.None)
-                {
-                    activeDrawingTool = DrawingTool.None;
-                }
                 bool addToSelection = IsMultiSelectModifierDown;
                 if (addToSelection)
                 {
@@ -1220,7 +1235,14 @@ namespace screenzap
                 }
                 else if (!selectedShapes.Contains(hit))
                 {
-                    // Plain click on something not already in the selection → replace.
+                    // Plain click on something not already in the selection → replace the
+                    // WHOLE selection, texts included — a stale text selection would
+                    // otherwise ride along with the next drag (TranslateSelectionBy moves
+                    // both lists).
+                    if (selectedTexts.Count > 0)
+                    {
+                        SelectTextAnnotation(null);
+                    }
                     SelectAnnotation(hit, add: false);
                 }
                 // else: plain click on an already-selected item → preserve the multi-
@@ -1246,44 +1268,95 @@ namespace screenzap
                 return true;
             }
 
-            if (activeDrawingTool != DrawingTool.None)
-            {
-                annotationSnapshotBeforeEdit = CloneAnnotations();
-                var annotationType = activeDrawingTool switch
-                {
-                    DrawingTool.Arrow => AnnotationType.Arrow,
-                    DrawingTool.Highlighter => AnnotationType.Highlighter,
-                    _ => AnnotationType.Rectangle
-                };
-                var clampedPoint = ClampPointToImage(pixelPoint);
-                bool isHighlighter = annotationType == AnnotationType.Highlighter;
-                workingAnnotation = new AnnotationShape
-                {
-                    Type = annotationType,
-                    Start = clampedPoint,
-                    End = clampedPoint,
-                    LineThickness = isHighlighter ? annotationHighlighterThickness : annotationLineThickness,
-                    ArrowSize = annotationArrowSize,
-                    Color = isHighlighter ? annotationHighlighterColor : annotationColor,
-                    Opacity = isHighlighter ? annotationHighlighterOpacity : 1f,
-                    Selected = true,
-                    Points = isHighlighter ? new List<Point> { clampedPoint } : null
-                };
-                annotationShapes.Add(workingAnnotation);
-                SelectAnnotation(workingAnnotation);
-                isDrawingAnnotation = true;
-                annotationDraftAnchorPixel = clampedPoint;
-                annotationTranslateModeActive = false;
-                annotationChangedDuringDrag = false;
-                return true;
-            }
-
             if (selectedAnnotation != null)
             {
                 SelectAnnotation(null);
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Start a drawing-tool draft at the given point. Whether the gesture ends up a
+        /// draw or a selection click is decided on mouse-up from
+        /// <see cref="annotationDraftMoved"/>.
+        /// </summary>
+        private void BeginAnnotationDraft(Point pixelPoint, Point formPoint)
+        {
+            // Drawing starts a new act: any leftover text selection would otherwise ride
+            // along when the fresh shape is dragged (TranslateSelectionBy walks both lists).
+            if (selectedTexts.Count > 0)
+            {
+                SelectTextAnnotation(null);
+            }
+
+            annotationSnapshotBeforeEdit = CloneAnnotations();
+            var annotationType = activeDrawingTool switch
+            {
+                DrawingTool.Arrow => AnnotationType.Arrow,
+                DrawingTool.Highlighter => AnnotationType.Highlighter,
+                _ => AnnotationType.Rectangle
+            };
+            var clampedPoint = ClampPointToImage(pixelPoint);
+            bool isHighlighter = annotationType == AnnotationType.Highlighter;
+            workingAnnotation = new AnnotationShape
+            {
+                Type = annotationType,
+                Start = clampedPoint,
+                End = clampedPoint,
+                LineThickness = isHighlighter ? annotationHighlighterThickness : annotationLineThickness,
+                ArrowSize = annotationArrowSize,
+                Color = isHighlighter ? annotationHighlighterColor : annotationColor,
+                Opacity = isHighlighter ? annotationHighlighterOpacity : 1f,
+                Selected = true,
+                Points = isHighlighter ? new List<Point> { clampedPoint } : null
+            };
+            annotationShapes.Add(workingAnnotation);
+            SelectAnnotation(workingAnnotation);
+            isDrawingAnnotation = true;
+            annotationDraftAnchorPixel = clampedPoint;
+            annotationDraftStartFormPoint = formPoint;
+            annotationDraftMoved = false;
+            annotationTranslateModeActive = false;
+            annotationChangedDuringDrag = false;
+        }
+
+        /// <summary>
+        /// A click (no drag beyond the slop) while a drawing tool was armed is a selection
+        /// gesture: select whatever element sits under the cursor — text over shapes over
+        /// layers, matching paint z-order — and drop the tool. A click on empty canvas
+        /// keeps the tool armed (a click can never draw anything anyway).
+        /// </summary>
+        private void ResolveArmedToolClick(Point pixelPoint)
+        {
+            var formPoint = PixelToFormCoord(pixelPoint);
+
+            var textHit = HitTestTextAnnotation(pixelPoint, formPoint);
+            if (textHit != null)
+            {
+                activeDrawingTool = DrawingTool.None;
+                SelectTextAnnotation(textHit);
+                return;
+            }
+
+            var shapeHit = HitTestAnnotation(pixelPoint, formPoint);
+            if (shapeHit != null)
+            {
+                activeDrawingTool = DrawingTool.None;
+                if (selectedTexts.Count > 0)
+                {
+                    SelectTextAnnotation(null);
+                }
+                SelectAnnotation(shapeHit);
+                return;
+            }
+
+            var layerHit = HitTestLayerBody(pixelPoint);
+            if (layerHit != null)
+            {
+                activeDrawingTool = DrawingTool.None;
+                SelectImageLayer(layerHit.Value);
+            }
         }
 
         private bool HandleAnnotationMouseMove(Point pixelPoint, Point formPoint, MouseButtons buttons)
@@ -1297,6 +1370,13 @@ namespace screenzap
             {
                 if (isDrawingAnnotation && workingAnnotation != null)
                 {
+                    if (!annotationDraftMoved
+                        && (Math.Abs(formPoint.X - annotationDraftStartFormPoint.X) >= AnnotationDraftClickSlopPixels
+                            || Math.Abs(formPoint.Y - annotationDraftStartFormPoint.Y) >= AnnotationDraftClickSlopPixels))
+                    {
+                        annotationDraftMoved = true;
+                    }
+
                     if (workingAnnotation.Type == AnnotationType.Highlighter)
                     {
                         // Freehand sampling: append the cursor position whenever it has moved
@@ -1341,12 +1421,17 @@ namespace screenzap
             }
             else if (buttons == MouseButtons.None)
             {
-                var handle = HitTestAnnotationHandle(formPoint);
-                if (handle != AnnotationHandle.None)
+                // Handles are inert while a drawing tool is armed (drag draws instead),
+                // so only offer the resize cursor in Move mode.
+                if (activeDrawingTool == DrawingTool.None)
                 {
-                    SetHoveredAnnotation(null);
-                    Cursor = Cursors.Cross;
-                    return true;
+                    var handle = HitTestAnnotationHandle(formPoint);
+                    if (handle != AnnotationHandle.None)
+                    {
+                        SetHoveredAnnotation(null);
+                        Cursor = Cursors.Cross;
+                        return true;
+                    }
                 }
 
                 var hit = HitTestAnnotation(pixelPoint, formPoint);
@@ -1632,6 +1717,23 @@ namespace screenzap
                 return;
             }
 
+            // Gesture resolution: the cursor never left the click slop, so this was a
+            // selection click, not a draw. Discard the draft and resolve the click.
+            if (!annotationDraftMoved)
+            {
+                annotationShapes.Remove(workingAnnotation);
+                SelectAnnotation(null);
+                isDrawingAnnotation = false;
+                workingAnnotation = null;
+                annotationSnapshotBeforeEdit = null;
+                annotationChangedDuringDrag = false;
+                annotationTranslateModeActive = false;
+                annotationDraftAnchorPixel = Point.Empty;
+                ResolveArmedToolClick(pixelPoint);
+                pictureBox1.Invalidate();
+                return;
+            }
+
             if (workingAnnotation.Type == AnnotationType.Highlighter)
             {
                 var pts = workingAnnotation.Points!;
@@ -1659,6 +1761,9 @@ namespace screenzap
             if (!workingAnnotation.IsValid())
             {
                 annotationShapes.Remove(workingAnnotation);
+                // Clear the draft's auto-selection too — a selected-but-removed shape
+                // would keep the options toolbar up and eat the next Escape.
+                SelectAnnotation(null);
             }
             else
             {

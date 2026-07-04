@@ -251,6 +251,10 @@ namespace screenzap
             }
 
             isCensorToolActive = true;
+            if (censorToolStripButton != null)
+            {
+                censorToolStripButton.Checked = true;
+            }
             SyncCensorParamControlsFromState();
             currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Maximum ?? 100);
             suppressConfidenceEvents = true;
@@ -290,6 +294,10 @@ namespace screenzap
             }
 
             isCensorToolActive = false;
+            if (censorToolStripButton != null)
+            {
+                censorToolStripButton.Checked = false;
+            }
             censorRegions.Clear();
             ReleaseCensorPreviewBuffer();
             currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Maximum ?? 100);

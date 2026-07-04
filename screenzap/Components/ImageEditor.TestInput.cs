@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace screenzap
@@ -333,6 +334,69 @@ namespace screenzap
         internal void TestSetZoom(decimal zoom)
         {
             if (pictureBox1 != null) pictureBox1.ZoomLevel = zoom;
+        }
+
+        /// <summary>Add a finalized (non-editing, unselected) text annotation directly.</summary>
+        internal void TestAddTextAnnotation(Point position, string text)
+        {
+            textAnnotations.Add(new TextAnnotation
+            {
+                Position = position,
+                Text = text,
+                FontFamily = "Segoe UI",
+                FontSize = 16f
+            });
+        }
+
+        internal bool TestMoveButtonChecked => moveToolStripButton?.Checked == true;
+
+        /// <summary>Fire the Move/Select rail button's Click handler (the real toolbar path).</summary>
+        internal void TestClickMoveToolButton() => moveToolStripButton_Click(this, System.EventArgs.Empty);
+
+        internal bool TestIsStraightenToolActive => isStraightenToolActive;
+
+        internal Point? TestStraightenLineStart => straightenLineStartPixel;
+
+        internal Point? TestStraightenLineEnd => straightenLineEndPixel;
+
+        internal bool TestStraightenButtonChecked => straightenToolStripButton?.Checked == true;
+
+        /// <summary>Fire the straighten rail button's Click handler (the real toolbar path).</summary>
+        internal void TestClickStraightenToolButton() => straightenToolStripButton_Click(this, System.EventArgs.Empty);
+
+        internal bool TestIsCensorToolActive => isCensorToolActive;
+
+        internal bool TestCensorButtonChecked => censorToolStripButton?.Checked == true;
+
+        internal int TestCensorRegionCount => censorRegions.Count;
+
+        internal int TestSelectedCensorRegionCount => censorRegions.Count(r => r.Selected);
+
+        /// <summary>
+        /// Enter censor mode with pre-seeded regions, skipping OCR detection and preview
+        /// rendering. Mirrors the state ActivateCensorTool leaves behind so keyboard and
+        /// toolbar behavior can be tested without Tesseract.
+        /// </summary>
+        internal void TestEnterCensorModeWithRegions(params Rectangle[] regionBounds)
+        {
+            censorRegions.Clear();
+            foreach (var bounds in regionBounds)
+            {
+                censorRegions.Add(new CensorRegion(bounds, 1f));
+            }
+
+            isCensorToolActive = true;
+            if (censorToolStripButton != null)
+            {
+                censorToolStripButton.Checked = true;
+            }
+            if (censorToolStrip != null)
+            {
+                censorToolStrip.Visible = true;
+                PositionOverlayToolStrips();
+            }
+            UpdateCensorToolbarState();
+            pictureBox1?.Invalidate();
         }
 
         internal float TestGetLayerRotationDeg(int index) => imageLayers[index].RotationDeg;

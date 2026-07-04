@@ -81,6 +81,7 @@ namespace screenzap
             private DateTime? suppressClipboardAutoReloadUntilUtc;
         private Bitmap? internalClipboardImage;
         private ToolStrip? toolsToolStrip;
+        private IconToolStripButton? moveToolStripButton;
         private ToolStrip? textOptionsToolStrip;
         private ToolStrip? annotationOptionsToolStrip;
         private ClipboardReloadTarget pendingReloadTarget = ClipboardReloadTarget.None;
@@ -266,6 +267,7 @@ namespace screenzap
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
             ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
             ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
+            ConfigureIconButton(moveToolStripButton, IconChar.ArrowPointer);
             ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
             ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
             ConfigureIconButton(highlighterToolStripButton, IconChar.Highlighter);
@@ -308,7 +310,7 @@ namespace screenzap
 
         private void ConfigureToolRailButtons()
         {
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
             {
                 if (button == null)
                 {
@@ -328,6 +330,8 @@ namespace screenzap
                 toolsToolStrip.AutoSize = false;
                 toolsToolStrip.Width = 40;
             }
+
+            UpdateMoveToolButton();
         }
 
         private static void ConfigureIconButton(IconToolStripButton? button, IconChar icon)
@@ -792,6 +796,18 @@ namespace screenzap
                 CanOverflow = false
             };
 
+            // Move/Select is the rail's representation of ActiveTool.None — the default mode
+            // needs a visible, clickable identity or "what mode am I in?" has no answer.
+            moveToolStripButton = new IconToolStripButton
+            {
+                Name = "moveToolStripButton",
+                Text = "Move / Select",
+                AutoToolTip = true,
+                ToolTipText = "Move / Select — click elements to select, drag to move (Esc)"
+            };
+            moveToolStripButton.Click += moveToolStripButton_Click;
+            toolsToolStrip.Items.Add(moveToolStripButton);
+
             MoveToolStripItem(mainToolStrip, toolsToolStrip, arrowToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, rectangleToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, highlighterToolStripButton);
@@ -799,7 +815,7 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, toolsToolStrip, censorToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, straightenToolStripButton);
 
-            foreach (var button in new[] { arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
             {
                 if (button != null)
                 {
@@ -1991,27 +2007,10 @@ namespace screenzap
                 return;
             }
 
-            // Multi-select Delete: when the user has selected more than one annotation
-            // (any mix of shapes and texts) and isn't editing text, remove the whole
-            // selection in a single combined undo step. Handled before HandleTextToolKeyDown
-            // because the single-target text path would otherwise intercept Delete and
-            // leave the shape side of a mixed selection behind.
-            if (e.KeyCode == Keys.Delete
-                && (selectedShapes.Count + selectedTexts.Count) > 1
-                && (activeTextAnnotation == null || !activeTextAnnotation.IsEditing))
-            {
-                DeleteMultiSelection();
-                e.SuppressKeyPress = true;
-                e.Handled = true;
-                return;
-            }
-
-            // Handle text tool keyboard input first
-            if (HandleTextToolKeyDown(e))
-            {
-                return;
-            }
-
+            // Modal tools own the keyboard: while straighten/censor is engaged only their
+            // confirm/cancel (and censor's select-all) keys act, and everything else is
+            // swallowed. These run BEFORE the text/annotation handlers so a selection left
+            // behind under the modal overlay can't eat Delete or Escape.
             if (isStraightenToolActive)
             {
                 if (e.KeyCode == Keys.Escape)
@@ -2059,11 +2058,71 @@ namespace screenzap
                     return;
                 }
 
+                if (e.KeyCode == Keys.A && e.Modifiers == Keys.Control)
+                {
+                    selectAllToolStripButton_Click(null, EventArgs.Empty);
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                return;
+            }
+
+            // Multi-select Delete: when the user has selected more than one annotation
+            // (any mix of shapes and texts) and isn't editing text, remove the whole
+            // selection in a single combined undo step. Handled before HandleTextToolKeyDown
+            // because the single-target text path would otherwise intercept Delete and
+            // leave the shape side of a mixed selection behind.
+            if (e.KeyCode == Keys.Delete
+                && (selectedShapes.Count + selectedTexts.Count) > 1
+                && (activeTextAnnotation == null || !activeTextAnnotation.IsEditing))
+            {
+                DeleteMultiSelection();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                return;
+            }
+
+            // Handle text tool keyboard input first
+            if (HandleTextToolKeyDown(e))
+            {
                 return;
             }
 
             if (e.KeyCode == Keys.Escape)
             {
+                // Unified ladder: each press steps out ONE level — in-flight gesture →
+                // selection → active tool → nothing. (Censor/straighten Esc lives in the
+                // modal blocks above; text-EDIT Esc inside HandleTextToolKeyDown.)
+                if (isDrawingAnnotation)
+                {
+                    CancelAnnotationPreview();
+                    SelectAnnotation(null);
+                    pictureBox1.Invalidate();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                if (selectedShapes.Count > 0 || selectedTexts.Count > 0)
+                {
+                    SelectAnnotation(null);
+                    SelectTextAnnotation(null);
+                    activeTextAnnotation = null;
+                    pictureBox1.Invalidate();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                if (DeselectImageLayerIfAny())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
                 if (isTextToolActive)
                 {
                     FinalizeActiveTextAnnotation();
@@ -2076,20 +2135,11 @@ namespace screenzap
                     return;
                 }
 
-                if (isDrawingAnnotation || selectedAnnotation != null || activeDrawingTool != DrawingTool.None)
+                if (activeDrawingTool != DrawingTool.None)
                 {
-                    CancelAnnotationPreview();
-                    SelectAnnotation(null);;
                     activeDrawingTool = DrawingTool.None;
                     UpdateDrawingToolButtons();
                     pictureBox1.Invalidate();
-                    e.SuppressKeyPress = true;
-                    e.Handled = true;
-                    return;
-                }
-
-                if (DeselectImageLayerIfAny())
-                {
                     e.SuppressKeyPress = true;
                     e.Handled = true;
                     return;
@@ -2162,11 +2212,8 @@ namespace screenzap
             }
             else if (e.KeyCode == Keys.A && e.Modifiers == Keys.Control)
             {
-                if (isCensorToolActive)
-                {
-                    selectAllToolStripButton_Click(null, EventArgs.Empty);
-                }
-                else if (HasEditableImage)
+                // Censor-mode Ctrl+A (select all regions) is handled in the modal block above.
+                if (HasEditableImage)
                 {
                     Selection = GetImageBounds();
                     pictureBox1?.Invalidate();
@@ -2609,6 +2656,14 @@ namespace screenzap
 
         private void straightenToolStripButton_Click(object sender, EventArgs e)
         {
+            // Rail icons toggle: clicking the checked icon cancels the mode (same as Esc).
+            if (isStraightenToolActive)
+            {
+                DeactivateStraightenTool(false);
+                pictureBox1?.Focus();
+                return;
+            }
+
             if (ExecuteStraighten())
             {
                 pictureBox1?.Focus();
@@ -2617,8 +2672,10 @@ namespace screenzap
 
         private void censorToolStripButton_Click(object sender, EventArgs e)
         {
+            // Rail icons toggle: clicking the checked icon cancels the mode (same as Esc).
             if (isCensorToolActive)
             {
+                DeactivateCensorTool(false);
                 pictureBox1?.Focus();
                 return;
             }
