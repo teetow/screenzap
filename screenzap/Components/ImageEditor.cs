@@ -267,6 +267,7 @@ namespace screenzap
             ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
             ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
             ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
+            ConfigureIconButton(freeRotateToolStripButton, IconChar.ArrowsSpin);
             ConfigureIconButton(moveToolStripButton, IconChar.ArrowPointer);
             ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
             ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
@@ -814,8 +815,9 @@ namespace screenzap
             MoveToolStripItem(mainToolStrip, toolsToolStrip, textToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, censorToolStripButton);
             MoveToolStripItem(mainToolStrip, toolsToolStrip, straightenToolStripButton);
+            MoveToolStripItem(mainToolStrip, toolsToolStrip, freeRotateToolStripButton);
 
-            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton, freeRotateToolStripButton })
             {
                 if (button != null)
                 {
@@ -941,6 +943,12 @@ namespace screenzap
             {
                 straightenToolStrip.Location = new Point(leftInset, topInset);
                 straightenToolStrip.BringToFront();
+            }
+
+            if (rotateToolStrip != null)
+            {
+                rotateToolStrip.Location = new Point(leftInset, topInset);
+                rotateToolStrip.BringToFront();
             }
         }
 
@@ -1632,6 +1640,10 @@ namespace screenzap
             {
                 straightenToolStripButton.Enabled = enable;
             }
+            if (freeRotateToolStripButton != null)
+            {
+                freeRotateToolStripButton.Enabled = enable;
+            }
             if (censorToolStripButton != null)
             {
                 censorToolStripButton.Enabled = enable;
@@ -1982,6 +1994,16 @@ namespace screenzap
                     }
                 }
             }
+
+            // Arrow keys act on an active marquee: plain = move, Ctrl = stamp, Alt = clone,
+            // Shift = 10px steps. Arrows are dialog-navigation keys and never reach KeyDown,
+            // so they are intercepted here.
+            if ((keyData & Keys.KeyCode) is Keys.Left or Keys.Right or Keys.Up or Keys.Down
+                && TryHandleMarqueeArrowKey(keyData))
+            {
+                return true;
+            }
+
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -2007,10 +2029,31 @@ namespace screenzap
                 return;
             }
 
-            // Modal tools own the keyboard: while straighten/censor is engaged only their
-            // confirm/cancel (and censor's select-all) keys act, and everything else is
+            // Modal tools own the keyboard: while straighten/censor/free-rotate is engaged only
+            // their confirm/cancel (and censor's select-all) keys act, and everything else is
             // swallowed. These run BEFORE the text/annotation handlers so a selection left
             // behind under the modal overlay can't eat Delete or Escape.
+            if (isFreeRotateToolActive)
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    DeactivateFreeRotateTool(false);
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                if (e.KeyCode == Keys.Enter)
+                {
+                    DeactivateFreeRotateTool(true);
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                return;
+            }
+
             if (isStraightenToolActive)
             {
                 if (e.KeyCode == Keys.Escape)
@@ -2331,6 +2374,22 @@ namespace screenzap
             {
                 isMovingSelection = false;
                 annotationTranslateModeActive = false;
+            }
+
+            // Close keyboard-initiated stamp/clone gestures when their modifier is released.
+            // Mouse-initiated gestures are closed by MouseUp instead — while a drag is in
+            // flight (button held) the modifier may be released and re-pressed freely.
+            if (MouseButtons == MouseButtons.None)
+            {
+                if (e.KeyCode == Keys.ControlKey && isCtrlStampingSelection)
+                {
+                    EndSelectionStampGesture();
+                }
+
+                if (e.KeyCode == Keys.Menu && isAltCloningSelection)
+                {
+                    EndSelectionCloneGesture();
+                }
             }
         }
 

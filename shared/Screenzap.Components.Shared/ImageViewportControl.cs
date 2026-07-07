@@ -151,10 +151,16 @@ namespace screenzap.Components.Shared
             Invalidate();
         }
 
+        /// <summary>
+        /// Minimum client-space extent of the image that must stay visible on each axis when
+        /// panning an image larger than the viewport; the rest may overscroll past the edges.
+        /// </summary>
+        public const float OverscrollVisibleMargin = 48f;
+
         public void ClampPan([CallerMemberName] string? caller = null)
         {
             LogDebug($"ClampPan called by {caller}: panOffset before={panOffset}, ClientSize={ClientSize}");
-            
+
             var scaled = GetScaledImageSize();
             if (scaled.IsEmpty)
             {
@@ -163,31 +169,27 @@ namespace screenzap.Components.Shared
                 return;
             }
 
-            float constrainedX;
-            if (scaled.Width <= ClientSize.Width)
-            {
-                constrainedX = (ClientSize.Width - scaled.Width) / 2f;
-            }
-            else
-            {
-                var minLeft = ClientSize.Width - scaled.Width;
-                constrainedX = Math.Min(0, Math.Max(minLeft, panOffset.X));
-            }
-
-            float constrainedY;
-            if (scaled.Height <= ClientSize.Height)
-            {
-                constrainedY = (ClientSize.Height - scaled.Height) / 2f;
-            }
-            else
-            {
-                var minTop = ClientSize.Height - scaled.Height;
-                constrainedY = Math.Min(0, Math.Max(minTop, panOffset.Y));
-            }
-
             var oldPan = panOffset;
-            panOffset = new PointF(constrainedX, constrainedY);
+            panOffset = new PointF(
+                ConstrainPanAxis(panOffset.X, scaled.Width, ClientSize.Width),
+                ConstrainPanAxis(panOffset.Y, scaled.Height, ClientSize.Height));
             LogDebug($"ClampPan: scaled={scaled}, old={oldPan}, new={panOffset}");
+        }
+
+        /// <summary>
+        /// An image that fits the viewport stays centered on its axis. A larger image may be
+        /// panned past the viewport edges (Photoshop-style overscroll) as long as at least
+        /// <see cref="OverscrollVisibleMargin"/> client pixels of it remain visible.
+        /// </summary>
+        private static float ConstrainPanAxis(float pan, float scaledExtent, int clientExtent)
+        {
+            if (scaledExtent <= clientExtent)
+            {
+                return (clientExtent - scaledExtent) / 2f;
+            }
+
+            var margin = Math.Min(OverscrollVisibleMargin, clientExtent);
+            return Math.Min(clientExtent - margin, Math.Max(margin - scaledExtent, pan));
         }
 
         public void PanBy(Size delta)

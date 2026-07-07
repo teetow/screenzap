@@ -44,6 +44,7 @@
             this.replaceToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.optimizeTextToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.straightenToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.freeRotateToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.censorToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.copyClipboardToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
             this.arrowToolStripButton = new FontAwesome.Sharp.IconToolStripButton();
@@ -102,6 +103,10 @@
             this.straightenHintLabel = new System.Windows.Forms.ToolStripLabel();
             this.straightenApplyButton = new FontAwesome.Sharp.IconToolStripButton();
             this.straightenCancelButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.rotateToolStrip = new System.Windows.Forms.ToolStrip();
+            this.rotateHintLabel = new System.Windows.Forms.ToolStripLabel();
+            this.rotateApplyButton = new FontAwesome.Sharp.IconToolStripButton();
+            this.rotateCancelButton = new FontAwesome.Sharp.IconToolStripButton();
             this.canvasPanel = new System.Windows.Forms.Panel();
             this.pictureBox1 = new screenzap.Components.Shared.ImageViewportControl();
             this.statusStrip = new System.Windows.Forms.StatusStrip();
@@ -111,6 +116,7 @@
             this.mainToolStrip.SuspendLayout();
             this.censorToolStrip.SuspendLayout();
             this.straightenToolStrip.SuspendLayout();
+            this.rotateToolStrip.SuspendLayout();
             this.canvasPanel.SuspendLayout();
             this.statusStrip.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.highlighterOpacityTrackBar)).BeginInit();
@@ -138,6 +144,7 @@
             this.optimizeTextToolStripButton,
             this.censorToolStripButton,
             this.straightenToolStripButton,
+            this.freeRotateToolStripButton,
             this.arrowToolStripButton,
             this.rectangleToolStripButton,
             this.highlighterToolStripButton,
@@ -522,7 +529,46 @@
             this.straightenCancelButton.Size = new System.Drawing.Size(53, 23);
             this.straightenCancelButton.Text = "Cancel";
             this.straightenCancelButton.Click += new System.EventHandler(this.straightenCancelButton_Click);
-            // 
+            //
+            // rotateToolStrip
+            //
+            this.rotateToolStrip.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
+            this.rotateToolStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.rotateToolStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.rotateHintLabel,
+            this.rotateApplyButton,
+            this.rotateCancelButton});
+            this.rotateToolStrip.Location = new System.Drawing.Point(0, 27);
+            this.rotateToolStrip.Name = "rotateToolStrip";
+            this.rotateToolStrip.Padding = new System.Windows.Forms.Padding(4, 2, 0, 2);
+            this.rotateToolStrip.Size = new System.Drawing.Size(413, 27);
+            this.rotateToolStrip.TabIndex = 6;
+            this.rotateToolStrip.Text = "rotateToolStrip";
+            this.rotateToolStrip.Visible = false;
+            //
+            // rotateHintLabel
+            //
+            this.rotateHintLabel.Name = "rotateHintLabel";
+            this.rotateHintLabel.Size = new System.Drawing.Size(300, 23);
+            this.rotateHintLabel.Text = "Drag the handle to rotate (hold Shift for 15° steps), then Apply";
+            //
+            // rotateApplyButton
+            //
+            this.rotateApplyButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.rotateApplyButton.Enabled = false;
+            this.rotateApplyButton.Name = "rotateApplyButton";
+            this.rotateApplyButton.Size = new System.Drawing.Size(44, 23);
+            this.rotateApplyButton.Text = "Apply";
+            this.rotateApplyButton.Click += new System.EventHandler(this.rotateApplyButton_Click);
+            //
+            // rotateCancelButton
+            //
+            this.rotateCancelButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.rotateCancelButton.Name = "rotateCancelButton";
+            this.rotateCancelButton.Size = new System.Drawing.Size(53, 23);
+            this.rotateCancelButton.Text = "Cancel";
+            this.rotateCancelButton.Click += new System.EventHandler(this.rotateCancelButton_Click);
+            //
             // saveToolStripButton
             // 
             this.saveToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -622,7 +668,17 @@
             this.straightenToolStripButton.Text = "Straighten";
             this.straightenToolStripButton.ToolTipText = "Auto-detect and correct rotation/perspective distortion (Ctrl+L)";
             this.straightenToolStripButton.Click += new System.EventHandler(this.straightenToolStripButton_Click);
-            // 
+            //
+            // freeRotateToolStripButton
+            //
+            this.freeRotateToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.freeRotateToolStripButton.Enabled = false;
+            this.freeRotateToolStripButton.Name = "freeRotateToolStripButton";
+            this.freeRotateToolStripButton.Size = new System.Drawing.Size(75, 23);
+            this.freeRotateToolStripButton.Text = "Free Rotate";
+            this.freeRotateToolStripButton.ToolTipText = "Drag to rotate the image (or selection) by any angle";
+            this.freeRotateToolStripButton.Click += new System.EventHandler(this.freeRotateToolStripButton_Click);
+            //
             // arrowToolStripButton
             // 
             this.arrowToolStripButton.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -906,6 +962,7 @@
             this.Controls.Add(this.statusStrip);
             this.Controls.Add(this.censorToolStrip);
             this.Controls.Add(this.straightenToolStrip);
+            this.Controls.Add(this.rotateToolStrip);
             this.Controls.Add(this.mainToolStrip);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MinimumSize = new System.Drawing.Size(320, 200);
@@ -925,6 +982,8 @@
             this.censorToolStrip.PerformLayout();
             this.straightenToolStrip.ResumeLayout(false);
             this.straightenToolStrip.PerformLayout();
+            this.rotateToolStrip.ResumeLayout(false);
+            this.rotateToolStrip.PerformLayout();
             this.mainToolStrip.ResumeLayout(false);
             this.mainToolStrip.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.highlighterOpacityTrackBar)).EndInit();
@@ -951,6 +1010,7 @@
     private FontAwesome.Sharp.IconToolStripButton replaceToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton optimizeTextToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton straightenToolStripButton;
+    private FontAwesome.Sharp.IconToolStripButton freeRotateToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton censorToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton copyClipboardToolStripButton;
     private FontAwesome.Sharp.IconToolStripButton reloadToolStripButton;
@@ -1002,6 +1062,10 @@
         private System.Windows.Forms.ToolStripLabel straightenHintLabel;
         private FontAwesome.Sharp.IconToolStripButton straightenApplyButton;
         private FontAwesome.Sharp.IconToolStripButton straightenCancelButton;
+        private System.Windows.Forms.ToolStrip rotateToolStrip;
+        private System.Windows.Forms.ToolStripLabel rotateHintLabel;
+        private FontAwesome.Sharp.IconToolStripButton rotateApplyButton;
+        private FontAwesome.Sharp.IconToolStripButton rotateCancelButton;
         private System.Windows.Forms.ToolStripComboBox fontComboBox;
         private System.Windows.Forms.ToolStripComboBox fontVariantComboBox;
         private System.Windows.Forms.ToolStripComboBox fontSizeComboBox;

@@ -43,3 +43,27 @@
 6. Stage both text *and* image data on the clipboard (for example, copy an image from Paint and then copy text from Notepad without clearing). Double-click the tray icon and confirm the image editor still takes precedence.
 7. With the text editor open, copy new text from another app and verify the **Reload** toolbar button shows its red badge. Click the button (or press `Ctrl+R`) and confirm the editor replaces its content with the newest clipboard text.
 8. Make a local edit so the document is dirty, then copy new text in another app. When the badge appears, click **Reload** and confirm the warning dialog prevents data loss unless you choose to proceed.
+
+## Viewport Overscroll Panning
+
+1. Open an image and zoom in until it is larger than the editor window.
+2. Middle-drag to pan the image down/right and confirm you can pull its top-left corner into the window (Photoshop-style), with the dark backdrop showing beyond the image edge, until roughly 48px of the image remains visible.
+3. Pan the opposite way and confirm the same margin applies to the bottom-right corner.
+4. Zoom out until the image fits the window and confirm it stays centered while panning.
+
+## Selection Stamp / Clone Past Edges
+
+1. Draw a marquee over some distinctive content and drag it (no modifiers) toward an image edge. Confirm it travels past the edge without stopping and no pixels change.
+2. `Alt`-drag the marquee toward an edge. Confirm it also travels past the edge, and on release the clone lands clipped to the canvas.
+3. Repeat with `Ctrl`-drag and confirm the stamp trail paints up to the canvas edge.
+4. With a marquee active, tap plain `Arrow` keys: the marquee nudges 1px per press (10px with `Shift`) without touching pixels and without creating undo steps.
+5. With a marquee active, tap `Ctrl+Arrow` a few times: the marquee nudges 1px per press, smearing the stamped content as it goes. Release `Ctrl` and confirm a single `Ctrl+Z` undoes the whole run.
+6. With a marquee active, tap `Alt+Arrow` a few times: the clone floats with the marquee and is only committed when `Alt` is released; a single `Ctrl+Z` undoes it.
+
+## Free Rotate
+
+1. Open an image, click **Free Rotate** on the tool rail (with no selection active), and drag the handle above the image in a circle. Confirm the image spins live to match the cursor, with the canvas backdrop showing in the corners the rotated image no longer covers.
+2. Hold `Shift` while dragging and confirm the angle snaps to 15° steps.
+3. Click **Apply** (or press `Enter`). Confirm the canvas resizes to fit the rotated image with no clipped content, and `Ctrl+Z` / `Ctrl+Shift+Z` undo/redo it as one step.
+4. Press `Escape` (or click **Cancel**) mid-drag and confirm the image is unchanged and no undo step was created.
+5. Draw a selection first, then activate Free Rotate and drag. Confirm only the selection's content rotates in place — clipped to the marquee, with the surrounding image untouched — rather than resizing the canvas.

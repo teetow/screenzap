@@ -29,7 +29,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void PanBy_ClampsLargeImageWithinViewport()
+        public void PanBy_LargeImageOverscrollsPastEdges_UpToVisibleMargin()
         {
             using var control = new ImageViewportControl
             {
@@ -38,18 +38,39 @@ namespace Screenzap.ViewportTests
 
             control.Image = new Bitmap(500, 400);
             control.ZoomLevel = 1m;
+            var margin = ImageViewportControl.OverscrollVisibleMargin;
 
-            control.PanBy(new Size(500, 500));
+            // Panning right/down pulls the image's top-left corner into the viewport
+            // (Photoshop-style overscroll), stopping when only the margin remains visible.
+            control.PanBy(new Size(5000, 5000));
             var metrics = control.Metrics;
 
-            Assert.True(metrics.ImageClientRectangle.Right >= control.ClientSize.Width - 0.01f);
-            Assert.True(metrics.ImageClientRectangle.Bottom >= control.ClientSize.Height - 0.01f);
+            Assert.Equal(200 - margin, metrics.ImageClientRectangle.Left);
+            Assert.Equal(200 - margin, metrics.ImageClientRectangle.Top);
 
-            control.PanBy(new Size(-1000, -1000));
+            // Panning left/up likewise keeps the margin of the far edge visible.
+            control.PanBy(new Size(-10000, -10000));
             metrics = control.Metrics;
 
-            Assert.True(metrics.ImageClientRectangle.Left <= 0.01f);
-            Assert.True(metrics.ImageClientRectangle.Top <= 0.01f);
+            Assert.Equal(margin - 500, metrics.ImageClientRectangle.Left);
+            Assert.Equal(margin - 400, metrics.ImageClientRectangle.Top);
+        }
+
+        [Fact]
+        public void PanBy_SmallImageStaysCentered()
+        {
+            using var control = new ImageViewportControl
+            {
+                ClientSize = new Size(400, 300)
+            };
+
+            control.Image = new Bitmap(100, 80);
+
+            control.PanBy(new Size(75, -50));
+            var metrics = control.Metrics;
+
+            Assert.Equal((400 - 100) / 2f, metrics.ImageClientRectangle.Left);
+            Assert.Equal((300 - 80) / 2f, metrics.ImageClientRectangle.Top);
         }
 
         [Fact]

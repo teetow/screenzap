@@ -81,6 +81,12 @@ namespace screenzap
             ImageEditor_KeyDown(this, args);
         }
 
+        internal void TestFireKeyUp(Keys keyData)
+        {
+            var args = new KeyEventArgs(keyData);
+            ImageEditor_KeyUp(this, args);
+        }
+
         internal bool TestFireKeyPress(char ch)
         {
             var args = new KeyPressEventArgs(ch);
@@ -225,6 +231,10 @@ namespace screenzap
         internal Color TestAnnotationColorButtonBackColor => annotationColorButton?.BackColor ?? Color.Empty;
 
         internal void TestSetShiftHeld(bool held) => isShiftHeld_TestOverride = held;
+
+        internal void TestSetCtrlHeld(bool held) => isCtrlHeld_TestOverride = held;
+
+        internal void TestSetAltHeld(bool held) => isAltHeld_TestOverride = held;
 
         /// <summary>
         /// Fire a click at the given image pixel with Shift held throughout the down+up,

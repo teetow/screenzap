@@ -14,7 +14,8 @@ namespace screenzap
         Highlighter,
         Text,
         Censor,
-        Straighten
+        Straighten,
+        FreeRotate
     }
 
     public partial class ImageEditor
@@ -55,6 +56,16 @@ namespace screenzap
             {
                 if (value) SetActiveTool(ActiveTool.Straighten);
                 else if (activeTool == ActiveTool.Straighten) SetActiveTool(ActiveTool.None);
+            }
+        }
+
+        private bool isFreeRotateToolActive
+        {
+            get => activeTool == ActiveTool.FreeRotate;
+            set
+            {
+                if (value) SetActiveTool(ActiveTool.FreeRotate);
+                else if (activeTool == ActiveTool.FreeRotate) SetActiveTool(ActiveTool.None);
             }
         }
 
@@ -154,6 +165,9 @@ namespace screenzap
                         break;
                     case ActiveTool.Straighten:
                         DeactivateStraightenTool(false);
+                        break;
+                    case ActiveTool.FreeRotate:
+                        DeactivateFreeRotateTool(false);
                         break;
                 }
 

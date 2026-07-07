@@ -90,20 +90,25 @@ namespace screenzap
                 return;
             }
 
-            double correctionAngle = GetStraightenCorrectionAngle();
-            if (Math.Abs(correctionAngle) < 0.01)
-            {
-                return;
-            }
+            RotateEditorContentBy(GetStraightenCorrectionAngle());
+        }
 
-            if (!HasEditableImage || pictureBox1.Image == null)
+        /// <summary>
+        /// Rotates the current selection in place, or the whole image (expanding the canvas via
+        /// <see cref="lib.ImageStraightener.RotateImage"/>) when no selection is active. Shared by
+        /// the straighten tool (line-inferred angle) and the free-rotate tool (drag/typed angle)
+        /// so both bake through the same, already-exercised path.
+        /// </summary>
+        private void RotateEditorContentBy(double angleDegrees)
+        {
+            if (Math.Abs(angleDegrees) < 0.01 || !HasEditableImage || pictureBox1.Image == null)
             {
                 return;
             }
 
             if (!Selection.IsEmpty)
             {
-                ApplyStraightenToSelection(correctionAngle);
+                ApplyRotationToSelection(angleDegrees);
                 return;
             }
 
@@ -113,7 +118,7 @@ namespace screenzap
 
             try
             {
-                rotated = lib.ImageStraightener.RotateImage(beforeFullImage, correctionAngle);
+                rotated = lib.ImageStraightener.RotateImage(beforeFullImage, angleDegrees);
 
                 pictureBox1.Image?.Dispose();
                 pictureBox1.Image = new Bitmap(rotated);
@@ -134,7 +139,7 @@ namespace screenzap
             }
         }
 
-        private void ApplyStraightenToSelection(double correctionAngle)
+        private void ApplyRotationToSelection(double correctionAngle)
         {
             if (pictureBox1.Image == null)
             {

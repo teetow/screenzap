@@ -190,32 +190,37 @@ namespace screenzap
             if (rzMode == ResizeMode.Move)
             {
                 var Delta = MouseInPixel.Subtract(pixel);
-                var newLocation = new Point(SelectionGrabOrigin.X - Delta.X, SelectionGrabOrigin.Y - Delta.Y);
-                Selection = new Rectangle(ClampSelectionLocationToImage(newLocation, Selection.Size), Selection.Size);
+                // The marquee moves freely, past the canvas edge if taken there — pixel
+                // operations (stamp/clone/copy/crop/...) all clip to the image themselves.
+                Selection = new Rectangle(
+                    new Point(SelectionGrabOrigin.X - Delta.X, SelectionGrabOrigin.Y - Delta.Y),
+                    Selection.Size);
                 return;
             }
 
             Selection = ClampToImage(Selection);
         }
 
-        private Point ClampSelectionLocationToImage(Point location, Size selectionSize)
-        {
-            var bounds = GetImageBounds();
-            if (bounds.IsEmpty)
-            {
-                return location;
-            }
+        private bool isCtrlHeld_TestOverride;
+        private bool isAltHeld_TestOverride;
 
-            var maxX = Math.Max(bounds.Left, bounds.Right - selectionSize.Width);
-            var maxY = Math.Max(bounds.Top, bounds.Bottom - selectionSize.Height);
-            int clampedX = Math.Clamp(location.X, bounds.Left, maxX);
-            int clampedY = Math.Clamp(location.Y, bounds.Top, maxY);
-            return new Point(clampedX, clampedY);
-        }
-
-        private bool IsCtrlModifierDown() => (ModifierKeys & Keys.Control) == Keys.Control;
-        private bool IsAltModifierDown() => (ModifierKeys & Keys.Alt) == Keys.Alt;
+        private bool IsCtrlModifierDown() => isCtrlHeld_TestOverride || (ModifierKeys & Keys.Control) == Keys.Control;
+        private bool IsAltModifierDown() => isAltHeld_TestOverride || (ModifierKeys & Keys.Alt) == Keys.Alt;
         private bool IsShiftModifierDown() => (ModifierKeys & Keys.Shift) == Keys.Shift;
+
+        /// <summary>
+        /// A stamp/clone gesture can only pick up on-canvas pixels. When it starts on a marquee
+        /// that rests partially off-canvas (left there by a previous gesture), snap the marquee
+        /// to the captured region so the stamped content stays aligned with the ants.
+        /// </summary>
+        private void ReanchorSelectionToCapturedRegion(Rectangle capturedRegion)
+        {
+            if (Selection != capturedRegion)
+            {
+                Selection = capturedRegion;
+                SelectionGrabOrigin = capturedRegion;
+            }
+        }
 
         private Point ApplyCloneStampAxisLock(Point cursorPixel)
         {
@@ -254,6 +259,8 @@ namespace screenzap
             {
                 return;
             }
+
+            ReanchorSelectionToCapturedRegion(sourceRegion);
 
             selectionStampBeforeImage = new Bitmap(pictureBox1.Image);
             selectionStampSelectionBefore = Selection;
@@ -311,6 +318,8 @@ namespace screenzap
             {
                 return;
             }
+
+            ReanchorSelectionToCapturedRegion(sourceRegion);
 
             selectionCloneBeforeImage = new Bitmap(pictureBox1.Image);
             selectionCloneSelectionBefore = Selection;
@@ -536,6 +545,92 @@ namespace screenzap
             }
         }
 
+        /// <summary>
+        /// Arrow keys act on the active marquee: plain arrows move it without touching pixels,
+        /// Ctrl+Arrow stamps (mirrors ctrl-drag) and Alt+Arrow clones (mirrors alt-drag); Shift
+        /// accelerates any of them to 10px per press. Each press nudges by image pixels, and a
+        /// stamp/clone gesture stays open so repeated presses accumulate into a single undo
+        /// step, closed when the modifier key is released (see ImageEditor_KeyUp) or when the
+        /// mouse takes over.
+        /// </summary>
+        private bool TryHandleMarqueeArrowKey(Keys keyData)
+        {
+            var code = keyData & Keys.KeyCode;
+            bool ctrl = (keyData & Keys.Control) == Keys.Control;
+            bool alt = (keyData & Keys.Alt) == Keys.Alt;
+            bool shift = (keyData & Keys.Shift) == Keys.Shift;
+
+            // Ctrl+Alt combinations are left for the system (e.g. display rotation hotkeys).
+            if (ctrl && alt)
+                return false;
+
+            if (!HasEditableImage || Selection.IsEmpty || pictureBox1?.Image == null)
+                return false;
+
+            if (isStraightenToolActive || isCensorToolActive)
+                return false;
+
+            if (activeTextAnnotation?.IsEditing == true)
+                return false;
+
+            // A held mouse button means a drag gesture owns the selection right now.
+            if (MouseButtons != MouseButtons.None)
+                return false;
+
+            var focused = ActiveControl ?? FindFocusedControl();
+            if (focused is TextBoxBase || focused is ComboBox || focused is ToolStrip || focused?.Parent is ToolStrip)
+                return false;
+
+            int step = shift ? 10 : 1;
+            var delta = code switch
+            {
+                Keys.Left => new Size(-step, 0),
+                Keys.Right => new Size(step, 0),
+                Keys.Up => new Size(0, -step),
+                Keys.Down => new Size(0, step),
+                _ => Size.Empty,
+            };
+
+            if (delta.IsEmpty)
+                return false;
+
+            if (ctrl)
+            {
+                if (isAltCloningSelection)
+                    EndSelectionCloneGesture();
+
+                if (!isCtrlStampingSelection)
+                    BeginSelectionStampGesture();
+
+                if (!isCtrlStampingSelection)
+                    return false;
+
+                Selection = new Rectangle(Point.Add(Selection.Location, delta), Selection.Size);
+                ApplySelectionStampAlongPath(selectionStampLastLocation, Selection.Location);
+                selectionStampLastLocation = Selection.Location;
+            }
+            else if (alt)
+            {
+                if (isCtrlStampingSelection)
+                    EndSelectionStampGesture();
+
+                if (!isAltCloningSelection)
+                    BeginSelectionCloneGesture();
+
+                if (!isAltCloningSelection)
+                    return false;
+
+                Selection = new Rectangle(Point.Add(Selection.Location, delta), Selection.Size);
+            }
+            else
+            {
+                Selection = new Rectangle(Point.Add(Selection.Location, delta), Selection.Size);
+            }
+
+            pictureBox1.Invalidate();
+            return true;
+        }
+
         private void ImageEditor_MouseWheel(object? sender, MouseEventArgs e)
         {
             if (pictureBox1?.Image == null)
@@ -626,6 +721,17 @@ namespace screenzap
                         UpdateCensorToolbarState();
                         pictureBox1.Invalidate();
                     }
+                }
+
+                base.OnMouseDown(e);
+                return;
+            }
+
+            if (isFreeRotateToolActive)
+            {
+                if (e.Button == MouseButtons.Left && HitTestFreeRotateHandle(FormCoordToPixel(e.Location)))
+                {
+                    BeginFreeRotateDrag(FormCoordToPixel(e.Location));
                 }
 
                 base.OnMouseDown(e);
@@ -731,6 +837,22 @@ namespace screenzap
                 {
                     var pixelPoint = FormCoordToPixel(e.Location);
                     Cursor = FindRegionAtPixel(pixelPoint) != null ? Cursors.Hand : Cursors.Default;
+                }
+
+                base.OnMouseMove(e);
+                return;
+            }
+
+            if (isFreeRotateToolActive)
+            {
+                var pixelPoint = FormCoordToPixel(e.Location);
+                if (isFreeRotateDragging && e.Button == MouseButtons.Left)
+                {
+                    UpdateFreeRotateDrag(pixelPoint);
+                }
+                else
+                {
+                    Cursor = HitTestFreeRotateHandle(pixelPoint) ? Cursors.Cross : Cursors.Default;
                 }
 
                 base.OnMouseMove(e);
@@ -903,6 +1025,17 @@ namespace screenzap
                 return;
             }
 
+            if (isFreeRotateToolActive)
+            {
+                if (e.Button == MouseButtons.Left && isFreeRotateDragging)
+                {
+                    EndFreeRotateDrag();
+                }
+
+                base.OnMouseUp(e);
+                return;
+            }
+
             if (HandleTextToolMouseUp(e.Button, FormCoordToPixel(e.Location)))
             {
                 base.OnMouseUp(e);
@@ -955,7 +1088,9 @@ namespace screenzap
             }
             else if (!Selection.IsEmpty)
             {
-                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(ClampToImage(Selection)), 2f);
+                // Deliberately unclamped: a stamp/clone move may hang the marquee past the
+                // canvas edge, and it should be drawn where it actually is.
+                DrawMarchingAntsRectangle(e.Graphics, PixelToFormCoord(Selection), 2f);
             }
 
             if (isAltCloningSelection && selectionCloneSource != null)
@@ -990,6 +1125,7 @@ namespace screenzap
             DrawTextAnnotations(e.Graphics, AnnotationSurface.Screen);
             DrawSelectedLayerOverlay(e.Graphics);
             DrawStraightenOverlay(e.Graphics);
+            DrawFreeRotateOverlay(e.Graphics);
 
             if (isCensorToolActive && censorRegions.Count > 0)
             {
