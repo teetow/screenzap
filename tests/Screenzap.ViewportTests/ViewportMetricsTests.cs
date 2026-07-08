@@ -57,7 +57,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void PanBy_SmallImageStaysCentered()
+        public void PanBy_SmallImageOverpansPastEdges_UpToVisibleMargin()
         {
             using var control = new ImageViewportControl
             {
@@ -65,12 +65,43 @@ namespace Screenzap.ViewportTests
             };
 
             control.Image = new Bitmap(100, 80);
+            var margin = ImageViewportControl.OverscrollVisibleMargin;
 
-            control.PanBy(new Size(75, -50));
+            control.PanBy(new Size(5000, 5000));
             var metrics = control.Metrics;
 
-            Assert.Equal((400 - 100) / 2f, metrics.ImageClientRectangle.Left);
-            Assert.Equal((300 - 80) / 2f, metrics.ImageClientRectangle.Top);
+            Assert.Equal(400 - margin, metrics.ImageClientRectangle.Left);
+            Assert.Equal(300 - margin, metrics.ImageClientRectangle.Top);
+
+            control.PanBy(new Size(-10000, -10000));
+            metrics = control.Metrics;
+
+            Assert.Equal(margin - 100, metrics.ImageClientRectangle.Left);
+            Assert.Equal(margin - 80, metrics.ImageClientRectangle.Top);
+        }
+
+        [Fact]
+        public void PanBy_ImageNarrowerThanViewportStillOverpansHorizontally()
+        {
+            using var control = new ImageViewportControl
+            {
+                ClientSize = new Size(300, 200)
+            };
+
+            control.Image = new Bitmap(120, 400);
+            var margin = ImageViewportControl.OverscrollVisibleMargin;
+
+            control.PanBy(new Size(5000, 5000));
+            var metrics = control.Metrics;
+
+            Assert.Equal(300 - margin, metrics.ImageClientRectangle.Left);
+            Assert.Equal(200 - margin, metrics.ImageClientRectangle.Top);
+
+            control.PanBy(new Size(-10000, -10000));
+            metrics = control.Metrics;
+
+            Assert.Equal(margin - 120, metrics.ImageClientRectangle.Left);
+            Assert.Equal(margin - 400, metrics.ImageClientRectangle.Top);
         }
 
         [Fact]

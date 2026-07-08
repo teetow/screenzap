@@ -152,8 +152,8 @@ namespace screenzap.Components.Shared
         }
 
         /// <summary>
-        /// Minimum client-space extent of the image that must stay visible on each axis when
-        /// panning an image larger than the viewport; the rest may overscroll past the edges.
+        /// Minimum client-space extent of the image that must stay visible on each axis while
+        /// panning; the rest may overscroll past the edges.
         /// </summary>
         public const float OverscrollVisibleMargin = 48f;
 
@@ -177,18 +177,12 @@ namespace screenzap.Components.Shared
         }
 
         /// <summary>
-        /// An image that fits the viewport stays centered on its axis. A larger image may be
-        /// panned past the viewport edges (Photoshop-style overscroll) as long as at least
-        /// <see cref="OverscrollVisibleMargin"/> client pixels of it remain visible.
+        /// Each image axis may be panned past the viewport edges (Photoshop-style over-pan) as
+        /// long as a visible margin of the image remains in the viewport.
         /// </summary>
         private static float ConstrainPanAxis(float pan, float scaledExtent, int clientExtent)
         {
-            if (scaledExtent <= clientExtent)
-            {
-                return (clientExtent - scaledExtent) / 2f;
-            }
-
-            var margin = Math.Min(OverscrollVisibleMargin, clientExtent);
+            var margin = Math.Min(OverscrollVisibleMargin, Math.Min(scaledExtent, clientExtent));
             return Math.Min(clientExtent - margin, Math.Max(margin - scaledExtent, pan));
         }
 

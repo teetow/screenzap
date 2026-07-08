@@ -319,11 +319,34 @@ namespace screenzap.Components
             DoubleBuffered = true;
             MinimumSize = new Size(900, 600);
             ClientSize = new Size(1100, 700);
+            ApplyApplicationIcon();
             Text = "Screenzap Clipboard Editor";
             Resize += (_, _) => ClampHistoryPanelWidth();
 
             ResumeLayout(false);
             PerformLayout();
+        }
+
+        private void ApplyApplicationIcon()
+        {
+            try
+            {
+                var executablePath = Application.ExecutablePath;
+                if (string.IsNullOrWhiteSpace(executablePath))
+                {
+                    return;
+                }
+
+                var applicationIcon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
+                if (applicationIcon != null)
+                {
+                    Icon = applicationIcon;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to load clipboard editor icon: {ex.Message}");
+            }
         }
 
         private ToolStrip CreateToolbar()
