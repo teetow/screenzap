@@ -44,6 +44,48 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void Crop_RepositionsFloatingLayersAndText_ToMatchNewOrigin_AndUndoRestores()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = new screenzap.ImageEditor();
+                using var source = new Bitmap(100, 60);
+                editor.LoadImage(source);
+
+                editor.TestAddTextAnnotation(new Point(50, 40), "hello");
+
+                using var pasted = new Bitmap(10, 10);
+                editor.SetInternalClipboardImageForDiagnostics(pasted);
+                Assert.True(editor.PasteFromClipboardForDiagnostics());
+                var originalLayerFrame = editor.GetImageLayerFrameForTests(0);
+
+                var cropSelection = new Rectangle(30, 20, 40, 30);
+                editor.SetSelectionForDiagnostics(cropSelection);
+                Assert.True(editor.ExecuteCropForDiagnostics());
+
+                // Content is pinned in place: positions shift by the crop origin, not left untouched.
+                Assert.Equal(1, editor.TestTextAnnotationCount);
+                Assert.Contains("pos={X=20,Y=20}", editor.TestDescribeTextAnnotations());
+
+                Assert.Equal(1, editor.ImageLayerCountForTests);
+                var croppedLayerFrame = editor.GetImageLayerFrameForTests(0);
+                Assert.Equal(originalLayerFrame.X - cropSelection.X, croppedLayerFrame.X);
+                Assert.Equal(originalLayerFrame.Y - cropSelection.Y, croppedLayerFrame.Y);
+
+                var presenter = (IClipboardDocumentPresenter)editor;
+                Assert.True(presenter.TryExecute(EditorCommandId.Undo));
+
+                Assert.Equal(originalLayerFrame, editor.GetImageLayerFrameForTests(0));
+                Assert.Contains("pos={X=50,Y=40}", editor.TestDescribeTextAnnotations());
+
+                Assert.True(presenter.TryExecute(EditorCommandId.Redo));
+                var redoLayerFrame = editor.GetImageLayerFrameForTests(0);
+                Assert.Equal(originalLayerFrame.X - cropSelection.X, redoLayerFrame.X);
+                Assert.Equal(originalLayerFrame.Y - cropSelection.Y, redoLayerFrame.Y);
+            });
+        }
+
+        [Fact]
         public void Crop_ClampsOutOfBoundsSelection_ToImageBounds()
         {
             StaTest.Run(() =>

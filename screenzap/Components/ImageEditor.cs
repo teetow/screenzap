@@ -1548,6 +1548,8 @@ namespace screenzap
             var selectionBefore = Selection;
             var selectionAfter = Rectangle.Empty;
             var annotationStateBefore = CloneAnnotations();
+            var textStateBefore = CloneTextAnnotations();
+            var layerStateBefore = CloneLayers();
 
             var sourceImage = pictureBox1.Image;
             if (sourceImage == null)
@@ -1581,9 +1583,24 @@ namespace screenzap
 
             ApplyCropToAnnotations(clampedSelection.Location, clampedSelection.Size);
             ApplyCropToTextAnnotations(clampedSelection.Location, clampedSelection.Size);
+            ApplyCropToImageLayers(clampedSelection.Location, clampedSelection.Size);
             var annotationStateAfter = CloneAnnotations();
+            var textStateAfter = CloneTextAnnotations();
+            var layerStateAfter = CloneLayers();
 
-            PushUndoStep(Rectangle.Empty, beforeImage, afterSnapshot, selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
+            PushUndoStep(
+                Rectangle.Empty,
+                beforeImage,
+                afterSnapshot,
+                selectionBefore,
+                selectionAfter,
+                true,
+                annotationStateBefore,
+                annotationStateAfter,
+                textStateBefore,
+                textStateAfter,
+                layerStateBefore,
+                layerStateAfter);
 
             UpdateCommandUI();
             UpdateStatusBar();

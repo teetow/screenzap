@@ -151,6 +151,43 @@ namespace screenzap
             UpdateLayerToolbarState();
         }
 
+        private void ApplyCropToImageLayers(Point cropOrigin, Size newSize)
+        {
+            if (imageLayers.Count == 0)
+            {
+                return;
+            }
+
+            var selectedLayer = selectedLayerIndex >= 0 && selectedLayerIndex < imageLayers.Count
+                ? imageLayers[selectedLayerIndex]
+                : null;
+
+            var newBounds = new RectangleF(0f, 0f, newSize.Width, newSize.Height);
+            var updated = new List<ImageLayer>();
+
+            foreach (var layer in imageLayers)
+            {
+                var frame = layer.Frame;
+                frame.X -= cropOrigin.X;
+                frame.Y -= cropOrigin.Y;
+
+                if (!frame.IntersectsWith(newBounds))
+                {
+                    layer.Dispose();
+                    continue;
+                }
+
+                layer.Frame = frame;
+                updated.Add(layer);
+            }
+
+            imageLayers.Clear();
+            imageLayers.AddRange(updated);
+
+            selectedLayerIndex = selectedLayer != null ? imageLayers.IndexOf(selectedLayer) : -1;
+            UpdateLayerToolbarState();
+        }
+
         private void InitializeHistoryImageDrop()
         {
             if (pictureBox1 == null)
