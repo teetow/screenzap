@@ -143,8 +143,11 @@ namespace screenzap.Components.Shared
             }
 
             var scaled = GetScaledImageSize();
-            var centeredX = (ClientSize.Width - scaled.Width) / 2f;
-            var centeredY = (ClientSize.Height - scaled.Height) / 2f;
+            // Round to a whole pixel: a fractional (.5) panOffset makes PixelToClient/ClientToPixel
+            // stop being exact inverses of each other (MidpointRounding disagrees depending on the
+            // coordinate's own parity), which shows up as a systematic 1px drag/rotation bias.
+            var centeredX = MathF.Round((ClientSize.Width - scaled.Width) / 2f);
+            var centeredY = MathF.Round((ClientSize.Height - scaled.Height) / 2f);
             var newPan = new PointF(centeredX, centeredY);
             LogDebug($"CenterImage: scaled={scaled}, centered=({centeredX:F1}, {centeredY:F1})");
             panOffset = newPan;

@@ -206,7 +206,7 @@ namespace screenzap
 
         private bool IsCtrlModifierDown() => isCtrlHeld_TestOverride || (ModifierKeys & Keys.Control) == Keys.Control;
         private bool IsAltModifierDown() => isAltHeld_TestOverride || (ModifierKeys & Keys.Alt) == Keys.Alt;
-        private bool IsShiftModifierDown() => (ModifierKeys & Keys.Shift) == Keys.Shift;
+        private bool IsShiftModifierDown() => isShiftHeld_TestOverride || (ModifierKeys & Keys.Shift) == Keys.Shift;
 
         /// <summary>
         /// A stamp/clone gesture can only pick up on-canvas pixels. When it starts on a marquee
