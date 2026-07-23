@@ -408,6 +408,49 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void SystemHistoryRefresh_DoesNotBlackholeFreshContentUnderPreviouslySuppressedId()
+        {
+            // Regression test: Windows appears to report one stable id for "whatever is currently
+            // on the clipboard" rather than minting a fresh id per content snapshot. A commit/
+            // set-active write suppresses the id an item is moving off of, expecting a fresh id to
+            // show up for whatever comes next - but if that "next" content keeps arriving under the
+            // SAME (now-suppressed) id, it must not be silently and permanently dropped forever.
+            StaTest.Run(() =>
+            {
+                var store = new ClipboardHistoryStore();
+                using var host = new Form();
+                host.CreateControl();
+
+                using var committedImage = CreateSolidBitmap(Color.SteelBlue);
+                var committed = store.AddObservedImage(committedImage);
+                committed.AddSuppressedSystemHistoryId("live-id");
+
+                // Later, unrelated content (e.g. copied from another app entirely) is reported
+                // under that same "live-id".
+                using var freshImage = CreateSolidBitmap(Color.Orange);
+                var fresh = ClipboardHistoryItem.FromImage(freshImage);
+                fresh.AssignSystemHistoryId("live-id");
+
+                using var service = new SystemClipboardHistoryService(
+                    store,
+                    host,
+                    onItemObserved: null,
+                    tryBindPendingCommittedItem: null,
+                    isInternalWriteWindow: null);
+
+                ApplySystemSnapshot(
+                    service,
+                    new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>
+                    {
+                        ("live-id", DateTimeOffset.UtcNow.AddSeconds(1), fresh)
+                    });
+
+                Assert.Contains(store.Items, item => ReferenceEquals(item, fresh));
+                Assert.Same(fresh, store.TopItem);
+            });
+        }
+
+        [Fact]
         public void SystemHistoryRefresh_KeepsUserDuplicateDistinctFromReimport()
         {
             StaTest.Run(() =>

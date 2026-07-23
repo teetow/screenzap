@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 
@@ -13,6 +14,67 @@ namespace screenzap.Components.Shared
         private decimal zoomLevel = 1m;
         private PointF panOffset = PointF.Empty;
         private InterpolationMode interpolationMode = InterpolationMode.NearestNeighbor;
+        private bool alphaViewEnabled = true;
+
+        // Per-instance GDI+ paint resources for the alpha-view modes, created on first use and
+        // disposed with the control. These MUST NOT be static/shared: a Brush, Bitmap, or
+        // ImageAttributes is a native GDI+ object that throws "Object is currently in use
+        // elsewhere" when used by two paints at once — which happens across ImageViewportControl
+        // instances (each editor has one, DrawToBitmap offscreen renders overlap on-screen paint,
+        // and the test host paints several controls on parallel STA threads).
+        private TextureBrush? alphaCheckerboardBrush;
+        private ImageAttributes? forceOpaqueImageAttributes;
+
+        // Forces output alpha to 1 regardless of the source pixel's alpha, leaving RGB untouched:
+        // row 3 (alpha-in) contributes 0, row 4 (constant-1) contributes 1 to the alpha output.
+        // A ColorMatrix is plain managed data (no native handle), so sharing one is safe.
+        private static readonly ColorMatrix ForceOpaqueColorMatrix = new ColorMatrix(new float[][]
+        {
+            new float[] { 1, 0, 0, 0, 0 },
+            new float[] { 0, 1, 0, 0, 0 },
+            new float[] { 0, 0, 1, 0, 0 },
+            new float[] { 0, 0, 0, 0, 0 },
+            new float[] { 0, 0, 0, 1, 1 },
+        });
+
+        private TextureBrush GetAlphaCheckerboardBrush()
+        {
+            if (alphaCheckerboardBrush == null)
+            {
+                const int square = 8;
+                var light = Color.FromArgb(205, 205, 205);
+                var dark = Color.FromArgb(150, 150, 150);
+
+                var tile = new Bitmap(square * 2, square * 2);
+                using (var g = Graphics.FromImage(tile))
+                using (var lightBrush = new SolidBrush(light))
+                using (var darkBrush = new SolidBrush(dark))
+                {
+                    g.FillRectangle(lightBrush, 0, 0, square, square);
+                    g.FillRectangle(darkBrush, square, 0, square, square);
+                    g.FillRectangle(darkBrush, 0, square, square, square);
+                    g.FillRectangle(lightBrush, square, square, square, square);
+                }
+
+                // TextureBrush copies the tile into its own texture, so disposing the local tile is
+                // safe once the brush is constructed.
+                alphaCheckerboardBrush = new TextureBrush(tile, WrapMode.Tile);
+                tile.Dispose();
+            }
+
+            return alphaCheckerboardBrush;
+        }
+
+        private ImageAttributes GetForceOpaqueImageAttributes()
+        {
+            if (forceOpaqueImageAttributes == null)
+            {
+                forceOpaqueImageAttributes = new ImageAttributes();
+                forceOpaqueImageAttributes.SetColorMatrix(ForceOpaqueColorMatrix);
+            }
+
+            return forceOpaqueImageAttributes;
+        }
 
         public event EventHandler<PaintEventArgs>? OverlayPaint;
         public event EventHandler? ZoomChanged;
@@ -56,6 +118,27 @@ namespace screenzap.Components.Shared
         }
 
         public bool HasImage => image != null;
+
+        /// <summary>
+        /// True (default): the image is alpha-composited over a checkerboard, like every other
+        /// image editor's transparency view. False: alpha is ignored and every pixel is drawn
+        /// fully opaque, revealing the raw RGB underneath any masked/transparent regions. A pure
+        /// view-layer toggle — never touches the underlying image data.
+        /// </summary>
+        public bool AlphaViewEnabled
+        {
+            get => alphaViewEnabled;
+            set
+            {
+                if (alphaViewEnabled == value)
+                {
+                    return;
+                }
+
+                alphaViewEnabled = value;
+                Invalidate();
+            }
+        }
 
         public decimal ZoomLevel
         {
@@ -126,6 +209,7 @@ namespace screenzap.Components.Shared
         public void ResetView()
         {
             zoomLevel = 1m;
+            alphaViewEnabled = true;
             CenterImage();
         }
 
@@ -268,17 +352,45 @@ namespace screenzap.Components.Shared
 
             if (image != null)
             {
+                var destRect = GetImageClientRectangle();
+
                 e.Graphics.InterpolationMode = interpolationMode;
                 if (interpolationMode == InterpolationMode.NearestNeighbor)
                 {
                     e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
                 }
 
-                e.Graphics.DrawImage(image, GetImageClientRectangle());
+                if (alphaViewEnabled)
+                {
+                    e.Graphics.FillRectangle(GetAlphaCheckerboardBrush(), destRect);
+                    e.Graphics.DrawImage(image, destRect);
+                }
+                else
+                {
+                    e.Graphics.DrawImage(
+                        image,
+                        Rectangle.Round(destRect),
+                        0f, 0f, image.Width, image.Height,
+                        GraphicsUnit.Pixel,
+                        GetForceOpaqueImageAttributes());
+                }
             }
 
             OverlayPaint?.Invoke(this, e);
             base.OnPaint(e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                alphaCheckerboardBrush?.Dispose();
+                alphaCheckerboardBrush = null;
+                forceOpaqueImageAttributes?.Dispose();
+                forceOpaqueImageAttributes = null;
+            }
+
+            base.Dispose(disposing);
         }
 
         protected override void OnSizeChanged(EventArgs e)

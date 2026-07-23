@@ -625,7 +625,7 @@ namespace screenzap.Components
             {
                 if (flattened != null && allowSystemClipboardWrites)
                 {
-                    Clipboard.SetImage(flattened);
+                    screenzap.lib.ClipboardImageWriter.WriteImage(flattened);
                 }
             }
             catch (Exception ex)
@@ -775,7 +775,7 @@ namespace screenzap.Components
                     }
                     else if (allowSystemClipboardWrites)
                     {
-                        Clipboard.SetImage(imageToWrite);
+                        screenzap.lib.ClipboardImageWriter.WriteImage(imageToWrite);
                     }
                 }
             }

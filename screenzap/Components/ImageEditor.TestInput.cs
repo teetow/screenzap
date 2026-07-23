@@ -346,6 +346,8 @@ namespace screenzap
             if (pictureBox1 != null) pictureBox1.ZoomLevel = zoom;
         }
 
+        internal bool TestAlphaViewEnabled => pictureBox1?.AlphaViewEnabled ?? true;
+
         /// <summary>Add a finalized (non-editing, unselected) text annotation directly.</summary>
         internal void TestAddTextAnnotation(Point position, string text)
         {

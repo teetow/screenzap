@@ -86,6 +86,7 @@ namespace screenzap
             if (clipboardMonitor != null)
             {
                 clipboardMonitor.OnUpdateImage -= ClipboardMonitor_OnUpdateImageForQr;
+                clipboardMonitor.OnUpdate -= ClipboardMonitor_CaptureLiveAlpha;
                 clipboardMonitor.Dispose();
                 clipboardMonitor = null;
             }
@@ -97,11 +98,47 @@ namespace screenzap
             {
                 clipboardMonitor = new ClipboardMonitor();
                 clipboardMonitor.OnUpdateImage += ClipboardMonitor_OnUpdateImageForQr;
+                clipboardMonitor.OnUpdate += ClipboardMonitor_CaptureLiveAlpha;
                 clipboardMonitor.isListening = true;
             }
             catch (Exception ex)
             {
                 Logger.Log($"Failed to initialize QR clipboard monitor: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Fires on the UI thread when the live clipboard gains an image. We re-read the clipboard
+        /// with the alpha-preserving decoder and hand it to the history service as the "live alpha
+        /// candidate" for the item Windows is about to add to clipboard history — which would
+        /// otherwise be alpha-stripped. Runs regardless of whether the editor window is open so the
+        /// candidate is ready by the time the WinRT HistoryChanged refresh decodes the new entry.
+        /// </summary>
+        private void ClipboardMonitor_CaptureLiveAlpha(object? sender, EventArgs e)
+        {
+            var service = systemHistoryService;
+            if (service == null)
+            {
+                return;
+            }
+
+            try
+            {
+                // Ignore our own writes: they're already the item the WinRT service is tracking, and
+                // re-publishing would only race the internal-write suppression window.
+                if (clipboardEditorHost?.IsInternalClipboardWriteWindow() == true)
+                {
+                    return;
+                }
+
+                // TryRead returns null for non-image clipboards, which clears any stale candidate so
+                // it can't attach to a later unrelated history item.
+                using var alpha = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
+                service.SetLiveAlphaCandidate(alpha);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to capture live alpha candidate: {ex.Message}");
             }
         }
 
@@ -270,21 +307,8 @@ namespace screenzap
 
         void setClipboard(Bitmap bitmap)
         {
-            ArgumentNullException.ThrowIfNull(bitmap);
-
-            using (MemoryStream pngMemStream = new MemoryStream())
-            {
-                DataObject data = new DataObject();
-
-                data.SetData(DataFormats.Bitmap, true, bitmap);
-
-                bitmap.Save(pngMemStream, ImageFormat.Png);
-                pngMemStream.Position = 0;
-                data.SetData("PNG", false, pngMemStream);
-
-                Clipboard.SetDataObject(data, true);
-                ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
-            }
+            ClipboardImageWriter.WriteImage(bitmap);
+            ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
         }
 
         void DoCapture(object? sender, KeyPressedEventArgs e)
@@ -400,7 +424,7 @@ namespace screenzap
 
         private void saveClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
         {
-            var img = Clipboard.GetImage();
+            var img = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
             if (img != null)
             {
                 var fname = FileUtils.SaveImage(img);
@@ -501,14 +525,11 @@ namespace screenzap
             {
                 try
                 {
-                    if (Clipboard.ContainsImage())
+                    using var img = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
+                    if (img != null)
                     {
-                        using var img = Clipboard.GetImage();
-                        if (img is Bitmap bmp)
-                        {
-                            var seeded = host.HistoryStore.AddObservedImage(bmp);
-                            seeded.IsSeededFallback = true;
-                        }
+                        var seeded = host.HistoryStore.AddObservedImage(img);
+                        seeded.IsSeededFallback = true;
                     }
                 }
                 catch (ExternalException ex)

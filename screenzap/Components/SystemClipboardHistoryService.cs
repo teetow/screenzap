@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using screenzap.lib;
@@ -41,8 +42,44 @@ namespace screenzap.Components
         // (UI thread). DoRefreshOnceAsync reads it to skip re-decoding bitmaps we already have.
         private volatile HashSet<string> knownSystemHistoryIds = new(StringComparer.Ordinal);
 
+        // Most-recent alpha-carrying image seen on the LIVE clipboard (published on the UI thread by
+        // the app's clipboard-change monitor). Windows clipboard history strips alpha, so this is the
+        // only source of transparency for freshly-copied history items. Read on the WinRT worker
+        // thread during decode; the held bitmap is an immutable clone, so cross-thread reads are safe.
+        private volatile LiveAlphaCandidate? liveAlphaCandidate;
+
         private const int RefreshDebounceMs = 120;
         private const int WinRtOperationTimeoutMs = 4000;
+
+        /// <summary>
+        /// Immutable snapshot of a live-clipboard image plus its alpha-insensitive RGB thumbprint,
+        /// used to re-attach transparency to the alpha-stripped bitmap Windows keeps in history.
+        /// </summary>
+        internal sealed class LiveAlphaCandidate
+        {
+            public LiveAlphaCandidate(Bitmap bitmap)
+            {
+                Bitmap = bitmap;
+                PixelSize = bitmap.Size;
+                RgbThumbprint = ClipboardImageDecoder.ComputeRgbThumbprint(bitmap);
+            }
+
+            public Bitmap Bitmap { get; }
+            public Size PixelSize { get; }
+            public byte[] RgbThumbprint { get; }
+        }
+
+        /// <summary>
+        /// Publishes the latest live-clipboard image (call on the UI thread when the clipboard
+        /// changes). Pass an alpha-preserving decode of the current clipboard, or null when the
+        /// clipboard holds no image, so a stale candidate can't attach to a later unrelated item.
+        /// </summary>
+        public void SetLiveAlphaCandidate(Bitmap? liveImage)
+        {
+            var previous = liveAlphaCandidate;
+            liveAlphaCandidate = liveImage == null ? null : new LiveAlphaCandidate(new Bitmap(liveImage));
+            previous?.Bitmap.Dispose();
+        }
 
         public SystemClipboardHistoryService(
             ClipboardHistoryStore store,
@@ -181,10 +218,14 @@ namespace screenzap.Components
             var known = knownSystemHistoryIds;
 
             // Translate WinRT items and then order by WinRT timestamp (newest first).
+            // Windows returns history newest-first, so index 0 is the item currently on the
+            // clipboard — the one a fresh live-alpha capture can legitimately stand in for.
             var translated = new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem? built)?>();
+            int itemIndex = -1;
             foreach (var sys in result.Items)
             {
                 if (disposed) return;
+                itemIndex++;
 
                 // Skip the expensive bitmap decode for items we already hold; ApplySnapshot reuses
                 // the existing store item by SystemHistoryId. Avoids re-streaming every image out of
@@ -195,7 +236,7 @@ namespace screenzap.Components
                     continue;
                 }
 
-                var converted = await TryConvertAsync(sys).ConfigureAwait(false);
+                var converted = await TryConvertAsync(sys, isNewest: itemIndex == 0).ConfigureAwait(false);
                 if (converted.HasValue)
                 {
                     translated.Add((converted.Value.id, sys.Timestamp, converted.Value.built));
@@ -236,7 +277,7 @@ namespace screenzap.Components
             }
         }
 
-        private async Task<(string id, ClipboardHistoryItem built)?> TryConvertAsync(WinRtClipboardHistoryItem sys)
+        private async Task<(string id, ClipboardHistoryItem built)?> TryConvertAsync(WinRtClipboardHistoryItem sys, bool isNewest)
         {
             try
             {
@@ -252,7 +293,7 @@ namespace screenzap.Components
                 // (text, files, etc.) is ignored.
                 if (declaresBitmap || imageLikeFormats)
                 {
-                    var imageItem = await TryBuildImageItemAsync(dp, sys.Id, logFailures: declaresBitmap);
+                    var imageItem = await TryBuildImageItemAsync(dp, sys.Id, logFailures: declaresBitmap, isNewest: isNewest);
                     if (imageItem != null)
                     {
                         return (sys.Id, imageItem);
@@ -288,12 +329,36 @@ namespace screenzap.Components
             return false;
         }
 
-        private static async Task<ClipboardHistoryItem?> TryBuildImageItemAsync(Windows.ApplicationModel.DataTransfer.DataPackageView dataPackage, string systemId, bool logFailures)
+        private async Task<ClipboardHistoryItem?> TryBuildImageItemAsync(Windows.ApplicationModel.DataTransfer.DataPackageView dataPackage, string systemId, bool logFailures, bool isNewest)
         {
             try
             {
-                Bitmap? bitmap = await TryDecodeBitmapFromBitmapReferenceAsync(dataPackage);
+                // Real alpha-carrying formats, when Windows history kept them (rare; usually stripped).
+                Bitmap? bitmap = await TryDecodeBitmapFromPngFormatAsync(dataPackage);
+                bitmap ??= await TryDecodeBitmapFromBitmapReferenceAsync(dataPackage);
                 bitmap ??= await TryDecodeBitmapFromStorageItemsAsync(dataPackage);
+
+                // Windows clipboard history strips an item down to an alpha-flattened Bitmap. When we
+                // captured the live clipboard (which still had alpha) for this same picture, prefer
+                // that: it's the only way history items ever carry transparency. Matching is by an
+                // alpha-insensitive RGB thumbprint so it can never bind to a different picture; the
+                // newest item additionally gets the candidate as a fallback when the history bitmap
+                // won't decode at all (e.g. XnView's DIB-only entries).
+                var candidate = liveAlphaCandidate;
+                if (candidate != null)
+                {
+                    Bitmap? upgraded = TrySubstituteLiveAlpha(bitmap, candidate, isNewest);
+                    if (upgraded != null)
+                    {
+                        bitmap?.Dispose();
+                        using (upgraded)
+                        {
+                            var alphaItem = ClipboardHistoryItem.FromImage(upgraded);
+                            alphaItem.AssignSystemHistoryId(systemId);
+                            return alphaItem;
+                        }
+                    }
+                }
 
                 if (bitmap == null)
                 {
@@ -318,14 +383,105 @@ namespace screenzap.Components
             }
         }
 
+        /// <summary>
+        /// Decides whether <paramref name="candidate"/> (an alpha-carrying live-clipboard capture)
+        /// should stand in for the alpha-stripped <paramref name="winrtDecoded"/> history bitmap.
+        /// Returns a fresh bitmap to use, or null to keep the WinRT one. Static + pure so the
+        /// matching rules are unit-testable without a live clipboard.
+        /// </summary>
+        internal static Bitmap? TrySubstituteLiveAlpha(Bitmap? winrtDecoded, LiveAlphaCandidate candidate, bool isNewest)
+        {
+            if (winrtDecoded != null)
+            {
+                // Same picture? Compare RGB thumbprints (alpha ignored) and pixel size.
+                if (winrtDecoded.Size == candidate.PixelSize)
+                {
+                    var winrtThumb = ClipboardImageDecoder.ComputeRgbThumbprint(winrtDecoded);
+                    if (winrtThumb.AsSpan().SequenceEqual(candidate.RgbThumbprint))
+                    {
+                        return new Bitmap(candidate.Bitmap);
+                    }
+                }
+
+                return null;
+            }
+
+            // History bitmap wouldn't decode. Only the newest item is safe to back-fill from the
+            // live capture (it's the entry currently on the clipboard); older items could be anything.
+            return isNewest ? new Bitmap(candidate.Bitmap) : null;
+        }
+
+        /// <summary>
+        /// Chromium/Firefox/many native apps place a registered "PNG" clipboard format (others,
+        /// XnView confirmed, use "image/png" instead - see <see cref="ClipboardImageDecoder.PngFormatNames"/>)
+        /// alongside the standard Bitmap format specifically so consumers can bypass the DIB-based
+        /// Bitmap bridge, which flattens alpha to fully opaque. <see cref="TryDecodeBitmapFromBitmapReferenceAsync"/>
+        /// below goes through that alpha-losing bridge via <c>GetBitmapAsync</c>, so this is tried first.
+        /// </summary>
+        private static async Task<Bitmap?> TryDecodeBitmapFromPngFormatAsync(Windows.ApplicationModel.DataTransfer.DataPackageView dataPackage)
+        {
+            try
+            {
+                var pngFormat = dataPackage.AvailableFormats?.FirstOrDefault(
+                    f => ClipboardImageDecoder.PngFormatNames.Any(name => string.Equals(f, name, StringComparison.OrdinalIgnoreCase)));
+                if (pngFormat == null)
+                {
+                    return null;
+                }
+
+                var raw = await AwaitWithTimeout(dataPackage.GetDataAsync(pngFormat), "GetDataAsync(PNG)").ConfigureAwait(false);
+
+                byte[]? bytes = raw switch
+                {
+                    Windows.Storage.Streams.IRandomAccessStream ras => await ReadAllBytesAsync(ras).ConfigureAwait(false),
+                    Windows.Storage.Streams.IBuffer buffer => buffer.ToArray(),
+                    byte[] arr => arr,
+                    _ => null
+                };
+
+                if (bytes == null || bytes.Length == 0)
+                {
+                    return null;
+                }
+
+                using var ms = new MemoryStream(bytes);
+                using var decoded = Image.FromStream(ms, useEmbeddedColorManagement: false, validateImageData: false);
+                return new Bitmap(decoded);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to decode PNG-format WinRT clipboard data: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static async Task<byte[]> ReadAllBytesAsync(Windows.Storage.Streams.IRandomAccessStream stream)
+        {
+            using var ms = new MemoryStream();
+            using (var dotNetStream = stream.AsStreamForRead())
+            {
+                await dotNetStream.CopyToAsync(ms).ConfigureAwait(false);
+            }
+
+            return ms.ToArray();
+        }
+
         private static async Task<Bitmap?> TryDecodeBitmapFromBitmapReferenceAsync(Windows.ApplicationModel.DataTransfer.DataPackageView dataPackage)
         {
             try
             {
                 var bmpRef = await AwaitWithTimeout(dataPackage.GetBitmapAsync(), "GetBitmapAsync").ConfigureAwait(false);
-                if (bmpRef == null) return null;
+                if (bmpRef == null)
+                {
+                    Logger.Log("TryDecodeBitmapFromBitmapReferenceAsync: GetBitmapAsync returned null");
+                    return null;
+                }
                 using var stream = await AwaitWithTimeout(bmpRef.OpenReadAsync(), "BitmapReference.OpenReadAsync").ConfigureAwait(false);
-                if (stream == null) return null;
+                if (stream == null)
+                {
+                    Logger.Log("TryDecodeBitmapFromBitmapReferenceAsync: OpenReadAsync returned null");
+                    return null;
+                }
                 using var ms = new MemoryStream();
                 using (var dotNetStream = stream.AsStreamForRead())
                 {
@@ -342,13 +498,33 @@ namespace screenzap.Components
                 }
                 catch
                 {
-                    ms.Position = 0;
-                    using var decoded = Image.FromStream(ms, false, false);
-                    return new Bitmap(decoded);
+                    try
+                    {
+                        ms.Position = 0;
+                        using var decoded = Image.FromStream(ms, false, false);
+                        return new Bitmap(decoded);
+                    }
+                    catch (Exception decodeEx)
+                    {
+                        // Some history items (XnView's, confirmed) expose the bitmap only as a raw
+                        // packed DIB with no BITMAPFILEHEADER, which both decoders above reject.
+                        var dibBytes = ms.ToArray();
+                        var fromDib = ClipboardImageDecoder.TryDecodePackedDib(dibBytes);
+                        if (fromDib != null)
+                        {
+                            return fromDib;
+                        }
+
+                        var head = string.Join(" ", dibBytes.Take(32).Select(b => b.ToString("X2")));
+                        Logger.Log($"TryDecodeBitmapFromBitmapReferenceAsync: all decoders failed ({decodeEx.Message}); " +
+                                   $"len={dibBytes.Length} contentType='{stream.ContentType}' head=[{head}]");
+                        return null;
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.Log($"TryDecodeBitmapFromBitmapReferenceAsync failed: {ex.GetType().Name}: {ex.Message}");
                 return null;
             }
         }
@@ -452,9 +628,17 @@ namespace screenzap.Components
                 if (!maybe.HasValue) continue;
                 var (sysId, timestamp, built) = maybe.Value;
 
-                if (store.ContainsSuppressedSystemHistoryId(sysId))
+                // Only honor suppression for a decode-skipped ("already known, nothing changed")
+                // entry. Windows appears to report a single stable id for "whatever is currently on
+                // the clipboard" rather than minting a fresh id per content snapshot - so once that
+                // id gets suppressed (e.g. after a commit/set-active write moves an item off of it),
+                // it would otherwise silently and permanently blackhole every later, unrelated copy
+                // that happens to still be reported under the same id. When we've freshly decoded
+                // real bytes this cycle (built != null), the content demonstrably isn't the stale
+                // snapshot the suppression was guarding against, so let it through.
+                if (built == null && store.ContainsSuppressedSystemHistoryId(sysId))
                 {
-                    built?.Dispose();
+                    Logger.Log($"ApplySnapshot: {sysId} dropped (suppressed id, no fresh content this cycle)");
                     continue;
                 }
 
@@ -682,6 +866,10 @@ namespace screenzap.Components
                 try { WinRtClipboard.HistoryChanged -= OnHistoryChanged; } catch { /* ignore */ }
                 subscribed = false;
             }
+
+            var candidate = liveAlphaCandidate;
+            liveAlphaCandidate = null;
+            candidate?.Bitmap.Dispose();
         }
 
         /// <summary>Marshals actions onto the UI thread of a given Control.</summary>

@@ -2384,7 +2384,22 @@ namespace screenzap
                     e.Handled = true;
                 }
             }
+            else if (e.KeyCode == Keys.M && e.Modifiers == Keys.None)
+            {
+                if (HasEditableImage)
+                {
+                    ToggleAlphaView();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                }
+            }
         }
+
+        private void ToggleAlphaView()
+        {
+            pictureBox1.AlphaViewEnabled = !pictureBox1.AlphaViewEnabled;
+        }
+
         private void ImageEditor_KeyUp(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Space)
@@ -2814,7 +2829,7 @@ namespace screenzap
             try
             {
                 TrackInternalClipboardImageWrite(image);
-                Clipboard.SetImage(image);
+                ClipboardImageWriter.WriteImage(image);
                 ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
                 ClearClipboardNotification();
                 return true;
@@ -2839,14 +2854,9 @@ namespace screenzap
 
             try
             {
-                if (clipboardImage == null && !Clipboard.ContainsImage())
-                {
-                    return false;
-                }
-
                 if (clipboardImage == null)
                 {
-                    clipboardImage = Clipboard.GetImage();
+                    clipboardImage = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
                 }
             }
             catch (ExternalException ex)
@@ -3004,10 +3014,7 @@ namespace screenzap
             {
                 try
                 {
-                    if (Clipboard.ContainsImage())
-                    {
-                        clipboardImage = Clipboard.GetImage();
-                    }
+                    clipboardImage = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
                 }
                 catch (ExternalException ex)
                 {
@@ -3158,7 +3165,7 @@ namespace screenzap
 
         bool IClipboardDocumentPresenter.CanHandleClipboard(IDataObject dataObject)
         {
-            return dataObject?.GetDataPresent(DataFormats.Bitmap, true) == true;
+            return ClipboardImageDecoder.HasAlphaCapableFormat(dataObject);
         }
 
         void IClipboardDocumentPresenter.LoadFromClipboard(IDataObject dataObject)
@@ -3168,12 +3175,12 @@ namespace screenzap
                 return;
             }
 
-            var clipboardImage = dataObject.GetData(DataFormats.Bitmap, true) as Image;
-            if (clipboardImage is Image img)
+            var clipboardImage = ClipboardImageDecoder.TryRead(dataObject);
+            if (clipboardImage != null)
             {
-                using (img)
+                using (clipboardImage)
                 {
-                    LoadImage(img);
+                    LoadImage(clipboardImage);
                 }
             }
         }

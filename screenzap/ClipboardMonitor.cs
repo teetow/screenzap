@@ -45,6 +45,12 @@ namespace screenzap
 
                 if (m.Msg == WM_CLIPBOARDUPDATE)
                 {
+                    // Fire the raw notification unconditionally first: consumers that want to inspect
+                    // the clipboard themselves (e.g. alpha-preserving image capture) must not be gated
+                    // by the text-vs-image discrimination below, which picks text when an item carries
+                    // both (XnView-style image copies also put a URL/filename on the clipboard).
+                    OnUpdate?.Invoke(this, EventArgs.Empty);
+
                     IDataObject? iData = null;
                     try
                     {
@@ -61,7 +67,7 @@ namespace screenzap
                         return;
                     }
 
-                    /* Depending on the clipboard's current data format we can process the data differently. 
+                    /* Depending on the clipboard's current data format we can process the data differently.
                      * Feel free to add more checks if you want to process more formats. */
                     if (iData.GetDataPresent(DataFormats.Text) && iData.GetData(DataFormats.Text) is string text)
                     {
@@ -75,6 +81,7 @@ namespace screenzap
             }
             public event EventHandler<string>? OnUpdateText;
             public event EventHandler<Bitmap>? OnUpdateImage;
+            public event EventHandler? OnUpdate;
 
             public void Dispose()
             {
@@ -89,6 +96,7 @@ namespace screenzap
             _window = new Window();
             _window.OnUpdateImage += _window_OnUpdateImage;
             _window.OnUpdateText += _window_OnUpdateText;
+            _window.OnUpdate += _window_OnUpdate;
         }
 
         public bool isListening = false;
@@ -105,8 +113,15 @@ namespace screenzap
                 OnUpdateImage?.Invoke(sender, e);
         }
 
+        private void _window_OnUpdate(object? sender, EventArgs e)
+        {
+            if (isListening)
+                OnUpdate?.Invoke(sender, e);
+        }
+
     public event EventHandler<string>? OnUpdateText;
     public event EventHandler<Bitmap>? OnUpdateImage;
+    public event EventHandler? OnUpdate;
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
 
