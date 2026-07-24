@@ -203,6 +203,7 @@ namespace screenzap
 
             MouseWheel += ImageEditor_MouseWheel;
             pictureBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            ApplyCheckerboardColorsFromSettings();
             pictureBox1.ZoomChanged += pictureBox1_ZoomChanged;
             pictureBox1.MouseDoubleClick += pictureBox1_MouseDoubleClick;
             InitializeHistoryImageDrop();
@@ -309,9 +310,25 @@ namespace screenzap
             }
         }
 
+        /// <summary>
+        /// Applies the user's transparency-checkerboard colors (persisted as ARGB ints) to the
+        /// viewport. Called at construction and again when the setting changes so open editors
+        /// update live.
+        /// </summary>
+        internal void ApplyCheckerboardColorsFromSettings()
+        {
+            if (pictureBox1 == null)
+            {
+                return;
+            }
+
+            pictureBox1.CheckerboardLightColor = Color.FromArgb(Properties.Settings.Default.checkerboardLightColorArgb);
+            pictureBox1.CheckerboardDarkColor = Color.FromArgb(Properties.Settings.Default.checkerboardDarkColorArgb);
+        }
+
         private void ConfigureToolRailButtons()
         {
-            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton })
+            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton, freeRotateToolStripButton })
             {
                 if (button == null)
                 {

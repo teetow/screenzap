@@ -38,6 +38,7 @@
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.setKeyboardShortcutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.setfolderToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.checkerboardColorsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.editClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.saveClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -73,6 +74,7 @@
             this.toolStripSeparator2,
             this.setKeyboardShortcutToolStripMenuItem,
             this.setfolderToolStripMenuItem,
+            this.checkerboardColorsToolStripMenuItem,
             this.toolStripSeparator1,
             this.editClipboardToolStripMenuItem,
             this.saveClipboardToolStripMenuItem,
@@ -114,6 +116,13 @@
             this.setfolderToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
             this.setfolderToolStripMenuItem.Text = "Set &folder...";
             this.setfolderToolStripMenuItem.Click += new System.EventHandler(this.setFolderToolStripMenuItem_Click);
+            //
+            // checkerboardColorsToolStripMenuItem
+            //
+            this.checkerboardColorsToolStripMenuItem.Name = "checkerboardColorsToolStripMenuItem";
+            this.checkerboardColorsToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
+            this.checkerboardColorsToolStripMenuItem.Text = "Set &transparency checkerboard colors...";
+            this.checkerboardColorsToolStripMenuItem.Click += new System.EventHandler(this.checkerboardColorsToolStripMenuItem_Click);
             // 
             // toolStripSeparator1
             // 
@@ -173,6 +182,7 @@
         private System.Windows.Forms.ToolStripMenuItem showBalloonMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
         private System.Windows.Forms.ToolStripMenuItem setfolderToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem checkerboardColorsToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem editClipboardToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
         private System.Windows.Forms.ToolStripMenuItem saveClipboardToolStripMenuItem;

@@ -135,5 +135,23 @@ namespace screenzap.Properties {
             get { return ((int)(this["clipboardHistoryPanelWidth"])); }
             set { this["clipboardHistoryPanelWidth"] = value; }
         }
+
+        // Transparency-checkerboard square colors (ARGB ints). Defaults are the original greys:
+        // light = Color.FromArgb(205,205,205) = -3289651, dark = Color.FromArgb(150,150,150) = -6908266.
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("-3289651")]
+        public int checkerboardLightColorArgb {
+            get { return ((int)(this["checkerboardLightColorArgb"])); }
+            set { this["checkerboardLightColorArgb"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("-6908266")]
+        public int checkerboardDarkColorArgb {
+            get { return ((int)(this["checkerboardDarkColorArgb"])); }
+            set { this["checkerboardDarkColorArgb"] = value; }
+        }
     }
 }

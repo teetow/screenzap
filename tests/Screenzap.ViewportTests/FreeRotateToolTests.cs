@@ -169,6 +169,39 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void Apply_RotatesInSameDirectionAsPreview_ClockwiseForPositiveAngle()
+        {
+            // Regression test for the non-WYSIWYG bug: the live preview rotates via GDI+
+            // (positive angle = clockwise), but the OpenCV bake treats positive as counter-
+            // clockwise, so committing used to spin the opposite way. Mark the top-left quadrant,
+            // rotate +90°, and assert it lands top-RIGHT (clockwise), not bottom-left.
+            StaTest.Run(() =>
+            {
+                const int n = 40;
+                using var editor = new screenzap.ImageEditor();
+                var canvas = new Bitmap(n, n);
+                using (var g = Graphics.FromImage(canvas))
+                {
+                    g.Clear(Color.White);
+                    using var red = new SolidBrush(Color.Red);
+                    g.FillRectangle(red, 0, 0, n / 2, n / 2); // top-left quadrant
+                }
+                editor.LoadImage(canvas);
+                canvas.Dispose();
+
+                editor.TestApplyFreeRotateAngle(90f);
+
+                using var after = editor.CloneBaseBitmapForTests()!;
+                // 90° of a square doesn't change size or blend on axis-aligned edges.
+                Assert.Equal(new Size(n, n), after.Size);
+
+                // Clockwise: the red top-left quadrant is now the top-RIGHT quadrant.
+                Assert.Equal(Color.Red.ToArgb(), after.GetPixel(3 * n / 4, n / 4).ToArgb());   // top-right → red
+                Assert.Equal(Color.White.ToArgb(), after.GetPixel(n / 4, 3 * n / 4).ToArgb()); // bottom-left → white
+            });
+        }
+
+        [Fact]
         public void ActivateFreeRotateTool_DeactivatesOtherActiveTool()
         {
             StaTest.Run(() =>

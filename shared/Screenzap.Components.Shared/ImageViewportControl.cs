@@ -25,6 +25,45 @@ namespace screenzap.Components.Shared
         private TextureBrush? alphaCheckerboardBrush;
         private ImageAttributes? forceOpaqueImageAttributes;
 
+        // Transparency-checkerboard colors. Defaults match the original hardcoded greys; the host
+        // overrides them from user settings. Setting either rebuilds the cached brush on next paint.
+        private static readonly Color DefaultCheckerboardLight = Color.FromArgb(205, 205, 205);
+        private static readonly Color DefaultCheckerboardDark = Color.FromArgb(150, 150, 150);
+        private const int CheckerboardSquare = 8;
+        private Color checkerboardLightColor = DefaultCheckerboardLight;
+        private Color checkerboardDarkColor = DefaultCheckerboardDark;
+
+        /// <summary>Lighter of the two alpha-checkerboard squares. Host-configurable.</summary>
+        public Color CheckerboardLightColor
+        {
+            get => checkerboardLightColor;
+            set => SetCheckerboardColor(ref checkerboardLightColor, value);
+        }
+
+        /// <summary>Darker of the two alpha-checkerboard squares. Host-configurable.</summary>
+        public Color CheckerboardDarkColor
+        {
+            get => checkerboardDarkColor;
+            set => SetCheckerboardColor(ref checkerboardDarkColor, value);
+        }
+
+        private void SetCheckerboardColor(ref Color field, Color value)
+        {
+            if (field == value)
+            {
+                return;
+            }
+
+            field = value;
+            // Drop the cached brush so it rebuilds with the new colors on next paint.
+            alphaCheckerboardBrush?.Dispose();
+            alphaCheckerboardBrush = null;
+            if (alphaViewEnabled)
+            {
+                Invalidate();
+            }
+        }
+
         // Forces output alpha to 1 regardless of the source pixel's alpha, leaving RGB untouched:
         // row 3 (alpha-in) contributes 0, row 4 (constant-1) contributes 1 to the alpha output.
         // A ColorMatrix is plain managed data (no native handle), so sharing one is safe.
@@ -41,14 +80,11 @@ namespace screenzap.Components.Shared
         {
             if (alphaCheckerboardBrush == null)
             {
-                const int square = 8;
-                var light = Color.FromArgb(205, 205, 205);
-                var dark = Color.FromArgb(150, 150, 150);
-
+                const int square = CheckerboardSquare;
                 var tile = new Bitmap(square * 2, square * 2);
                 using (var g = Graphics.FromImage(tile))
-                using (var lightBrush = new SolidBrush(light))
-                using (var darkBrush = new SolidBrush(dark))
+                using (var lightBrush = new SolidBrush(checkerboardLightColor))
+                using (var darkBrush = new SolidBrush(checkerboardDarkColor))
                 {
                     g.FillRectangle(lightBrush, 0, 0, square, square);
                     g.FillRectangle(darkBrush, square, 0, square, square);
@@ -362,7 +398,12 @@ namespace screenzap.Components.Shared
 
                 if (alphaViewEnabled)
                 {
-                    e.Graphics.FillRectangle(GetAlphaCheckerboardBrush(), destRect);
+                    // Anchor the checkerboard tile to the image's top-left so the pattern pans WITH
+                    // the image instead of staying pinned to the control (the distracting parallax).
+                    var brush = GetAlphaCheckerboardBrush();
+                    brush.ResetTransform();
+                    brush.TranslateTransform(destRect.X, destRect.Y);
+                    e.Graphics.FillRectangle(brush, destRect);
                     e.Graphics.DrawImage(image, destRect);
                 }
                 else

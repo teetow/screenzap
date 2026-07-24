@@ -88,7 +88,13 @@ namespace screenzap
             pictureBox1.Invalidate();
         }
 
-        private void ApplyFreeRotate() => RotateEditorContentBy(freeRotateAngleDeg);
+        // The live preview rotates via GDI+ RotateTransform, where a positive angle is CLOCKWISE.
+        // RotateEditorContentBy bakes through OpenCV (ImageStraightener.RotateImage), where a
+        // positive angle is COUNTER-clockwise — so the committed result spun the opposite way to
+        // the preview (the "commit alters the rotation" / non-WYSIWYG bug). Negate so the bake
+        // matches what the handle showed. (The straighten tool passes its own OpenCV-convention
+        // correction angle straight through, so it is unaffected.)
+        private void ApplyFreeRotate() => RotateEditorContentBy(-freeRotateAngleDeg);
 
         private Rectangle FreeRotateBounds => freeRotateTargetBounds;
 

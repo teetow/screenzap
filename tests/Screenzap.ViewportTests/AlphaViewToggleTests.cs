@@ -107,5 +107,42 @@ namespace Screenzap.ViewportTests
                 }
             });
         }
+
+        [Fact]
+        public void CheckerboardColors_AreConfigurable_AndPaintThroughTransparentPixels()
+        {
+            StaTest.Run(() =>
+            {
+                // The checkerboard squares are 8px, so the viewport must be several squares wide to
+                // show both colors.
+                using var control = new ImageViewportControl
+                {
+                    ClientSize = new Size(32, 32),
+                    CheckerboardLightColor = Color.FromArgb(10, 20, 30),
+                    CheckerboardDarkColor = Color.FromArgb(40, 50, 60),
+                };
+
+                Assert.Equal(Color.FromArgb(10, 20, 30), control.CheckerboardLightColor);
+                Assert.Equal(Color.FromArgb(40, 50, 60), control.CheckerboardDarkColor);
+
+                using var transparent = new Bitmap(8, 8, PixelFormat.Format32bppArgb); // fully transparent
+                control.Image = transparent;
+                control.ZoomLevel = 4m; // 8x8 image -> 32x32 dest, spanning multiple checker squares
+
+                using var render = new Bitmap(32, 32);
+                control.DrawToBitmap(render, new Rectangle(0, 0, 32, 32));
+
+                // Every rendered pixel under the transparent image must be one of the two custom
+                // checkerboard colors — never the old default greys.
+                var seen = new System.Collections.Generic.HashSet<int>();
+                for (int y = 0; y < 32; y++)
+                    for (int x = 0; x < 32; x++)
+                        seen.Add(render.GetPixel(x, y).ToArgb());
+
+                Assert.Contains(Color.FromArgb(255, 10, 20, 30).ToArgb(), seen);
+                Assert.Contains(Color.FromArgb(255, 40, 50, 60).ToArgb(), seen);
+                Assert.DoesNotContain(Color.FromArgb(255, 205, 205, 205).ToArgb(), seen);
+            });
+        }
     }
 }

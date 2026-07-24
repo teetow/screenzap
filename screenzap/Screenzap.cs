@@ -505,6 +505,42 @@ namespace screenzap
             }
         }
 
+        private void checkerboardColorsToolStripMenuItem_Click(object? sender, EventArgs e)
+        {
+            // ColorDialog has no title/prompt, so announce which square each step sets.
+            MessageBox.Show("Next: pick the LIGHT checkerboard square color.", "Transparency checkerboard", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            var light = PickColor(Color.FromArgb(Properties.Settings.Default.checkerboardLightColorArgb));
+            if (light == null)
+            {
+                return;
+            }
+
+            MessageBox.Show("Next: pick the DARK checkerboard square color.", "Transparency checkerboard", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            var dark = PickColor(Color.FromArgb(Properties.Settings.Default.checkerboardDarkColorArgb));
+            if (dark == null)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.checkerboardLightColorArgb = light.Value.ToArgb();
+            Properties.Settings.Default.checkerboardDarkColorArgb = dark.Value.ToArgb();
+            Properties.Settings.Default.Save();
+
+            // Apply live to an already-open editor.
+            imageEditor?.ApplyCheckerboardColorsFromSettings();
+        }
+
+        private static Color? PickColor(Color current)
+        {
+            using var dialog = new ColorDialog
+            {
+                Color = current,
+                FullOpen = true,
+                AnyColor = true
+            };
+            return dialog.ShowDialog() == DialogResult.OK ? dialog.Color : (Color?)null;
+        }
+
         private void notifyIcon1_DoubleClick(object? sender, EventArgs e)
         {
             ShowClipboardEditorForCurrentData();

@@ -348,6 +348,20 @@ namespace screenzap
 
         internal bool TestAlphaViewEnabled => pictureBox1?.AlphaViewEnabled ?? true;
 
+        /// <summary>
+        /// Activate free-rotate, set an exact angle (bypassing the imprecise handle drag), and
+        /// apply — so tests can pin the committed rotation direction against the preview.
+        /// </summary>
+        internal void TestApplyFreeRotateAngle(float angleDeg)
+        {
+            if (!isFreeRotateToolActive)
+            {
+                ActivateFreeRotateTool();
+            }
+            freeRotateAngleDeg = angleDeg;
+            DeactivateFreeRotateTool(apply: true);
+        }
+
         /// <summary>Add a finalized (non-editing, unselected) text annotation directly.</summary>
         internal void TestAddTextAnnotation(Point position, string text)
         {
