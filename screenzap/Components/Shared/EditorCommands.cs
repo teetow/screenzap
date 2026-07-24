@@ -17,7 +17,26 @@ namespace screenzap.Components.Shared
         Revert,
         CommitEdits,
         Delete,
-        ApplyFloatingPaste
+        ApplyFloatingPaste,
+        ToggleTransparencyGrid,
+
+        // Tools (mirror the editor tool rail / transform toolbar in the Tools menu).
+        SelectMoveTool,
+        ArrowTool,
+        RectangleTool,
+        HighlighterTool,
+        TextTool,
+        CropTool,
+        RotateRight,
+        FlipHorizontal,
+        FlipVertical,
+        StraightenTool,
+        FreeRotateTool,
+        ResizeImage,
+        CensorTool,
+        ReplaceBackground,
+        ColorCorrect,
+        OptimizeText
     }
 
     internal sealed class EditorCommandDescriptor

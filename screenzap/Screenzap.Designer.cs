@@ -33,13 +33,6 @@
             this.label1 = new System.Windows.Forms.Label();
             this.notifyIcon1 = new System.Windows.Forms.NotifyIcon(this.components);
             this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(this.components);
-            this.startWhenLoggedInToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.showBalloonMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
-            this.setKeyboardShortcutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.setfolderToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.checkerboardColorsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.editClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.saveClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
@@ -69,68 +62,15 @@
             // 
             this.contextMenuStrip1.ImageScalingSize = new System.Drawing.Size(20, 20);
             this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.startWhenLoggedInToolStripMenuItem,
-            this.showBalloonMenuItem,
-            this.toolStripSeparator2,
-            this.setKeyboardShortcutToolStripMenuItem,
-            this.setfolderToolStripMenuItem,
-            this.checkerboardColorsToolStripMenuItem,
-            this.toolStripSeparator1,
             this.editClipboardToolStripMenuItem,
             this.saveClipboardToolStripMenuItem,
             this.toolStripSeparator3,
             this.quitToolStripMenuItem});
             this.contextMenuStrip1.Name = "contextMenuStrip1";
             this.contextMenuStrip1.Size = new System.Drawing.Size(266, 218);
-            // 
-            // startWhenLoggedInToolStripMenuItem
-            // 
-            this.startWhenLoggedInToolStripMenuItem.CheckOnClick = true;
-            this.startWhenLoggedInToolStripMenuItem.Name = "startWhenLoggedInToolStripMenuItem";
-            this.startWhenLoggedInToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
-            this.startWhenLoggedInToolStripMenuItem.Text = "Start when &logged in";
-            this.startWhenLoggedInToolStripMenuItem.CheckStateChanged += new System.EventHandler(this.startWhenLoggedInToolStripMenuItem_CheckStateChanged);
-            // 
-            // showBalloonMenuItem
-            // 
-            this.showBalloonMenuItem.Name = "showBalloonMenuItem";
-            this.showBalloonMenuItem.Size = new System.Drawing.Size(265, 24);
-            this.showBalloonMenuItem.Text = "Show &notification on startup";
-            this.showBalloonMenuItem.Click += new System.EventHandler(this.showBalloonMenuItem_Click);
-            // 
-            // toolStripSeparator2
-            // 
-            this.toolStripSeparator2.Name = "toolStripSeparator2";
-            this.toolStripSeparator2.Size = new System.Drawing.Size(262, 6);
-            // 
-            // setKeyboardShortcutToolStripMenuItem
-            // 
-            this.setKeyboardShortcutToolStripMenuItem.Name = "setKeyboardShortcutToolStripMenuItem";
-            this.setKeyboardShortcutToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
-            this.setKeyboardShortcutToolStripMenuItem.Text = "Set &keyboard shortcut...";
-            this.setKeyboardShortcutToolStripMenuItem.Click += new System.EventHandler(this.setKeyboardShortcutToolStripMenuItem_Click);
-            // 
-            // setfolderToolStripMenuItem
-            // 
-            this.setfolderToolStripMenuItem.Name = "setfolderToolStripMenuItem";
-            this.setfolderToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
-            this.setfolderToolStripMenuItem.Text = "Set &folder...";
-            this.setfolderToolStripMenuItem.Click += new System.EventHandler(this.setFolderToolStripMenuItem_Click);
             //
-            // checkerboardColorsToolStripMenuItem
-            //
-            this.checkerboardColorsToolStripMenuItem.Name = "checkerboardColorsToolStripMenuItem";
-            this.checkerboardColorsToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
-            this.checkerboardColorsToolStripMenuItem.Text = "Set &transparency checkerboard colors...";
-            this.checkerboardColorsToolStripMenuItem.Click += new System.EventHandler(this.checkerboardColorsToolStripMenuItem_Click);
-            // 
-            // toolStripSeparator1
-            // 
-            this.toolStripSeparator1.Name = "toolStripSeparator1";
-            this.toolStripSeparator1.Size = new System.Drawing.Size(262, 6);
-            // 
             // editClipboardToolStripMenuItem
-            // 
+            //
             this.editClipboardToolStripMenuItem.Name = "editClipboardToolStripMenuItem";
             this.editClipboardToolStripMenuItem.Size = new System.Drawing.Size(265, 24);
             this.editClipboardToolStripMenuItem.Text = "Edit &Clipboard Image";
@@ -175,14 +115,7 @@
         private System.Windows.Forms.Label label1;
         private System.Windows.Forms.NotifyIcon notifyIcon1;
         private System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
-        private System.Windows.Forms.ToolStripMenuItem startWhenLoggedInToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem quitToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem setKeyboardShortcutToolStripMenuItem;
-        private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
-        private System.Windows.Forms.ToolStripMenuItem showBalloonMenuItem;
-        private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
-        private System.Windows.Forms.ToolStripMenuItem setfolderToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem checkerboardColorsToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem editClipboardToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
         private System.Windows.Forms.ToolStripMenuItem saveClipboardToolStripMenuItem;

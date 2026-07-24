@@ -13,8 +13,12 @@ namespace screenzap.Components
     internal sealed class ClipboardEditorHostForm : Form
     {
         private readonly Dictionary<EditorCommandId, IconToolStripButton> commandButtons = new();
+        private readonly Dictionary<EditorCommandId, ToolStripMenuItem> commandMenuItems = new();
         private readonly List<IClipboardDocumentPresenter> presenters = new();
         private readonly ToolStrip toolbar;
+        private readonly MenuStrip menuBar;
+        private ToolStripMenuItem? startOnLoginMenuItem;
+        private ToolStripMenuItem? startupNotificationMenuItem;
         private readonly ToolStripLabel reloadIndicatorLabel;
         private readonly ToolStripLabel dirtyIndicatorLabel;
         private readonly Panel presenterHostPanel;
@@ -39,6 +43,18 @@ namespace screenzap.Components
         internal Func<Task>? RefreshSystemHistoryAsync { get; set; }
         internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
         internal ClipboardHistoryStore HistoryStore => historyStore;
+
+        // App-level actions the menu bar surfaces but the tray host (Screenzap) owns. Wired after
+        // construction; menu handlers read them lazily so late wiring is fine. Null hooks disable
+        // the corresponding menu items.
+        internal Func<bool>? GetStartOnLogin { get; set; }
+        internal Action<bool>? SetStartOnLogin { get; set; }
+        internal Func<bool>? GetStartupNotificationEnabled { get; set; }
+        internal Action<bool>? SetStartupNotificationEnabled { get; set; }
+        internal Action? EditCaptureShortcutRequested { get; set; }
+        internal Action? SetCaptureFolderRequested { get; set; }
+        internal Action? EditCheckerboardColorsRequested { get; set; }
+        internal Action? SaveClipboardImageRequested { get; set; }
 
         private const int InternalClipboardWriteSuppressMs = 2000;
         private const int PendingCommittedItemMatchMs = 10000;
@@ -84,6 +100,7 @@ namespace screenzap.Components
             bool allowSystemClipboardWrites = true)
         {
             toolbar = CreateToolbar();
+            menuBar = new MenuStrip();
             reloadIndicatorLabel = CreateReloadIndicatorLabel();
             dirtyIndicatorLabel = CreateDirtyIndicatorLabel();
             presenterHostPanel = CreatePresenterHostPanel();
@@ -309,11 +326,17 @@ namespace screenzap.Components
             statusStrip.Dock = DockStyle.Bottom;
             statusStrip.Items.Add(statusLabel);
 
+            BuildMenuBar();
+
             Controls.Add(presenterHostPanel);
             Controls.Add(historySplitter);
             Controls.Add(historyPanel);
             Controls.Add(statusStrip);
             Controls.Add(toolbar);
+            // Add the menu bar last so its Top dock sits above the toolbar; MainMenuStrip enables
+            // mnemonics (Alt+F, etc.).
+            Controls.Add(menuBar);
+            MainMenuStrip = menuBar;
 
             KeyPreview = true;
             DoubleBuffered = true;
@@ -490,6 +513,135 @@ namespace screenzap.Components
             UpdateStatusText("Activated newest history item.");
         }
 
+        private void BuildMenuBar()
+        {
+            menuBar.Dock = DockStyle.Top;
+            menuBar.GripStyle = ToolStripGripStyle.Hidden;
+            // Refresh enabled states whenever the user opens the menu bar so items never show stale.
+            menuBar.MenuActivate += (_, _) => UpdateCommandStates();
+
+            var file = new ToolStripMenuItem("&File");
+            file.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Save));
+            file.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.SaveAs));
+            file.DropDownItems.Add(new ToolStripSeparator());
+            file.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Reload));
+            file.DropDownItems.Add(CreateHookMenuItem("Save Clipboard &Image", () => SaveClipboardImageRequested?.Invoke()));
+            file.DropDownItems.Add(new ToolStripSeparator());
+            file.DropDownItems.Add(CreateActionMenuItem("&Close", () => Close()));
+            menuBar.Items.Add(file);
+
+            var edit = new ToolStripMenuItem("&Edit");
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Undo));
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Redo));
+            edit.DropDownItems.Add(new ToolStripSeparator());
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Copy));
+            edit.DropDownItems.Add(new ToolStripSeparator());
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ExpandCanvas));
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ApplyFloatingPaste));
+            edit.DropDownItems.Add(new ToolStripSeparator());
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Duplicate));
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Revert));
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.CommitEdits));
+            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Delete));
+            menuBar.Items.Add(edit);
+
+            var view = new ToolStripMenuItem("&View");
+            view.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ToggleTransparencyGrid));
+            view.DropDownItems.Add(new ToolStripSeparator());
+            view.DropDownItems.Add(CreateHookMenuItem("&Transparency Checkerboard Colors...", () => EditCheckerboardColorsRequested?.Invoke()));
+            menuBar.Items.Add(view);
+
+            var tools = new ToolStripMenuItem("&Tools");
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.SelectMoveTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ArrowTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.RectangleTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.HighlighterTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.TextTool));
+            tools.DropDownItems.Add(new ToolStripSeparator());
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.CropTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.RotateRight));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FlipHorizontal));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FlipVertical));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.StraightenTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FreeRotateTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ResizeImage));
+            tools.DropDownItems.Add(new ToolStripSeparator());
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.CensorTool));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ReplaceBackground));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ColorCorrect));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.OptimizeText));
+            menuBar.Items.Add(tools);
+
+            var settings = new ToolStripMenuItem("&Settings");
+            startOnLoginMenuItem = new ToolStripMenuItem("Start when &logged in", null,
+                (_, _) => SetStartOnLogin?.Invoke(!(GetStartOnLogin?.Invoke() ?? false)));
+            startupNotificationMenuItem = new ToolStripMenuItem("Show &notification on startup", null,
+                (_, _) => SetStartupNotificationEnabled?.Invoke(!(GetStartupNotificationEnabled?.Invoke() ?? false)));
+            settings.DropDownItems.Add(startOnLoginMenuItem);
+            settings.DropDownItems.Add(startupNotificationMenuItem);
+            settings.DropDownItems.Add(new ToolStripSeparator());
+            settings.DropDownItems.Add(CreateHookMenuItem("Set Capture &Folder...", () => SetCaptureFolderRequested?.Invoke()));
+            settings.DropDownItems.Add(CreateHookMenuItem("Set Capture &Shortcut...", () => EditCaptureShortcutRequested?.Invoke()));
+            // Reflect current toggle state each time the menu opens (state is owned by the tray host).
+            settings.DropDownOpening += (_, _) =>
+            {
+                startOnLoginMenuItem.Checked = GetStartOnLogin?.Invoke() ?? false;
+                startupNotificationMenuItem.Checked = GetStartupNotificationEnabled?.Invoke() ?? false;
+            };
+            menuBar.Items.Add(settings);
+
+            var help = new ToolStripMenuItem("&Help");
+            help.DropDownItems.Add(CreateActionMenuItem("&About Screenzap", ShowAboutDialog));
+            menuBar.Items.Add(help);
+        }
+
+        /// <summary>
+        /// Menu item bound to an editor command. Shortcuts are DISPLAY-ONLY (ShortcutKeyDisplayString):
+        /// the editor already handles the actual key presses, so registering functional
+        /// ShortcutKeys here would double-fire non-idempotent commands (undo, save, ...).
+        /// </summary>
+        private ToolStripMenuItem CreateCommandMenuItem(EditorCommandId commandId)
+        {
+            EditorCommandCatalog.All.TryGetValue(commandId, out var descriptor);
+            var text = descriptor?.Label ?? commandId.ToString();
+            var item = new ToolStripMenuItem(text);
+            if (descriptor?.Shortcut is Keys shortcut)
+            {
+                item.ShortcutKeyDisplayString = EditorCommandCatalog.FormatShortcut(shortcut);
+            }
+            item.Click += (_, _) =>
+            {
+                ExecuteCommand(commandId);
+                UpdateCommandStates();
+            };
+            commandMenuItems[commandId] = item;
+            return item;
+        }
+
+        private static ToolStripMenuItem CreateHookMenuItem(string text, Action invoke)
+        {
+            var item = new ToolStripMenuItem(text);
+            item.Click += (_, _) => invoke();
+            return item;
+        }
+
+        private static ToolStripMenuItem CreateActionMenuItem(string text, Action action)
+        {
+            var item = new ToolStripMenuItem(text);
+            item.Click += (_, _) => action();
+            return item;
+        }
+
+        private void ShowAboutDialog()
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+            MessageBox.Show(this,
+                $"Screenzap\nVersion {version}",
+                "About Screenzap",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+
         private void AddCommandButton(EditorCommandId commandId)
         {
             if (!EditorCommandCatalog.All.TryGetValue(commandId, out var descriptor))
@@ -575,29 +727,30 @@ namespace screenzap.Components
         private void UpdateCommandStates()
         {
             var activeItem = historyStore.ActiveItem;
+
             foreach (var pair in commandButtons)
             {
-                switch (pair.Key)
-                {
-                    case EditorCommandId.CommitEdits:
-                        pair.Value.Enabled = activeItem?.IsDirty == true;
-                        break;
-                    case EditorCommandId.Revert:
-                        pair.Value.Enabled = activeItem?.CanRevertToOriginal == true;
-                        break;
-                    case EditorCommandId.Duplicate:
-                        pair.Value.Enabled = activeItem != null;
-                        break;
-                    case EditorCommandId.Delete:
-                        pair.Value.Enabled = activeItem != null;
-                        break;
-                    default:
-                        pair.Value.Enabled = activePresenter?.CanExecute(pair.Key) == true;
-                        break;
-                }
+                pair.Value.Enabled = ComputeCommandEnabled(pair.Key, activeItem);
+            }
+
+            foreach (var pair in commandMenuItems)
+            {
+                pair.Value.Enabled = ComputeCommandEnabled(pair.Key, activeItem);
             }
 
             dirtyIndicatorLabel.Visible = activeItem?.IsDirty == true;
+        }
+
+        private bool ComputeCommandEnabled(EditorCommandId commandId, ClipboardHistoryItem? activeItem)
+        {
+            return commandId switch
+            {
+                EditorCommandId.CommitEdits => activeItem?.IsDirty == true,
+                EditorCommandId.Revert => activeItem?.CanRevertToOriginal == true,
+                EditorCommandId.Duplicate => activeItem != null,
+                EditorCommandId.Delete => activeItem != null,
+                _ => activePresenter?.CanExecute(commandId) == true,
+            };
         }
 
         private bool CommitActiveItemEdits()

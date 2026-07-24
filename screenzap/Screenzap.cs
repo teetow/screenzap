@@ -48,9 +48,6 @@ namespace screenzap
             rectCaptureCombo = ParseKeyCombo(Properties.Settings.Default.currentCombo);
             seqCaptureCombo = ParseKeyCombo(Properties.Settings.Default.seqCaptureCombo);
             Util.MigrateLegacyDllAutoStart(autostartAppName, autoStartCommand);
-            startWhenLoggedInToolStripMenuItem.Checked = Util.IsAutoStartEnabled(autostartAppName, autoStartCommand);
-            showBalloonMenuItem.Checked = Properties.Settings.Default.showBalloon;
-
 
             updateTooltips(rectCaptureCombo);
             if (Properties.Settings.Default.showBalloon == true)
@@ -403,9 +400,11 @@ namespace screenzap
             ShowClipboardEditorForCurrentData();
         }
 
-        private void startWhenLoggedInToolStripMenuItem_CheckStateChanged(object? sender, EventArgs e)
+        private bool GetStartOnLogin() => Util.IsAutoStartEnabled(autostartAppName, autoStartCommand);
+
+        private void SetStartOnLogin(bool enabled)
         {
-            if (startWhenLoggedInToolStripMenuItem.Checked)
+            if (enabled)
                 Util.SetAutoStart(autostartAppName, autoStartCommand);
             else
                 Util.UnSetAutoStart(autostartAppName);
@@ -488,10 +487,11 @@ namespace screenzap
             }
         }
 
-        private void showBalloonMenuItem_Click(object? sender, EventArgs e)
+        private static bool GetStartupNotificationEnabled() => Properties.Settings.Default.showBalloon;
+
+        private static void SetStartupNotificationEnabled(bool enabled)
         {
-            showBalloonMenuItem.Checked = !showBalloonMenuItem.Checked;
-            Properties.Settings.Default.showBalloon = showBalloonMenuItem.Checked;
+            Properties.Settings.Default.showBalloon = enabled;
             Properties.Settings.Default.Save();
         }
 
@@ -507,38 +507,21 @@ namespace screenzap
 
         private void checkerboardColorsToolStripMenuItem_Click(object? sender, EventArgs e)
         {
-            // ColorDialog has no title/prompt, so announce which square each step sets.
-            MessageBox.Show("Next: pick the LIGHT checkerboard square color.", "Transparency checkerboard", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            var light = PickColor(Color.FromArgb(Properties.Settings.Default.checkerboardLightColorArgb));
-            if (light == null)
+            using var dialog = new CheckerboardColorsDialog(
+                Color.FromArgb(Properties.Settings.Default.checkerboardLightColorArgb),
+                Color.FromArgb(Properties.Settings.Default.checkerboardDarkColorArgb));
+
+            if (dialog.ShowDialog() != DialogResult.OK)
             {
                 return;
             }
 
-            MessageBox.Show("Next: pick the DARK checkerboard square color.", "Transparency checkerboard", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            var dark = PickColor(Color.FromArgb(Properties.Settings.Default.checkerboardDarkColorArgb));
-            if (dark == null)
-            {
-                return;
-            }
-
-            Properties.Settings.Default.checkerboardLightColorArgb = light.Value.ToArgb();
-            Properties.Settings.Default.checkerboardDarkColorArgb = dark.Value.ToArgb();
+            Properties.Settings.Default.checkerboardLightColorArgb = dialog.LightColor.ToArgb();
+            Properties.Settings.Default.checkerboardDarkColorArgb = dialog.DarkColor.ToArgb();
             Properties.Settings.Default.Save();
 
             // Apply live to an already-open editor.
             imageEditor?.ApplyCheckerboardColorsFromSettings();
-        }
-
-        private static Color? PickColor(Color current)
-        {
-            using var dialog = new ColorDialog
-            {
-                Color = current,
-                FullOpen = true,
-                AnyColor = true
-            };
-            return dialog.ShowDialog() == DialogResult.OK ? dialog.Color : (Color?)null;
         }
 
         private void notifyIcon1_DoubleClick(object? sender, EventArgs e)
@@ -649,10 +632,27 @@ namespace screenzap
                 var imagePresenter = EnsureImageEditor();
                 clipboardEditorHost = new ClipboardEditorHostForm(imagePresenter);
                 clipboardEditorHost.FormClosed += OnClipboardHostClosed;
+                WireHostAppMenuHooks(clipboardEditorHost);
                 InitializeSystemClipboardHistoryForHost(clipboardEditorHost);
             }
 
             return clipboardEditorHost;
+        }
+
+        /// <summary>
+        /// Wires the editor window's menu bar (Settings/File items) to the tray host's app-level
+        /// actions. These moved off the tray context menu when it was slimmed to essentials.
+        /// </summary>
+        private void WireHostAppMenuHooks(ClipboardEditorHostForm host)
+        {
+            host.GetStartOnLogin = GetStartOnLogin;
+            host.SetStartOnLogin = SetStartOnLogin;
+            host.GetStartupNotificationEnabled = GetStartupNotificationEnabled;
+            host.SetStartupNotificationEnabled = SetStartupNotificationEnabled;
+            host.EditCaptureShortcutRequested = () => setKeyboardShortcutToolStripMenuItem_Click(this, EventArgs.Empty);
+            host.SetCaptureFolderRequested = () => setFolderToolStripMenuItem_Click(this, EventArgs.Empty);
+            host.EditCheckerboardColorsRequested = () => checkerboardColorsToolStripMenuItem_Click(this, EventArgs.Empty);
+            host.SaveClipboardImageRequested = () => saveClipboardToolStripMenuItem_Click(this, EventArgs.Empty);
         }
 
         private SystemClipboardHistoryService? systemHistoryService;

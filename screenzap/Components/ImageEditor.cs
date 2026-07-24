@@ -3215,6 +3215,23 @@ namespace screenzap
                 EditorCommandId.Redo => undoStack.CanRedo,
                 EditorCommandId.Find => false,
                 EditorCommandId.ApplyFloatingPaste => imageLayers.Count > 0,
+                EditorCommandId.ToggleTransparencyGrid => HasEditableImage,
+                EditorCommandId.SelectMoveTool => HasEditableImage,
+                EditorCommandId.ArrowTool => HasEditableImage,
+                EditorCommandId.RectangleTool => HasEditableImage,
+                EditorCommandId.HighlighterTool => HasEditableImage,
+                EditorCommandId.TextTool => HasEditableImage,
+                EditorCommandId.CropTool => HasEditableImage,
+                EditorCommandId.RotateRight => HasEditableImage,
+                EditorCommandId.FlipHorizontal => HasEditableImage,
+                EditorCommandId.FlipVertical => HasEditableImage,
+                EditorCommandId.StraightenTool => HasEditableImage,
+                EditorCommandId.FreeRotateTool => HasEditableImage,
+                EditorCommandId.ResizeImage => HasEditableImage,
+                EditorCommandId.CensorTool => HasEditableImage,
+                EditorCommandId.ReplaceBackground => HasEditableImage,
+                EditorCommandId.ColorCorrect => HasEditableImage,
+                EditorCommandId.OptimizeText => HasEditableImage,
                 _ => false
             };
         }
@@ -3260,6 +3277,60 @@ namespace screenzap
                     }
                 case EditorCommandId.ApplyFloatingPaste:
                     return ApplyFloatingPaste();
+                case EditorCommandId.ToggleTransparencyGrid:
+                    if (!HasEditableImage)
+                    {
+                        return false;
+                    }
+                    ToggleAlphaView();
+                    return true;
+                case EditorCommandId.SelectMoveTool:
+                    if (!HasEditableImage) return false;
+                    SetActiveTool(ActiveTool.None);
+                    pictureBox1?.Focus();
+                    return true;
+                case EditorCommandId.ArrowTool:
+                    if (!HasEditableImage) return false;
+                    ToggleDrawingTool(DrawingTool.Arrow);
+                    return true;
+                case EditorCommandId.RectangleTool:
+                    if (!HasEditableImage) return false;
+                    ToggleDrawingTool(DrawingTool.Rectangle);
+                    return true;
+                case EditorCommandId.HighlighterTool:
+                    if (!HasEditableImage) return false;
+                    ToggleDrawingTool(DrawingTool.Highlighter);
+                    return true;
+                case EditorCommandId.TextTool:
+                    if (!HasEditableImage) return false;
+                    ToggleTextTool();
+                    return true;
+                case EditorCommandId.CropTool:
+                    return ExecuteCrop();
+                case EditorCommandId.RotateRight:
+                    return ExecuteRotate90Cw();
+                case EditorCommandId.FlipHorizontal:
+                    return ExecuteFlip(RotateFlipType.RotateNoneFlipX);
+                case EditorCommandId.FlipVertical:
+                    return ExecuteFlip(RotateFlipType.RotateNoneFlipY);
+                case EditorCommandId.StraightenTool:
+                    return ExecuteStraighten();
+                case EditorCommandId.FreeRotateTool:
+                    return ActivateFreeRotateTool();
+                case EditorCommandId.ResizeImage:
+                    if (!HasEditableImage) return false;
+                    ShowResizeImageDialog();
+                    return true;
+                case EditorCommandId.CensorTool:
+                    return ActivateCensorTool();
+                case EditorCommandId.ReplaceBackground:
+                    return ExecuteReplaceWithBackground();
+                case EditorCommandId.ColorCorrect:
+                    if (!HasEditableImage) return false;
+                    ShowColorCorrector();
+                    return true;
+                case EditorCommandId.OptimizeText:
+                    return ExecuteOptimizeForText();
                 default:
                     return false;
             }
