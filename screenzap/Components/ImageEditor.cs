@@ -1308,6 +1308,8 @@ namespace screenzap
             var beforeImage = new Bitmap(sourceImage);
             var selectionBefore = Selection;
             var annotationStateBefore = CloneAnnotations();
+            var textStateBefore = CloneTextAnnotations();
+            var layerStateBefore = CloneLayers();
 
             var expandedWidth = sourceImage.Width + (padding * 2);
             var expandedHeight = sourceImage.Height + (padding * 2);
@@ -1361,12 +1363,38 @@ namespace screenzap
                 annotation.Position = annotation.Position.Add(offset);
             }
 
+            // Floating image layers hold absolute canvas coordinates, so they must move with the
+            // content by the same top-left offset (same fix as cropping — see ApplyCropToImageLayers).
+            for (int index = 0; index < imageLayers.Count; index++)
+            {
+                var layer = imageLayers[index];
+                var frame = layer.Frame;
+                frame.X += offset.X;
+                frame.Y += offset.Y;
+                layer.Frame = frame;
+            }
+
             SyncSelectedAnnotation();
             SyncSelectedTextAnnotation();
+            UpdateLayerToolbarState();
 
             var selectionAfter = Selection;
             var annotationStateAfter = CloneAnnotations();
-            PushUndoStep(Rectangle.Empty, beforeImage, afterSnapshot, selectionBefore, selectionAfter, true, annotationStateBefore, annotationStateAfter);
+            var textStateAfter = CloneTextAnnotations();
+            var layerStateAfter = CloneLayers();
+            PushUndoStep(
+                Rectangle.Empty,
+                beforeImage,
+                afterSnapshot,
+                selectionBefore,
+                selectionAfter,
+                true,
+                annotationStateBefore,
+                annotationStateAfter,
+                textStateBefore,
+                textStateAfter,
+                layerStateBefore,
+                layerStateAfter);
 
             UpdateCommandUI();
             UpdateStatusBar();
