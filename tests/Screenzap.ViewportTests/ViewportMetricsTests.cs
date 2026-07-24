@@ -29,6 +29,19 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void ZoomLevel_ClampsToSixtyFourTimes()
+        {
+            using var control = new ImageViewportControl { ClientSize = new Size(200, 200) };
+            control.Image = new Bitmap(50, 50);
+
+            control.ZoomLevel = 100m;               // request way past the ceiling
+            Assert.Equal(64m, control.ZoomLevel);   // 6400%
+
+            control.ZoomLevel = 0m;                 // and past the floor
+            Assert.Equal(0.025m, control.ZoomLevel);
+        }
+
+        [Fact]
         public void PanBy_LargeImageOverscrollsPastEdges_UpToVisibleMargin()
         {
             using var control = new ImageViewportControl
