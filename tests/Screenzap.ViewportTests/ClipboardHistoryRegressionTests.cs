@@ -42,6 +42,28 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
+        public void EnsureTopObservedImage_DeduplicatesUnchangedClipboard_AndAddsChangedImage()
+        {
+            var store = new ClipboardHistoryStore();
+            using var firstImage = CreateSolidBitmap(Color.Red);
+            using var sameImage = CreateSolidBitmap(Color.Red);
+            using var changedImage = CreateSolidBitmap(Color.Blue);
+
+            var first = store.AddObservedImage(firstImage);
+            var (same, sameAdded) = store.EnsureTopObservedImage(sameImage);
+
+            Assert.False(sameAdded);
+            Assert.Same(first, same);
+            Assert.Single(store.Items);
+
+            var (changed, changedAdded) = store.EnsureTopObservedImage(changedImage);
+
+            Assert.True(changedAdded);
+            Assert.Same(changed, store.TopItem);
+            Assert.Equal(2, store.Items.Count);
+        }
+
+        [Fact]
         public void SaveActiveItemOnly_UpdatesManifestActiveId_WithoutDroppingItems()
         {
             var root = Path.Combine(Path.GetTempPath(), "screenzap-tests", Guid.NewGuid().ToString("N"));
@@ -447,6 +469,44 @@ namespace Screenzap.ViewportTests
 
                 Assert.Contains(store.Items, item => ReferenceEquals(item, fresh));
                 Assert.Same(fresh, store.TopItem);
+            });
+        }
+
+        [Fact]
+        public void SystemHistoryRefresh_ReplacesFreshContentWhenNewestSlotReusesKnownId()
+        {
+            StaTest.Run(() =>
+            {
+                var store = new ClipboardHistoryStore();
+                using var host = new Form();
+                host.CreateControl();
+
+                using var oldImage = CreateSolidBitmap(Color.SteelBlue);
+                var old = store.AddObservedImage(oldImage);
+                old.AssignSystemHistoryId("reused-live-id");
+
+                using var freshImage = CreateSolidBitmap(Color.Orange);
+                var fresh = ClipboardHistoryItem.FromImage(freshImage);
+                fresh.AssignSystemHistoryId("reused-live-id");
+
+                using var service = new SystemClipboardHistoryService(
+                    store,
+                    host,
+                    onItemObserved: null,
+                    tryBindPendingCommittedItem: null,
+                    isInternalWriteWindow: null);
+
+                ApplySystemSnapshot(
+                    service,
+                    new List<(string id, DateTimeOffset timestamp, ClipboardHistoryItem built)?>
+                    {
+                        ("reused-live-id", DateTimeOffset.UtcNow.AddSeconds(1), fresh)
+                    });
+
+                Assert.Same(fresh, store.TopItem);
+                Assert.Equal("reused-live-id", fresh.SystemHistoryId);
+                Assert.Contains(store.Items, item => ReferenceEquals(item, old));
+                Assert.Null(old.SystemHistoryId);
             });
         }
 

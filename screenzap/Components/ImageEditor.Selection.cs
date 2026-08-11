@@ -647,34 +647,55 @@ namespace screenzap
             _zoomlevel = pictureBox1.ZoomLevel;
         }
 
-        private bool IsClose(int a, int b) => Math.Abs(Math.Max(a, b) - Math.Min(a, b)) < rzTolerance;
-        private bool IsClose(Point a, Point b) => IsCloseHor(a, b) && IsCloseVer(a, b);
-        private bool IsCloseHor(Point a, Point b) => Math.Abs(a.X - b.X) < rzTolerance;
-        private bool IsCloseVer(Point a, Point b) => Math.Abs(a.Y - b.Y) < rzTolerance;
-        private bool IsWithin(int val, int a, int b) => val >= Math.Min(a, b) && val <= Math.Max(a, b);
+        private static bool IsClose(int a, int b, int tolerance) => Math.Abs(a - b) < tolerance;
+        private static bool IsClose(Point a, Point b, int tolerance) => IsClose(a.X, b.X, tolerance) && IsClose(a.Y, b.Y, tolerance);
+        private static bool IsWithin(int val, int a, int b) => val >= Math.Min(a, b) && val <= Math.Max(a, b);
 
-        private ResizeMode GetResizeMode(Point pt)
+        /// <summary>
+        /// Screen-space width of the marquee's grip band, capped so a small selection keeps a
+        /// grabbable core. Uncapped, every point of a 1px marquee sits inside a corner grip, so
+        /// the grips answer first and the selection can never be moved, stamped, or cloned —
+        /// exactly the case zooming in is supposed to make easy. A third of the shorter on-screen
+        /// side leaves the middle third free: a 1px marquee at 32x gets 5px grips around a 22px
+        /// core, while at 1x it gets no grips at all (zoom in to resize it).
+        /// </summary>
+        private int GetResizeGripTolerance(Rectangle clientSelection) =>
+            Math.Min(rzTolerance, Math.Min(clientSelection.Width, clientSelection.Height) / 3);
+
+        /// <summary>
+        /// Which part of the marquee a cursor position lands on. <paramref name="clientPt"/> is a
+        /// raw viewport client point: the hit test deliberately does NOT route it through image
+        /// pixel space first, because ClientToPixel rounds to the nearest image pixel and the trip
+        /// back out snaps the point onto the zoom grid. At 8x and above that snapping put every
+        /// interior click straight onto an edge or corner, so the grips swallowed the whole
+        /// marquee no matter how far it had been zoomed open.
+        /// </summary>
+        private ResizeMode GetResizeMode(Point clientPt)
         {
-            var formPt = PixelToFormCoord(pt);
             var formSelection = PixelToFormCoord(Selection);
-            if (IsClose(formPt, new Point(formSelection.Right, formSelection.Top))) return ResizeMode.ResizeTR;
-            if (IsClose(formPt, new Point(formSelection.Right, formSelection.Bottom))) return ResizeMode.ResizeBR;
-            if (IsClose(formPt, new Point(formSelection.Left, formSelection.Bottom))) return ResizeMode.ResizeBL;
-            if (IsClose(formPt, new Point(formSelection.Left, formSelection.Top))) return ResizeMode.ResizeTL;
+            int tolerance = GetResizeGripTolerance(formSelection);
 
-            if (IsWithin(formPt.X, formSelection.Left, formSelection.Right))
+            if (tolerance > 0)
             {
-                if (IsClose(formPt.Y, formSelection.Top)) return ResizeMode.ResizeT;
-                if (IsClose(formPt.Y, formSelection.Bottom)) return ResizeMode.ResizeB;
+                if (IsClose(clientPt, new Point(formSelection.Right, formSelection.Top), tolerance)) return ResizeMode.ResizeTR;
+                if (IsClose(clientPt, new Point(formSelection.Right, formSelection.Bottom), tolerance)) return ResizeMode.ResizeBR;
+                if (IsClose(clientPt, new Point(formSelection.Left, formSelection.Bottom), tolerance)) return ResizeMode.ResizeBL;
+                if (IsClose(clientPt, new Point(formSelection.Left, formSelection.Top), tolerance)) return ResizeMode.ResizeTL;
+
+                if (IsWithin(clientPt.X, formSelection.Left, formSelection.Right))
+                {
+                    if (IsClose(clientPt.Y, formSelection.Top, tolerance)) return ResizeMode.ResizeT;
+                    if (IsClose(clientPt.Y, formSelection.Bottom, tolerance)) return ResizeMode.ResizeB;
+                }
+
+                if (IsWithin(clientPt.Y, formSelection.Top, formSelection.Bottom))
+                {
+                    if (IsClose(clientPt.X, formSelection.Left, tolerance)) return ResizeMode.ResizeL;
+                    if (IsClose(clientPt.X, formSelection.Right, tolerance)) return ResizeMode.ResizeR;
+                }
             }
 
-            if (IsWithin(formPt.Y, formSelection.Top, formSelection.Bottom))
-            {
-                if (IsClose(formPt.X, formSelection.Left)) return ResizeMode.ResizeL;
-                if (IsClose(formPt.X, formSelection.Right)) return ResizeMode.ResizeR;
-            }
-
-            if (formSelection.Contains(formPt))
+            if (formSelection.Contains(clientPt))
                 return ResizeMode.Move;
 
             return ResizeMode.None;
@@ -792,7 +813,7 @@ namespace screenzap
 
             if (e.Button == MouseButtons.Left)
             {
-                rzMode = GetResizeMode(MouseInPixel);
+                rzMode = GetResizeMode(e.Location);
 
                 if (rzMode != ResizeMode.None)
                 {
@@ -987,7 +1008,7 @@ namespace screenzap
             }
             else
             {
-                var hoverResizeMode = GetResizeMode(FormCoordToPixel(e.Location));
+                var hoverResizeMode = GetResizeMode(e.Location);
                 if (hoverResizeMode != ResizeMode.None)
                 {
                     Cursor = ResizeCursors[hoverResizeMode];

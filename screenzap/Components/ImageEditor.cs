@@ -2069,6 +2069,47 @@ namespace screenzap
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
+        /// <summary>
+        /// True when a text box or combo box hosted anywhere in this form has keyboard focus.
+        /// Searches the whole control tree rather than reusing <see cref="FindFocusedControl"/>,
+        /// which stops at ContainerControl boundaries and so never reaches a ToolStrip-hosted
+        /// field — ToolStripTextBox / ToolStripComboBox parent their real control to the ToolStrip.
+        /// </summary>
+        private bool IsHostedTextEntryFocused() => FindFocusedTextEntry(this) != null;
+
+        private static Control? FindFocusedTextEntry(Control root)
+        {
+            // ComboBox.Focused already accounts for its internal edit/list child windows.
+            if (root is TextBoxBase or ComboBox && root.Focused)
+            {
+                return root;
+            }
+
+            foreach (Control child in root.Controls)
+            {
+                var hit = FindFocusedTextEntry(child);
+                if (hit != null)
+                {
+                    return hit;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// True when this key press will produce a typed character: no modifier at all (Shift is
+        /// part of typing), or AltGr — which Windows reports as Ctrl+Alt and which produces real
+        /// characters on international layouts (Swedish AltGr+E is €, and Ctrl+E is the censor
+        /// tool). Ctrl alone or Alt alone never yields a character.
+        /// </summary>
+        private static bool ProducesTextCharacter(KeyEventArgs e)
+        {
+            bool ctrl = (e.Modifiers & Keys.Control) == Keys.Control;
+            bool alt = (e.Modifiers & Keys.Alt) == Keys.Alt;
+            return ctrl == alt;
+        }
+
         private Control? FindFocusedControl()
         {
             // Walk the WinForms control tree to find whichever child actually has focus.
@@ -2087,6 +2128,17 @@ namespace screenzap
             //Console.WriteLine(e.Modifiers);
 
             if (HandleLayerToolbarKeyDown(e))
+            {
+                return;
+            }
+
+            // A hosted text field owns the keyboard (font picker, size / thickness boxes, ...).
+            // KeyPreview shows the form every keystroke BEFORE the focused control sees it, so
+            // the document shortcuts below must stand down or they act on the image mid-word:
+            // Backspace replaces the background, Delete drops a layer, and a bare-letter
+            // shortcut is swallowed outright by its SuppressKeyPress. Same stance
+            // HandleLayerToolbarKeyDown already takes for the layer toolbar.
+            if (IsHostedTextEntryFocused())
             {
                 return;
             }
@@ -2191,6 +2243,16 @@ namespace screenzap
 
             // Handle text tool keyboard input first
             if (HandleTextToolKeyDown(e))
+            {
+                return;
+            }
+
+            // Still editing an on-canvas text annotation? Then whatever the text editor did not
+            // claim above is a CHARACTER, not a shortcut. The document shortcuts below set
+            // SuppressKeyPress, which kills the WM_CHAR before OnKeyPress can insert it — that is
+            // why the bare-M grid toggle made "m" impossible to type. Ctrl-only / Alt-only combos
+            // produce no character and still fall through to the shortcuts.
+            if (activeTextAnnotation?.IsEditing == true && ProducesTextCharacter(e))
             {
                 return;
             }

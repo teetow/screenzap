@@ -114,7 +114,8 @@ namespace screenzap
         private void ClipboardMonitor_CaptureLiveAlpha(object? sender, EventArgs e)
         {
             var service = systemHistoryService;
-            if (service == null)
+            var host = clipboardEditorHost;
+            if (service == null && host == null)
             {
                 return;
             }
@@ -131,7 +132,20 @@ namespace screenzap
                 // TryRead returns null for non-image clipboards, which clears any stale candidate so
                 // it can't attach to a later unrelated history item.
                 using var alpha = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
-                service.SetLiveAlphaCandidate(alpha);
+                service?.SetLiveAlphaCandidate(alpha);
+
+                // Some Chrome image copies are deliberately excluded from Windows clipboard
+                // history. Observe the live clipboard directly so those images still enter
+                // Screenzap history; the seeded marker lets a later WinRT item absorb this fallback.
+                if (alpha != null && host != null)
+                {
+                    var (observed, added) = host.HistoryStore.EnsureTopObservedImage(alpha);
+                    if (added)
+                    {
+                        observed.IsSeededFallback = true;
+                        host.OnObservedClipboardItem(observed);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -539,22 +553,25 @@ namespace screenzap
 
             var host = EnsureClipboardHost();
 
-            // Seed the history with the current clipboard content if the list is empty (first-time open).
-            if (host.HistoryStore.Items.Count == 0)
+            // Always consult the live clipboard. Chrome can publish a valid image without adding it
+            // to Windows clipboard history, so relying on WinRT whenever our list is non-empty leaves
+            // the editor stuck on an older item. EnsureTopObservedImage deduplicates unchanged opens.
+            try
             {
-                try
+                using var img = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
+                if (img != null)
                 {
-                    using var img = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
-                    if (img != null)
+                    var (observed, added) = host.HistoryStore.EnsureTopObservedImage(img);
+                    if (added)
                     {
-                        var seeded = host.HistoryStore.AddObservedImage(img);
-                        seeded.IsSeededFallback = true;
+                        observed.IsSeededFallback = true;
+                        host.OnObservedClipboardItem(observed);
                     }
                 }
-                catch (ExternalException ex)
-                {
-                    Logger.Log($"Failed to seed clipboard history: {ex.Message}");
-                }
+            }
+            catch (ExternalException ex)
+            {
+                Logger.Log($"Failed to observe live clipboard image: {ex.Message}");
             }
 
             var top = host.HistoryStore.TopItem;

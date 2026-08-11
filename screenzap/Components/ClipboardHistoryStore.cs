@@ -41,6 +41,25 @@ namespace screenzap.Components
             return item;
         }
 
+        /// <summary>
+        /// Ensures the live clipboard image is represented at the top of Screenzap history.
+        /// Reuses the current top item when its pixels already match, avoiding a duplicate each
+        /// time the editor is opened while the clipboard remains unchanged.
+        /// </summary>
+        public (ClipboardHistoryItem Item, bool Added) EnsureTopObservedImage(Bitmap source)
+        {
+            var candidate = ClipboardHistoryItem.FromImage(source);
+            var top = TopItem;
+            if (top != null && top.ContentMatches(candidate))
+            {
+                candidate.Dispose();
+                return (top, false);
+            }
+
+            InsertAtTop(candidate);
+            return (candidate, true);
+        }
+
         private void InsertAtTop(ClipboardHistoryItem item)
         {
             items.Insert(0, item);

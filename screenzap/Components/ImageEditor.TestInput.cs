@@ -81,6 +81,18 @@ namespace screenzap
             ImageEditor_KeyDown(this, args);
         }
 
+        /// <summary>
+        /// Fire a KeyDown and report whether the editor swallowed the keystroke. Windows only
+        /// raises the follow-up WM_CHAR (and so OnKeyPress) when KeyDown left SuppressKeyPress
+        /// clear, so a suppressed key is a key that can never be typed.
+        /// </summary>
+        internal bool TestFireKeyDownSuppressed(Keys keyData)
+        {
+            var args = new KeyEventArgs(keyData);
+            ImageEditor_KeyDown(this, args);
+            return args.SuppressKeyPress;
+        }
+
         internal void TestFireKeyUp(Keys keyData)
         {
             var args = new KeyEventArgs(keyData);

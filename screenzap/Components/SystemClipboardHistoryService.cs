@@ -227,10 +227,11 @@ namespace screenzap.Components
                 if (disposed) return;
                 itemIndex++;
 
-                // Skip the expensive bitmap decode for items we already hold; ApplySnapshot reuses
-                // the existing store item by SystemHistoryId. Avoids re-streaming every image out of
-                // the single-threaded clipboard service on every change.
-                if (!string.IsNullOrEmpty(sys.Id) && known.Contains(sys.Id))
+                // Skip the expensive bitmap decode for older items we already hold; ApplySnapshot
+                // reuses the existing store item by SystemHistoryId. Always decode the newest item:
+                // Windows can reuse its id when the live clipboard content changes, so treating that
+                // id as a permanent content identity leaves Screenzap showing a stale image.
+                if (itemIndex != 0 && !string.IsNullOrEmpty(sys.Id) && known.Contains(sys.Id))
                 {
                     translated.Add((sys.Id, sys.Timestamp, (ClipboardHistoryItem?)null));
                     continue;
@@ -654,7 +655,8 @@ namespace screenzap.Components
                     continue;
                 }
 
-                if (existingById.TryGetValue(sysId, out var existing))
+                if (existingById.TryGetValue(sysId, out var existing)
+                    && (built == null || existing.ContentMatches(built)))
                 {
                     finalOrder.Add(existing);
                     finalTimestamps[existing.Id] = timestamp;
@@ -663,6 +665,14 @@ namespace screenzap.Components
                 }
                 else if (built != null)
                 {
+                    // The newest Windows history slot can retain its id while its clipboard payload
+                    // changes. Detach the previous content from that id so it remains available as a
+                    // local history entry, then let the freshly decoded payload claim the reused id.
+                    if (existing != null)
+                    {
+                        existing.SystemHistoryId = null;
+                    }
+
                     // A system entry can re-appear for content we already hold as a local-only item —
                     // e.g. the entry produced by a "set as active"/commit write whose in-memory rebind
                     // window was lost across a restart. Absorb it into that item (claim the new system
