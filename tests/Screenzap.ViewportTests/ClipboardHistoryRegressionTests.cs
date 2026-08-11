@@ -564,11 +564,14 @@ namespace Screenzap.ViewportTests
                     Assert.True(kit.Editor.IsHostedViewForDiagnostics);
 
                     // Simulate an external clipboard change to a different image (a new screenshot).
-                    using var incoming = new Bitmap(120, 90);
-                    using (var g = Graphics.FromImage(incoming)) g.Clear(Color.OrangeRed);
+                    // Both the detection probe and the image it would load are injected: writing a
+                    // real bitmap to the system clipboard here would destroy whatever the person
+                    // running the tests had copied, and the detection path never reads the
+                    // injected value anyway unless the hosted guard has regressed — which is
+                    // exactly the failure this test is here to catch.
                     kit.Editor.ConfirmReloadWhenDirtyOverrideForDiagnostics = () => true;
+                    kit.Editor.ClipboardContainsImageProviderForDiagnostics = () => true;
                     kit.Editor.ClipboardImageProviderForDiagnostics = () => new Bitmap(120, 90);
-                    Clipboard.SetImage(incoming); // so the reload path's detection sees an image
 
                     kit.Editor.FireClipboardUpdatedForDiagnostics();
                     kit.PumpUi();

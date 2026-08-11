@@ -88,6 +88,12 @@ namespace screenzap
         internal Func<bool>? ConfirmReloadWhenDirtyOverrideForDiagnostics { get; set; }
         internal Func<Image?>? ClipboardImageProviderForDiagnostics { get; set; }
     internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
+        /// <summary>
+        /// Overrides the "does the clipboard hold an image?" probe in <see cref="HandleClipboardUpdated"/>.
+        /// Lets a test drive that path deterministically without putting a bitmap on the real
+        /// system clipboard — which would destroy whatever the developer had copied.
+        /// </summary>
+        internal Func<bool>? ClipboardContainsImageProviderForDiagnostics { get; set; }
 
         private bool HasEditableImage => pictureBox1.Image != null && !isPlaceholderImage;
         internal ViewportMetrics ViewportDiagnostics => pictureBox1?.Metrics ?? default;
@@ -549,7 +555,11 @@ namespace screenzap
             ClipboardReloadTarget detectedTarget = ClipboardReloadTarget.None;
             try
             {
-                if (Clipboard.ContainsImage())
+                bool containsImage = ClipboardContainsImageProviderForDiagnostics != null
+                    ? ClipboardContainsImageProviderForDiagnostics()
+                    : Clipboard.ContainsImage();
+
+                if (containsImage)
                 {
                     detectedTarget = ClipboardReloadTarget.Image;
                 }
