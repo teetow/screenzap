@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using screenzap.Components;
 using screenzap.lib;
 
 namespace screenzap
@@ -2091,19 +2092,16 @@ namespace screenzap
         {
             // Choose the dialog's starting color: use the unanimous selection color when
             // all selected items agree, fall back to the primary's color or tool default.
-            using var dialog = new ColorDialog
-            {
-                Color = GetRepresentativeSelectionColor() ?? ActiveToolDefaultColor,
-                FullOpen = true
-            };
-
-            if (dialog.ShowDialog(this) != DialogResult.OK)
+            if (SharedColorDialog.ShowDialog(
+                    this,
+                    GetRepresentativeSelectionColor() ?? ActiveToolDefaultColor,
+                    out Color selectedColor) != DialogResult.OK)
             {
                 return;
             }
 
-            ActiveToolDefaultColor = dialog.Color;
-            ApplyColorToSelection(dialog.Color);
+            ActiveToolDefaultColor = selectedColor;
+            ApplyColorToSelection(selectedColor);
             UpdateAnnotationColorButtonAppearance();
         }
 

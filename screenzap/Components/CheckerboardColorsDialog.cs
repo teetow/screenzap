@@ -110,15 +110,9 @@ namespace screenzap.Components
 
             private void PickViaDialog()
             {
-                using var dialog = new ColorDialog
+                if (SharedColorDialog.ShowDialog(this, value, out Color selectedColor, anyColor: true) == DialogResult.OK)
                 {
-                    Color = value,
-                    FullOpen = true,
-                    AnyColor = true,
-                };
-                if (dialog.ShowDialog(this) == DialogResult.OK)
-                {
-                    SetValue(Opaque(dialog.Color), updateHex: true);
+                    SetValue(Opaque(selectedColor), updateHex: true);
                 }
             }
 

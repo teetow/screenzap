@@ -9,6 +9,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using SkiaSharp;
+using screenzap.Components;
 using screenzap.lib;
 
 namespace screenzap
@@ -2070,13 +2071,9 @@ namespace screenzap
 
         private void textColorButton_Click(object? sender, EventArgs e)
         {
-            using var dialog = new ColorDialog();
-            dialog.Color = textToolColor;
-            dialog.FullOpen = true;
-
-            if (dialog.ShowDialog(this) == DialogResult.OK)
+            if (SharedColorDialog.ShowDialog(this, textToolColor, out Color selectedColor) == DialogResult.OK)
             {
-                textToolColor = dialog.Color;
+                textToolColor = selectedColor;
                 UpdateTextColorButtonAppearance();
                 if (activeTextAnnotation != null)
                 {
@@ -2144,13 +2141,9 @@ namespace screenzap
 
         private void outlineColorButton_Click(object? sender, EventArgs e)
         {
-            using var dialog = new ColorDialog();
-            dialog.Color = textToolOutlineColor;
-            dialog.FullOpen = true;
-
-            if (dialog.ShowDialog(this) == DialogResult.OK)
+            if (SharedColorDialog.ShowDialog(this, textToolOutlineColor, out Color selectedColor) == DialogResult.OK)
             {
-                textToolOutlineColor = dialog.Color;
+                textToolOutlineColor = selectedColor;
                 UpdateOutlineColorButtonAppearance();
                 if (activeTextAnnotation != null)
                 {
