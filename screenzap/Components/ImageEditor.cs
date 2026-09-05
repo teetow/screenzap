@@ -262,40 +262,85 @@ namespace screenzap
             HandleResize();
         }
 
+        /// <summary>
+        /// Suspend layout on every ToolStrip hosted in this editor, returning them so the caller
+        /// can resume. Walks the control tree rather than naming fields, so a strip added later
+        /// cannot silently opt out of the batching.
+        /// </summary>
+        private List<ToolStrip> SuspendToolStripLayout()
+        {
+            var strips = new List<ToolStrip>();
+
+            void Collect(Control parent)
+            {
+                foreach (Control child in parent.Controls)
+                {
+                    if (child is ToolStrip strip)
+                    {
+                        strip.SuspendLayout();
+                        strips.Add(strip);
+                    }
+
+                    Collect(child);
+                }
+            }
+
+            Collect(this);
+            return strips;
+        }
+
         private void ConfigureToolbarIcons()
         {
-            ConfigureIconButton(saveToolStripButton, IconChar.FloppyDisk);
-            ConfigureIconButton(saveAsToolStripButton, IconChar.FilePen);
-            ConfigureIconButton(cropToolStripButton, IconChar.CropSimple);
-            ConfigureIconButton(expandCanvasToolStripButton, IconChar.Expand);
-            ConfigureIconButton(flipHorizontalToolStripButton, IconChar.LeftRight);
-            ConfigureIconButton(flipVerticalToolStripButton, IconChar.UpDown);
-            ConfigureIconButton(rotateToolStripButton, IconChar.ArrowRotateRight);
-            ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
-            ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
-            ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
-            ConfigureIconButton(freeRotateToolStripButton, IconChar.ArrowsSpin);
-            ConfigureIconButton(moveToolStripButton, IconChar.ArrowPointer);
-            ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
-            ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
-            ConfigureIconButton(highlighterToolStripButton, IconChar.Highlighter);
-            ConfigureIconButton(textToolStripButton, IconChar.Font);
-            ConfigureIconButton(censorToolStripButton, IconChar.UserSecret);
-            ConfigureIconButton(copyClipboardToolStripButton, IconChar.Copy);
-            ConfigureIconButton(reloadToolStripButton, IconChar.Rotate);
-            ConfigureIconButton(selectAllToolStripButton, IconChar.ObjectGroup);
-            ConfigureIconButton(selectNoneToolStripButton, IconChar.SquareXmark);
-            ConfigureIconButton(applyCensorToolStripButton, IconChar.Check);
-            ConfigureIconButton(cancelCensorToolStripButton, IconChar.Xmark);
-            ConfigureIconButton(straightenApplyButton, IconChar.Check);
-            ConfigureIconButton(straightenCancelButton, IconChar.Xmark);
-            UpdateReloadIndicator();
-            UpdateTraceButtonState();
-            InitializeTextToolbar();
-            InitializeAnnotationToolbar();
-            ConfigureToolRailButtons();
-            ApplyCommandTooltips();
-            InitColorCorrector();
+            // Every property ConfigureIconButton sets invalidates the owning ToolStrip's layout,
+            // and a ToolStrip re-measures ALL of its items on each pass — so ~26 buttons times
+            // ~8 sets against live strips is ~200 full layout passes. Measured at ~230ms of a
+            // ~305ms constructor, an order of magnitude more than the ~27ms the glyphs actually
+            // take to rasterise. Batching the block behind one layout pass per strip takes the
+            // constructor to ~137ms, which the editor pays on every construction.
+            var strips = SuspendToolStripLayout();
+            try
+            {
+                ConfigureIconButton(saveToolStripButton, IconChar.FloppyDisk);
+                ConfigureIconButton(saveAsToolStripButton, IconChar.FilePen);
+                ConfigureIconButton(cropToolStripButton, IconChar.CropSimple);
+                ConfigureIconButton(expandCanvasToolStripButton, IconChar.Expand);
+                ConfigureIconButton(flipHorizontalToolStripButton, IconChar.LeftRight);
+                ConfigureIconButton(flipVerticalToolStripButton, IconChar.UpDown);
+                ConfigureIconButton(rotateToolStripButton, IconChar.ArrowRotateRight);
+                ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
+                ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
+                ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
+                ConfigureIconButton(freeRotateToolStripButton, IconChar.ArrowsSpin);
+                ConfigureIconButton(moveToolStripButton, IconChar.ArrowPointer);
+                ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
+                ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
+                ConfigureIconButton(highlighterToolStripButton, IconChar.Highlighter);
+                ConfigureIconButton(textToolStripButton, IconChar.Font);
+                ConfigureIconButton(censorToolStripButton, IconChar.UserSecret);
+                ConfigureIconButton(copyClipboardToolStripButton, IconChar.Copy);
+                ConfigureIconButton(reloadToolStripButton, IconChar.Rotate);
+                ConfigureIconButton(selectAllToolStripButton, IconChar.ObjectGroup);
+                ConfigureIconButton(selectNoneToolStripButton, IconChar.SquareXmark);
+                ConfigureIconButton(applyCensorToolStripButton, IconChar.Check);
+                ConfigureIconButton(cancelCensorToolStripButton, IconChar.Xmark);
+                ConfigureIconButton(straightenApplyButton, IconChar.Check);
+                ConfigureIconButton(straightenCancelButton, IconChar.Xmark);
+                UpdateReloadIndicator();
+                UpdateTraceButtonState();
+                InitializeTextToolbar();
+                InitializeAnnotationToolbar();
+                ConfigureToolRailButtons();
+                ApplyCommandTooltips();
+                InitColorCorrector();
+            }
+            finally
+            {
+                // One layout pass per strip instead of one per property set.
+                foreach (var strip in strips)
+                {
+                    strip.ResumeLayout(performLayout: true);
+                }
+            }
         }
 
         private void ApplyCommandTooltips()
