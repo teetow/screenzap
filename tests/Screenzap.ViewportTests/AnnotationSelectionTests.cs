@@ -17,12 +17,7 @@ namespace Screenzap.ViewportTests
         /// </summary>
         private static screenzap.ImageEditor PrepareEditorWithArrow()
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(120, 80);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            var editor = EditorFixture.WithCanvas(120, 80);
 
             // Draw the arrow through the real input pipeline.
             editor.TestToggleArrowTool();
@@ -112,12 +107,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                var canvas = new Bitmap(120, 80);
-                using (var g = Graphics.FromImage(canvas))
-                    g.Clear(Color.White);
-                editor.LoadImage(canvas);
-                canvas.Dispose();
+                using var editor = EditorFixture.WithCanvas(120, 80);
 
                 editor.TestToggleRectTool();
                 editor.TestFireMouseDownAtImagePixel(new Point(15, 15), MouseButtons.Left);
@@ -146,12 +136,7 @@ namespace Screenzap.ViewportTests
         /// </summary>
         private static screenzap.ImageEditor PrepareEditorWithRectThenArrow()
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(140, 100);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            var editor = EditorFixture.WithCanvas(140, 100);
 
             editor.TestToggleRectTool();
             editor.TestFireMouseDownAtImagePixel(new Point(15, 15), MouseButtons.Left);
@@ -176,12 +161,7 @@ namespace Screenzap.ViewportTests
         /// </summary>
         private static screenzap.ImageEditor PrepareEditorWithRectThenArrow_ToolStaysActive()
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(140, 100);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            var editor = EditorFixture.WithCanvas(140, 100);
 
             editor.TestToggleRectTool();
             editor.TestFireMouseDownAtImagePixel(new Point(15, 15), MouseButtons.Left);
@@ -330,12 +310,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                var canvas = new Bitmap(120, 80);
-                using (var g = Graphics.FromImage(canvas))
-                    g.Clear(Color.White);
-                editor.LoadImage(canvas);
-                canvas.Dispose();
+                using var editor = EditorFixture.WithCanvas(120, 80);
 
                 // Default color is Red on a fresh editor.
                 Assert.Equal(Color.Red.ToArgb(), editor.TestAnnotationColorDefault.ToArgb());
@@ -417,11 +392,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                using var canvas = new Bitmap(100, 80);
-                using (var graphics = Graphics.FromImage(canvas))
-                    graphics.Clear(Color.White);
-                editor.LoadImage(canvas);
+                using var editor = EditorFixture.WithCanvas(100, 80);
 
                 editor.TestToggleArrowTool();
                 editor.TestFireMouseDownAtImagePixel(new Point(20, 40), MouseButtons.Left);

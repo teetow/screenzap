@@ -24,12 +24,7 @@ namespace Screenzap.ViewportTests
         /// </summary>
         private static screenzap.ImageEditor PrepareEditorWithRectArrowAndText()
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(160, 120);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            var editor = EditorFixture.WithCanvas(160, 120);
 
             editor.TestToggleRectTool();
             editor.TestFireMouseDownAtImagePixel(new Point(15, 15), MouseButtons.Left);

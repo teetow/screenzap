@@ -13,23 +13,8 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class ViewportCenteringTests
     {
-        private static screenzap.ImageEditor NewEditor(Size formSize)
-        {
-            var editor = new screenzap.ImageEditor();
-            editor.CreateControl();
-            editor.TestSetSize(formSize.Width, formSize.Height);
-            return editor;
-        }
-
-        private static void LoadCanvas(screenzap.ImageEditor editor, Size imageSize)
-        {
-            using var canvas = new Bitmap(imageSize.Width, imageSize.Height);
-            using (var g = Graphics.FromImage(canvas))
-            {
-                g.Clear(Color.White);
-            }
-            editor.LoadImage(canvas);
-        }
+        private static screenzap.ImageEditor NewEditor(Size formSize, Size imageSize)
+            => EditorFixture.WithCanvas(imageSize, formSize: formSize);
 
         private static void AssertCentred(screenzap.ImageEditor editor)
         {
@@ -49,8 +34,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = NewEditor(new Size(400, 300));
-                LoadCanvas(editor, new Size(100, 80));
+                using var editor = NewEditor(new Size(400, 300), new Size(100, 80));
 
                 // The host is shown and the editor finally gets its real size.
                 editor.TestSetSize(900, 700);
@@ -64,8 +48,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = NewEditor(new Size(900, 700));
-                LoadCanvas(editor, new Size(120, 90));
+                using var editor = NewEditor(new Size(900, 700), new Size(120, 90));
 
                 editor.TestSetSize(500, 400);
 
@@ -78,8 +61,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = NewEditor(new Size(300, 240));
-                LoadCanvas(editor, new Size(64, 48));
+                using var editor = NewEditor(new Size(300, 240), new Size(64, 48));
 
                 foreach (var size in new[] { new Size(700, 500), new Size(420, 620), new Size(1000, 800) })
                 {
@@ -94,9 +76,8 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = NewEditor(new Size(400, 320));
                 // Overflows the viewport on both axes: the centred offset goes negative.
-                LoadCanvas(editor, new Size(2000, 1500));
+                using var editor = NewEditor(new Size(400, 320), new Size(2000, 1500));
 
                 editor.TestSetSize(900, 700);
 
@@ -109,8 +90,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = NewEditor(new Size(600, 480));
-                LoadCanvas(editor, new Size(1200, 900));
+                using var editor = NewEditor(new Size(600, 480), new Size(1200, 900));
 
                 var before = editor.TestViewportMetrics.PanOffset;
                 editor.TestPanViewportBy(new Size(-120, -60));

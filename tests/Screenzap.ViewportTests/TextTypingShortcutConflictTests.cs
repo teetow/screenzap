@@ -15,14 +15,7 @@ namespace Screenzap.ViewportTests
     {
         private static screenzap.ImageEditor PrepareEditorInTextEditMode()
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(160, 120);
-            using (var graphics = Graphics.FromImage(canvas))
-            {
-                graphics.Clear(Color.White);
-            }
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            var editor = EditorFixture.WithCanvas(160, 120);
 
             editor.TestToggleTextTool();
             editor.TestFireMouseDownAtImagePixel(new Point(30, 30), MouseButtons.Left);

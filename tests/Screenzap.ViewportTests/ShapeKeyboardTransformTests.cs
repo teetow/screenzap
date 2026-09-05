@@ -14,23 +14,7 @@ namespace Screenzap.ViewportTests
     public class ShapeKeyboardTransformTests
     {
         private static screenzap.ImageEditor NewEditor(int width = 200, int height = 160)
-        {
-            var editor = new screenzap.ImageEditor();
-            editor.CreateControl();
-            using var canvas = new Bitmap(width, height);
-            using (var g = Graphics.FromImage(canvas))
-            {
-                g.Clear(Color.White);
-            }
-            editor.LoadImage(canvas);
-            // Pin the modifiers down (up, rather) for the whole class. Otherwise every
-            // assertion about no-modifier behaviour quietly reads the keyboard of whoever is
-            // running the suite, and fails if they happen to be holding Shift.
-            editor.TestSetShiftHeld(false);
-            editor.TestSetCtrlHeld(false);
-            editor.TestSetAltHeld(false);
-            return editor;
-        }
+            => EditorFixture.WithCanvas(width, height, createControl: true);
 
         /// <summary>Draw a rectangle from start to end with the rect tool, then drop to Move mode.</summary>
         private static screenzap.AnnotationShape DrawRectangle(

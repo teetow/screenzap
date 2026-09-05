@@ -16,16 +16,11 @@ namespace Screenzap.ViewportTests
         /// <summary>White canvas with a red block; the marquee starts on the block.</summary>
         private static screenzap.ImageEditor PrepareEditor(Size canvasSize, Rectangle redBlock)
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(canvasSize.Width, canvasSize.Height);
-            using (var g = Graphics.FromImage(canvas))
+            var editor = EditorFixture.WithCanvas(canvasSize, g =>
             {
-                g.Clear(Color.White);
                 using var brush = new SolidBrush(Color.Red);
                 g.FillRectangle(brush, redBlock);
-            }
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            });
             editor.SetSelectionForDiagnostics(redBlock);
             return editor;
         }

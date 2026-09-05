@@ -2,7 +2,6 @@ using System;
 using System.Drawing;
 using System.Linq;
 using System.Reflection;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using screenzap;
@@ -17,7 +16,7 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void HistoryRows_ShareOneContextMenu()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 using var panel = new ClipboardHistoryPanel();
                 var store = new ClipboardHistoryStore();
@@ -43,7 +42,7 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void WarmForFirstShow_PrimesHiddenHostWithoutChangingVisibility()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 using var presenter = new StubImagePresenter();
                 using var host = new ClipboardEditorHostForm(true, presenter)
@@ -98,7 +97,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -146,7 +145,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -217,7 +216,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -261,7 +260,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -305,7 +304,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -348,7 +347,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -396,7 +395,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -449,7 +448,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -509,7 +508,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -581,7 +580,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -637,7 +636,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -681,7 +680,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -733,7 +732,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -794,7 +793,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -851,7 +850,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -934,7 +933,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -1010,31 +1009,6 @@ namespace Screenzap.ViewportTests
             host.Show();
             Application.DoEvents();
             return host;
-        }
-
-        private static void RunInSta(ThreadStart action)
-        {
-            Exception? failure = null;
-            var thread = new Thread(() =>
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join();
-
-            if (failure != null)
-            {
-                throw failure;
-            }
         }
 
         internal static Bitmap MakeSolid(Color color)

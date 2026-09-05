@@ -13,16 +13,7 @@ namespace Screenzap.ViewportTests
     public class ToolModeRegressionTests
     {
         /// <summary>160×120 white canvas, no annotations.</summary>
-        private static screenzap.ImageEditor PrepareEditor()
-        {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(160, 120);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
-            return editor;
-        }
+        private static screenzap.ImageEditor PrepareEditor() => EditorFixture.WithCanvas(160, 120);
 
         /// <summary>Draw a rect (15,15)-(55,45) through the pipeline, then exit the tool.</summary>
         private static void DrawRectInMoveMode(screenzap.ImageEditor editor)

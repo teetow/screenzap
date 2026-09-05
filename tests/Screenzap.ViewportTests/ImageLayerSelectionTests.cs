@@ -8,14 +8,7 @@ namespace Screenzap.ViewportTests
     {
         private static screenzap.ImageEditor PrepareEditorWithCenteredLayer(out RectangleF frame)
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(80, 60);
-            using (var g = Graphics.FromImage(canvas))
-            {
-                g.Clear(Color.White);
-            }
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            var editor = EditorFixture.WithCanvas(80, 60);
 
             using var pasted = new Bitmap(20, 14);
             using (var g = Graphics.FromImage(pasted))

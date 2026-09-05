@@ -13,15 +13,7 @@ namespace Screenzap.ViewportTests
     public class FreeRotateToolTests
     {
         private static screenzap.ImageEditor PrepareEditor(int width = 160, int height = 120)
-        {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(width, height);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
-            return editor;
-        }
+            => EditorFixture.WithCanvas(width, height);
 
         /// <summary>Drags the handle from rest to a client point 90° around the target's center.</summary>
         private static void DragHandleToRightOfCenter(screenzap.ImageEditor editor)

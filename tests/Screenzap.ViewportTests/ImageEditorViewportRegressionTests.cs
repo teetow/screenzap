@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.Reflection;
-using System.Threading;
 using screenzap;
 using Xunit;
 
@@ -14,7 +13,7 @@ namespace Screenzap.ViewportTests
         {
             Exception? failure = null;
 
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 try
                 {
@@ -58,29 +57,5 @@ namespace Screenzap.ViewportTests
             }
         }
 
-        private static void RunInSta(ThreadStart action)
-        {
-            Exception? failure = null;
-            var thread = new Thread(() =>
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join();
-
-            if (failure != null)
-            {
-                throw failure;
-            }
-        }
     }
 }

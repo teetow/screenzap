@@ -397,6 +397,10 @@ namespace screenzap
             DeactivateFreeRotateTool(apply: true);
         }
 
+        /// <summary>Add a caller-built text annotation directly, for suites that need specific
+        /// font/colour/outline settings on it.</summary>
+        internal void TestAddTextAnnotation(TextAnnotation annotation) => textAnnotations.Add(annotation);
+
         /// <summary>Add a finalized (non-editing, unselected) text annotation directly.</summary>
         internal void TestAddTextAnnotation(Point position, string text)
         {

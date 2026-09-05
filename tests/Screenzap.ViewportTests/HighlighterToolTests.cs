@@ -12,16 +12,7 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class HighlighterToolTests
     {
-        private static screenzap.ImageEditor PrepareEditor()
-        {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(200, 120);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
-            return editor;
-        }
+        private static screenzap.ImageEditor PrepareEditor() => EditorFixture.WithCanvas(200, 120);
 
         // A roughly-horizontal scribble with sub-pixel jitter the decimator should remove.
         private static List<Point> SampleStroke()

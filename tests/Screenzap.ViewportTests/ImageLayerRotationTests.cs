@@ -13,12 +13,7 @@ namespace Screenzap.ViewportTests
     {
         private static screenzap.ImageEditor MakeEditorWithLayer(int layerW = 40, int layerH = 20)
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(120, 80);
-            using (var g = Graphics.FromImage(canvas))
-                g.Clear(Color.White);
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            var editor = EditorFixture.WithCanvas(120, 80);
 
             var layerBmp = new Bitmap(layerW, layerH);
             using (var g = Graphics.FromImage(layerBmp))

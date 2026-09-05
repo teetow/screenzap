@@ -26,11 +26,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                using var canvas = new Bitmap(40, 30);
-                using (var g = Graphics.FromImage(canvas))
-                    g.Clear(Color.White);
-                editor.LoadImage(canvas);
+                using var editor = EditorFixture.WithCanvas(40, 30);
 
                 using var pasted = new Bitmap(8, 8);
                 using (var g = Graphics.FromImage(pasted))
@@ -58,11 +54,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                using var canvas = new Bitmap(40, 30);
-                using (var g = Graphics.FromImage(canvas))
-                    g.Clear(Color.White);
-                editor.LoadImage(canvas);
+                using var editor = EditorFixture.WithCanvas(40, 30);
 
                 using var pasted = new Bitmap(8, 8);
                 using (var g = Graphics.FromImage(pasted))

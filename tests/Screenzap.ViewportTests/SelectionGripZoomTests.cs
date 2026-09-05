@@ -14,16 +14,11 @@ namespace Screenzap.ViewportTests
     {
         private static screenzap.ImageEditor PrepareEditor(Rectangle selection, decimal zoom, Color blockColor)
         {
-            var editor = new screenzap.ImageEditor();
-            var canvas = new Bitmap(160, 120);
-            using (var graphics = Graphics.FromImage(canvas))
+            var editor = EditorFixture.WithCanvas(160, 120, graphics =>
             {
-                graphics.Clear(Color.White);
                 using var brush = new SolidBrush(blockColor);
                 graphics.FillRectangle(brush, selection);
-            }
-            editor.LoadImage(canvas);
-            canvas.Dispose();
+            });
 
             editor.SetSelectionForDiagnostics(selection);
             editor.TestSetZoom(zoom);

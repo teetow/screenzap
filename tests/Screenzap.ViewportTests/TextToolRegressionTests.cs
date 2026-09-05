@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Drawing;
 using System.Linq;
 using System.Reflection;
@@ -14,7 +13,7 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void EditorConstruction_DefersInstalledFontEnumeration()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
                 using var editor = new screenzap.ImageEditor();
 
@@ -30,18 +29,9 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void SelectingExistingTextAnnotation_RecallsToolbarSettings()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                editor.CreateControl();
-
-                using var image = new Bitmap(120, 80);
-                using (var graphics = Graphics.FromImage(image))
-                {
-                    graphics.Clear(Color.White);
-                }
-
-                editor.LoadImage(image);
+                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
 
                 var fontCombo = GetPrivateField<ToolStripComboBox>(editor, "fontComboBox");
                 var sizeCombo = GetPrivateField<ToolStripComboBox>(editor, "fontSizeComboBox");
@@ -69,11 +59,10 @@ namespace Screenzap.ViewportTests
                     OutlineColor = Color.DarkGreen
                 };
 
-                var annotations = GetPrivateField<IList>(editor, "textAnnotations");
-                annotations.Add(annotation);
+                editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = (Point)InvokePrivate(editor, "PixelToFormCoord", pixelPoint)!;
+                var formPoint = editor.TestImagePixelToClient(pixelPoint);
                 var handled = (bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!;
 
                 Assert.True(handled);
@@ -91,18 +80,9 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void SelectionMode_DoesNotAutoInsertTypedCharacters()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                editor.CreateControl();
-
-                using var image = new Bitmap(120, 80);
-                using (var graphics = Graphics.FromImage(image))
-                {
-                    graphics.Clear(Color.White);
-                }
-
-                editor.LoadImage(image);
+                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -116,11 +96,10 @@ namespace Screenzap.ViewportTests
                     OutlineColor = Color.Black
                 };
 
-                var annotations = GetPrivateField<IList>(editor, "textAnnotations");
-                annotations.Add(annotation);
+                editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = (Point)InvokePrivate(editor, "PixelToFormCoord", pixelPoint)!;
+                var formPoint = editor.TestImagePixelToClient(pixelPoint);
                 Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
                 Assert.False(annotation.IsEditing);
 
@@ -135,18 +114,9 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void SelectionMode_EnterStartsExplicitTextEditing()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                editor.CreateControl();
-
-                using var image = new Bitmap(120, 80);
-                using (var graphics = Graphics.FromImage(image))
-                {
-                    graphics.Clear(Color.White);
-                }
-
-                editor.LoadImage(image);
+                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -160,11 +130,10 @@ namespace Screenzap.ViewportTests
                     OutlineColor = Color.Black
                 };
 
-                var annotations = GetPrivateField<IList>(editor, "textAnnotations");
-                annotations.Add(annotation);
+                editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = (Point)InvokePrivate(editor, "PixelToFormCoord", pixelPoint)!;
+                var formPoint = editor.TestImagePixelToClient(pixelPoint);
                 Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
 
                 var keyDown = new KeyEventArgs(Keys.Enter);
@@ -180,18 +149,9 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void ToolbarCommit_CanReturnSelectedAnnotationToEditingMode()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                editor.CreateControl();
-
-                using var image = new Bitmap(120, 80);
-                using (var graphics = Graphics.FromImage(image))
-                {
-                    graphics.Clear(Color.White);
-                }
-
-                editor.LoadImage(image);
+                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -205,11 +165,10 @@ namespace Screenzap.ViewportTests
                     OutlineColor = Color.Black
                 };
 
-                var annotations = GetPrivateField<IList>(editor, "textAnnotations");
-                annotations.Add(annotation);
+                editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = (Point)InvokePrivate(editor, "PixelToFormCoord", pixelPoint)!;
+                var formPoint = editor.TestImagePixelToClient(pixelPoint);
                 Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
 
                 var keyDown = new KeyEventArgs(Keys.Enter);
@@ -227,18 +186,9 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void CanvasClick_AfterToolbarFocus_ResumesSelectedTextEditing()
         {
-            RunInSta(() =>
+            StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                editor.CreateControl();
-
-                using var image = new Bitmap(200, 120);
-                using (var graphics = Graphics.FromImage(image))
-                {
-                    graphics.Clear(Color.White);
-                }
-
-                editor.LoadImage(image);
+                using var editor = EditorFixture.WithCanvas(200, 120, createControl: true);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -252,11 +202,10 @@ namespace Screenzap.ViewportTests
                     OutlineColor = Color.Black
                 };
 
-                var annotations = GetPrivateField<IList>(editor, "textAnnotations");
-                annotations.Add(annotation);
+                editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = (Point)InvokePrivate(editor, "PixelToFormCoord", pixelPoint)!;
+                var formPoint = editor.TestImagePixelToClient(pixelPoint);
                 Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
                 Assert.True((bool)InvokePrivate(editor, "HandleTextToolKeyDown", new KeyEventArgs(Keys.Enter))!);
                 Assert.True(annotation.IsEditing);
@@ -267,12 +216,12 @@ namespace Screenzap.ViewportTests
                 InvokePrivate(editor, "SuspendTextEditingForUiFocus");
                 Assert.False(annotation.IsEditing);
 
-                int beforeCount = annotations.Count;
+                int beforeCount = editor.TestTextAnnotationCount;
                 var emptyPixel = new Point(120, 70);
-                var emptyForm = (Point)InvokePrivate(editor, "PixelToFormCoord", emptyPixel)!;
+                var emptyForm = editor.TestImagePixelToClient(emptyPixel);
                 Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", emptyPixel, emptyForm)!);
 
-                Assert.Equal(beforeCount, annotations.Count);
+                Assert.Equal(beforeCount, editor.TestTextAnnotationCount);
                 Assert.True(annotation.IsEditing);
             });
         }
@@ -344,37 +293,6 @@ namespace Screenzap.ViewportTests
             var weightProperty = fontStyle.GetType().GetProperty("Weight");
             Assert.NotNull(weightProperty);
             return Convert.ToInt32(weightProperty!.GetValue(fontStyle));
-        }
-
-        private static void RunInSta(Action action)
-        {
-            Exception? captured = null;
-            using var completed = new System.Threading.ManualResetEventSlim(false);
-
-            var thread = new System.Threading.Thread(() =>
-            {
-                try
-                {
-                    action();
-                }
-                catch (Exception ex)
-                {
-                    captured = ex;
-                }
-                finally
-                {
-                    completed.Set();
-                }
-            });
-
-            thread.SetApartmentState(System.Threading.ApartmentState.STA);
-            thread.Start();
-            completed.Wait();
-
-            if (captured != null)
-            {
-                throw new TargetInvocationException(captured);
-            }
         }
 
         private static T GetPrivateField<T>(object target, string fieldName) where T : class

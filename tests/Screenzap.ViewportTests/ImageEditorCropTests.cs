@@ -11,14 +11,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                using var source = new Bitmap(100, 60);
-                using (var g = Graphics.FromImage(source))
-                {
-                    g.Clear(Color.White);
-                }
-
-                editor.LoadImage(source);
+                using var editor = EditorFixture.WithCanvas(100, 60);
                 var cropSelection = new Rectangle(10, 8, 40, 20);
                 editor.SetSelectionForDiagnostics(cropSelection);
 
