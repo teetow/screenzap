@@ -1370,6 +1370,18 @@ namespace screenzap
                 FinalizeActiveTextAnnotation();
             }
 
+            // Engage the text tool implicitly, exactly like the Enter/F2 promotion in
+            // HandleTextToolKeyDown. Without it the annotation entered edit mode but every
+            // keystroke was routed as a document shortcut (HandleTextToolKeyDown and
+            // ProcessCmdKey both gate on isTextToolActive), so the caret blinked in a text
+            // box that could not be typed into and the user had to arm the tool by hand.
+            if (!isTextToolActive)
+            {
+                isTextToolActive = true;
+                UpdateTextToolButtons();
+                UpdateTextToolbarVisibility();
+            }
+
             SelectTextAnnotation(hit);
             activeTextAnnotation = hit;
             EnterTextEditMode(hit);
@@ -1698,13 +1710,17 @@ namespace screenzap
                 {
                     if (textAnnotationSnapshotBeforeEdit == null)
                         textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+                    // Hold the target across the tool switch: engaging a tool clears the
+                    // selection, and this promotion is about the annotation already picked.
+                    var promoted = selectedTextAnnotation;
                     if (!isTextToolActive)
                     {
                         isTextToolActive = true;
                         UpdateTextToolButtons();
                         UpdateTextToolbarVisibility();
                     }
-                    activeTextAnnotation = selectedTextAnnotation;
+                    SelectTextAnnotation(promoted);
+                    activeTextAnnotation = promoted;
                     EnterTextEditMode(activeTextAnnotation);
                     e.Handled = true;
                     return true;
@@ -1769,6 +1785,13 @@ namespace screenzap
                     MoveCaret(ta, newPos, shift);
                     e.Handled = true; return true;
                 }
+                // No vertical caret movement yet, but the text editor still has to CLAIM
+                // Up/Down while editing: unhandled they leak past ProcessCmdKey and become
+                // either focus navigation or a nudge of the very box being typed into.
+                case Keys.Up:
+                case Keys.Down:
+                    e.Handled = true; return true;
+
                 case Keys.Home:
                     MoveCaret(ta, ctrl ? 0 : MoveCaretLineStart(ta.Text, ta.CaretPosition), shift);
                     e.Handled = true; return true;

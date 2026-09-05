@@ -13,6 +13,11 @@ namespace screenzap.Components.Shared
         private Image? image;
         private decimal zoomLevel = 1m;
         private PointF panOffset = PointF.Empty;
+        // The client size panOffset was last computed against. A resize slides the pan by half
+        // the size delta so the image point under the viewport centre stays under it; without
+        // that, a viewport that grows AFTER the image was centred leaves the image pinned to
+        // the old, smaller centre and it opens visibly off to one side.
+        private Size panReferenceClientSize;
         private InterpolationMode interpolationMode = InterpolationMode.NearestNeighbor;
         private bool alphaViewEnabled = true;
 
@@ -258,6 +263,7 @@ namespace screenzap.Components.Shared
             {
                 LogDebug($"CenterImage: early exit (null/zero), setting panOffset=Empty");
                 panOffset = PointF.Empty;
+                panReferenceClientSize = Size.Empty;
                 Invalidate();
                 return;
             }
@@ -271,6 +277,7 @@ namespace screenzap.Components.Shared
             var newPan = new PointF(centeredX, centeredY);
             LogDebug($"CenterImage: scaled={scaled}, centered=({centeredX:F1}, {centeredY:F1})");
             panOffset = newPan;
+            panReferenceClientSize = ClientSize;
             Invalidate();
         }
 
@@ -437,9 +444,46 @@ namespace screenzap.Components.Shared
         protected override void OnSizeChanged(EventArgs e)
         {
             LogDebug($"OnSizeChanged: new ClientSize={ClientSize}");
+            SlidePanForResize();
             base.OnSizeChanged(e);
             ClampPan();
             Invalidate();
+        }
+
+        /// <summary>
+        /// Keep whatever image point sat under the centre of the viewport there across a resize.
+        /// Since both centres move by half the size delta, that reduces to sliding the pan by
+        /// the same amount — no zoom involved.
+        ///
+        /// This is what makes an image OPEN centred. The editor is warmed up and loaded while
+        /// hidden, so CenterImage runs against a viewport that has not been laid out yet; every
+        /// later size change (the host being shown, the thumbnail strip appearing, DPI applied)
+        /// only ran ClampPan, which permits ~48px of overscroll and so left the stale centring
+        /// almost untouched. It also does the right thing once the user has panned: their view
+        /// travels with the window instead of snapping back to the middle.
+        /// </summary>
+        private void SlidePanForResize()
+        {
+            var previous = panReferenceClientSize;
+            panReferenceClientSize = ClientSize;
+
+            if (image == null || previous.IsEmpty || ClientSize.Width <= 0 || ClientSize.Height <= 0)
+            {
+                return;
+            }
+
+            var dx = (ClientSize.Width - previous.Width) / 2f;
+            var dy = (ClientSize.Height - previous.Height) / 2f;
+            if (dx == 0f && dy == 0f)
+            {
+                return;
+            }
+
+            // Whole pixels, for the same reason CenterImage rounds: a fractional pan makes
+            // PixelToClient/ClientToPixel stop being exact inverses.
+            var slid = new PointF(MathF.Round(panOffset.X + dx), MathF.Round(panOffset.Y + dy));
+            LogDebug($"SlidePanForResize: {previous} -> {ClientSize}, pan {panOffset} -> {slid}");
+            panOffset = slid;
         }
 
         /// <summary>

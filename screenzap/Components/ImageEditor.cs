@@ -2056,8 +2056,12 @@ namespace screenzap
 
                 if (!toolbarHasFocus)
                 {
+                    // Up/Down are in the list even though there is no vertical caret movement
+                    // yet: the text editor has to swallow them, or an unhandled arrow escapes
+                    // into WinForms focus navigation and yanks focus off the canvas mid-word.
                     var code = keyData & Keys.KeyCode;
                     if (code == Keys.Left  || code == Keys.Right ||
+                        code == Keys.Up    || code == Keys.Down  ||
                         code == Keys.Home  || code == Keys.End)
                     {
                         var ea = new KeyEventArgs(keyData);
@@ -2067,11 +2071,13 @@ namespace screenzap
                 }
             }
 
-            // Arrow keys act on an active marquee: plain = move, Ctrl = stamp, Alt = clone,
-            // Shift = 10px steps. Arrows are dialog-navigation keys and never reach KeyDown,
-            // so they are intercepted here.
+            // Arrow keys act on the current target: a selected annotation object wins over the
+            // marquee (it is the more specific thing the user just picked up). Plain = move,
+            // Shift = 10px steps; for objects Ctrl resizes, for the marquee Ctrl stamps and Alt
+            // clones. Arrows are dialog-navigation keys and never reach KeyDown, so they are
+            // intercepted here.
             if ((keyData & Keys.KeyCode) is Keys.Left or Keys.Right or Keys.Up or Keys.Down
-                && TryHandleMarqueeArrowKey(keyData))
+                && (TryHandleAnnotationArrowKey(keyData) || TryHandleMarqueeArrowKey(keyData)))
             {
                 return true;
             }
@@ -2270,31 +2276,16 @@ namespace screenzap
             if (e.KeyCode == Keys.Escape)
             {
                 // Unified ladder: each press steps out ONE level — in-flight gesture →
-                // selection → active tool → nothing. (Censor/straighten Esc lives in the
-                // modal blocks above; text-EDIT Esc inside HandleTextToolKeyDown.)
+                // active tool → selection → nothing. Leaving a MODE outranks dropping a
+                // selection: from inside the text editor, Esc leaves editing (handled in
+                // HandleTextToolKeyDown) and the very next Esc puts the text tool away,
+                // rather than spending a press deselecting first. (Censor/straighten Esc
+                // lives in the modal blocks above.)
                 if (isDrawingAnnotation)
                 {
                     CancelAnnotationPreview();
                     SelectAnnotation(null);
                     pictureBox1.Invalidate();
-                    e.SuppressKeyPress = true;
-                    e.Handled = true;
-                    return;
-                }
-
-                if (selectedShapes.Count > 0 || selectedTexts.Count > 0)
-                {
-                    SelectAnnotation(null);
-                    SelectTextAnnotation(null);
-                    activeTextAnnotation = null;
-                    pictureBox1.Invalidate();
-                    e.SuppressKeyPress = true;
-                    e.Handled = true;
-                    return;
-                }
-
-                if (DeselectImageLayerIfAny())
-                {
                     e.SuppressKeyPress = true;
                     e.Handled = true;
                     return;
@@ -2317,6 +2308,24 @@ namespace screenzap
                     activeDrawingTool = DrawingTool.None;
                     UpdateDrawingToolButtons();
                     pictureBox1.Invalidate();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                if (selectedShapes.Count > 0 || selectedTexts.Count > 0)
+                {
+                    SelectAnnotation(null);
+                    SelectTextAnnotation(null);
+                    activeTextAnnotation = null;
+                    pictureBox1.Invalidate();
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+
+                if (DeselectImageLayerIfAny())
+                {
                     e.SuppressKeyPress = true;
                     e.Handled = true;
                     return;
@@ -2523,6 +2532,13 @@ namespace screenzap
             {
                 isMovingSelection = false;
                 annotationTranslateModeActive = false;
+            }
+
+            // Releasing the arrow key closes the annotation move/resize gesture, so a held
+            // key's auto-repeat collapses into one undo step.
+            if (e.KeyCode is Keys.Left or Keys.Right or Keys.Up or Keys.Down)
+            {
+                EndAnnotationKeyTransform();
             }
 
             // Close keyboard-initiated stamp/clone gestures when their modifier is released.

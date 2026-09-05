@@ -104,6 +104,24 @@ namespace screenzap
         }
 
         /// <summary>
+        /// Drop the shape + text selection (and any text edit session riding on it). Image
+        /// layers are deliberately left alone: a floating paste is unfinished business that
+        /// outlives a tool change — it is committed with Enter, not by picking another tool.
+        /// </summary>
+        private void ClearAnnotationObjectSelection()
+        {
+            if (selectedShapes.Count == 0 && selectedTexts.Count == 0 && activeTextAnnotation == null)
+            {
+                return;
+            }
+
+            SelectAnnotation(null);
+            SelectTextAnnotation(null);
+            activeTextAnnotation = null;
+            pictureBox1?.Invalidate();
+        }
+
+        /// <summary>
         /// Rail button for ActiveTool.None. Switching to Move cancels whatever tool is
         /// engaged — SetActiveTool runs the previous tool's deactivator with apply=false,
         /// so this is the click equivalent of walking the Escape ladder to the bottom.
@@ -172,6 +190,16 @@ namespace screenzap
                 }
 
                 activeTool = next;
+
+                // Engaging a tool starts a new act, so whatever was selected for the previous
+                // one is dropped — otherwise the rectangle you just picked keeps its options
+                // toolbar (and eats Delete) while the text tool is armed. Switching TO
+                // Move/Select keeps the selection: handling what is already selected is
+                // exactly what that mode is for.
+                if (next != ActiveTool.None)
+                {
+                    ClearAnnotationObjectSelection();
+                }
 
                 switch (previous)
                 {

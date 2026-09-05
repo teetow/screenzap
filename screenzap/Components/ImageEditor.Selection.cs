@@ -202,12 +202,13 @@ namespace screenzap
             Selection = ClampToImage(Selection);
         }
 
-        private bool isCtrlHeld_TestOverride;
-        private bool isAltHeld_TestOverride;
+        // Tri-state, same contract as isShiftHeld_TestOverride: null reads the keyboard.
+        private bool? isCtrlHeld_TestOverride;
+        private bool? isAltHeld_TestOverride;
 
-        private bool IsCtrlModifierDown() => isCtrlHeld_TestOverride || (ModifierKeys & Keys.Control) == Keys.Control;
-        private bool IsAltModifierDown() => isAltHeld_TestOverride || (ModifierKeys & Keys.Alt) == Keys.Alt;
-        private bool IsShiftModifierDown() => isShiftHeld_TestOverride || (ModifierKeys & Keys.Shift) == Keys.Shift;
+        private bool IsCtrlModifierDown() => isCtrlHeld_TestOverride ?? (ModifierKeys & Keys.Control) == Keys.Control;
+        private bool IsAltModifierDown() => isAltHeld_TestOverride ?? (ModifierKeys & Keys.Alt) == Keys.Alt;
+        private bool IsShiftModifierDown() => isShiftHeld_TestOverride ?? (ModifierKeys & Keys.Shift) == Keys.Shift;
 
         /// <summary>
         /// A stamp/clone gesture can only pick up on-canvas pixels. When it starts on a marquee
@@ -574,8 +575,8 @@ namespace screenzap
             if (activeTextAnnotation?.IsEditing == true)
                 return false;
 
-            // A held mouse button means a drag gesture owns the selection right now.
-            if (MouseButtons != MouseButtons.None)
+            // A drag gesture owns the selection while it is in flight.
+            if (IsMouseGestureInFlight)
                 return false;
 
             var focused = ActiveControl ?? FindFocusedControl();
@@ -715,6 +716,11 @@ namespace screenzap
             // sibling controls such as the history thumbnails. Make the user's click authoritative
             // so editor shortcuts are routed back to this ImageEditor.
             pictureBox1.Focus();
+
+            // The mouse takes the selection over from any open keyboard move/resize gesture;
+            // close it here so its presses commit as their own undo step rather than folding
+            // into whatever the drag about to start does.
+            EndAnnotationKeyTransform();
 
             if (isStraightenToolActive)
             {

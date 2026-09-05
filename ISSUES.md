@@ -14,7 +14,7 @@ Interaction-model unification, covered by `ToolModeRegressionTests` (15 tests):
 
 - **Move/Select is a first-class rail tool** — new button at the top of the vertical rail, checked whenever `ActiveTool.None`; clicking it cancels whatever tool/modal is engaged.
 - **Rail icons toggle uniformly** — clicking a checked icon deactivates it; for censor/straighten that means cancel-without-apply (same as Esc). Supersedes the "second click is a no-op" behavior; programmatic `ActivateStraightenTool` remains idempotent (no reference-line reset, bug #7 below).
-- **Unified Escape ladder** — each press steps out ONE level: in-flight gesture → selection (both shape+text at once) → active tool → nothing. Text object-mode Escape no longer short-circuits in `HandleTextToolKeyDown`.
+- **Unified Escape ladder** — each press steps out ONE level: in-flight gesture → active tool → selection (both shape+text at once) → nothing. Leaving a MODE outranks dropping a selection (reordered Sept 2026), so Esc out of text editing puts the text tool away on the very next press. Text object-mode Escape no longer short-circuits in `HandleTextToolKeyDown`.
 - **Gesture rule for armed drawing tools (Blender-style)** — DRAG draws (even over existing elements; the rectangle-interior deadzone is gone), CLICK selects the element under the cursor (text > shape > layer) and drops the tool; click on empty canvas keeps the tool armed. Selection handles are inert and hidden while a tool is armed.
 
 ## Fixed (tool-mode hardening, July 2026)

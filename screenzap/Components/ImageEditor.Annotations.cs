@@ -130,6 +130,10 @@ namespace screenzap
         private AnnotationShape? hoveredAnnotation;
         private AnnotationHandle activeAnnotationHandle = AnnotationHandle.None;
         private Point annotationDragOriginPixel;
+        // The rectangle corner diagonally opposite the grabbed handle, captured once at
+        // drag-start. Re-deriving it from the (continuously renormalized) shape each mouse-move
+        // loses it the moment the drag crosses the anchor and the rect flips.
+        private Point annotationResizeAnchorPixel;
         private Point annotationDraftAnchorPixel;
         // Gesture rule state: a draft that never travels beyond the click slop (in screen
         // pixels) is resolved as a selection click on mouse-up, not a draw.
@@ -200,9 +204,13 @@ namespace screenzap
 
         // Tests can't manipulate real keyboard state and Control.ModifierKeys is a static
         // property tied to OS input. Set via TestSetShiftHeld to simulate Shift-during-click.
-        private bool isShiftHeld_TestOverride;
+        // Tri-state on purpose: null reads the real keyboard, false PINS the modifier off. A
+        // plain bool could only force Shift on, so a test asserting the no-Shift behaviour
+        // still read the user's actual keyboard and failed whenever they happened to be
+        // holding Shift while the suite ran.
+        private bool? isShiftHeld_TestOverride;
         private bool IsMultiSelectModifierDown =>
-            isShiftHeld_TestOverride || ModifierKeys.HasFlag(Keys.Shift);
+            isShiftHeld_TestOverride ?? ModifierKeys.HasFlag(Keys.Shift);
 
         // True while UpdateAnnotationToolbarFromSelection is programmatically pushing
         // values into the comboboxes so SelectedIndexChanged handlers don't write the
@@ -427,6 +435,7 @@ namespace screenzap
             isDrawingAnnotation = false;
             workingAnnotation = null;
             activeAnnotationHandle = AnnotationHandle.None;
+            annotationResizeAnchorPixel = Point.Empty;
             annotationSnapshotBeforeEdit = null;
             annotationChangedDuringDrag = false;
             highlighterResizeOriginalPoints = null;
@@ -870,17 +879,16 @@ namespace screenzap
                 return;
             }
 
-            // While a drawing tool is armed, drags draw rather than resize — don't
-            // advertise handles that won't respond.
-            if (activeDrawingTool != DrawingTool.None)
-            {
-                return;
-            }
+            // While a drawing tool is armed, drags draw rather than resize, so the grab
+            // handles stay hidden — but the dashed outline goes up regardless. A shape that
+            // has just been drawn IS selected (Delete and the arrow keys act on it), and
+            // painting nothing at all made it look as though it had been dropped.
+            bool toolArmed = activeDrawingTool != DrawingTool.None;
 
-            if (annotation.Type == AnnotationType.Highlighter)
+            if (toolArmed || annotation.Type == AnnotationType.Highlighter)
             {
-                // Dashed bounding outline makes the (otherwise edge-less) selection legible; the
-                // corner handles below it let the stroke be scaled for finer adjustments.
+                // Dashed bounding outline makes the selection legible without the handles —
+                // for a highlighter that is the only edge it has to show.
                 var outline = PixelToFormCoord(annotation.GetBounds());
                 outline.Inflate(4, 4);
                 using var selectionPen = new Pen(Color.FromArgb(200, Color.DodgerBlue), 1.5f)
@@ -888,6 +896,11 @@ namespace screenzap
                     DashStyle = System.Drawing.Drawing2D.DashStyle.Dash
                 };
                 graphics.DrawRectangle(selectionPen, outline);
+            }
+
+            if (toolArmed)
+            {
+                return;
             }
 
             const int handleSize = 8;
@@ -1215,6 +1228,10 @@ namespace screenzap
                 activeAnnotationHandle = handle;
                 annotationDragOriginPixel = pixelPoint;
                 annotationChangedDuringDrag = false;
+                if (selectedAnnotation != null && IsCornerHandle(handle))
+                {
+                    annotationResizeAnchorPixel = OppositeRectCorner(selectedAnnotation, handle);
+                }
                 // Snapshot the source polyline so the resize scales from the original each move.
                 if (selectedAnnotation?.Type == AnnotationType.Highlighter && IsCornerHandle(handle) && selectedAnnotation.Points != null)
                 {
@@ -1398,13 +1415,7 @@ namespace screenzap
                     }
                     else
                     {
-                        var targetPoint = pixelPoint;
-                        if (workingAnnotation.Type == AnnotationType.Rectangle && ModifierKeys.HasFlag(Keys.Shift))
-                        {
-                            targetPoint = ConstrainPointToSquare(annotationDraftAnchorPixel, pixelPoint);
-                        }
-
-                        workingAnnotation.End = ClampPointToImage(targetPoint);
+                        workingAnnotation.End = ResolveDraftCorner(pixelPoint);
                     }
 
                     annotationChangedDuringDrag = true;
@@ -1477,6 +1488,7 @@ namespace screenzap
                 }
 
                 activeAnnotationHandle = AnnotationHandle.None;
+            annotationResizeAnchorPixel = Point.Empty;
                 annotationSnapshotBeforeEdit = null;
                 annotationChangedDuringDrag = false;
                 highlighterResizeOriginalPoints = null;
@@ -1502,6 +1514,14 @@ namespace screenzap
             {
                 ScaleHighlighterByHandle(target, activeAnnotationHandle, clamped);
                 return;
+            }
+
+            // Shift squares a rectangle off the corner opposite the grabbed handle — the same
+            // constraint the draw gesture applies, so reshaping an existing rect obeys the same
+            // rule as drawing a new one.
+            if (target.Type == AnnotationType.Rectangle && IsCornerHandle(activeAnnotationHandle) && IsShiftModifierDown())
+            {
+                clamped = ConstrainDraftCornerToSquare(annotationResizeAnchorPixel, clamped);
             }
 
             switch (activeAnnotationHandle)
@@ -1534,19 +1554,17 @@ namespace screenzap
                 case AnnotationHandle.ArrowEnd:
                     target.End = clamped;
                     break;
+                // All four rect corners are the same gesture: the captured anchor and the
+                // cursor define the new rectangle, which NormalizeRectangleAnnotation below
+                // sorts back into top-left/bottom-right. Writing the dragged corner into the
+                // live Start/End instead used to collapse the rect once a drag crossed the
+                // anchor, because the flip renormalized the very corner being measured from.
                 case AnnotationHandle.RectTopLeft:
-                    target.Start = new Point(clamped.X, clamped.Y);
-                    break;
                 case AnnotationHandle.RectTopRight:
-                    target.Start = new Point(target.Start.X, clamped.Y);
-                    target.End = new Point(clamped.X, target.End.Y);
-                    break;
                 case AnnotationHandle.RectBottomLeft:
-                    target.Start = new Point(clamped.X, target.Start.Y);
-                    target.End = new Point(target.End.X, clamped.Y);
-                    break;
                 case AnnotationHandle.RectBottomRight:
-                    target.End = new Point(clamped.X, clamped.Y);
+                    target.Start = annotationResizeAnchorPixel;
+                    target.End = clamped;
                     break;
                 default:
                     break;
@@ -1557,6 +1575,18 @@ namespace screenzap
                 NormalizeRectangleAnnotation(target);
             }
         }
+
+        /// <summary>
+        /// The corner that stays put while <paramref name="handle"/> is dragged. Rect
+        /// annotations are kept normalized, so Start is the top-left and End the bottom-right.
+        /// </summary>
+        private static Point OppositeRectCorner(AnnotationShape shape, AnnotationHandle handle) => handle switch
+        {
+            AnnotationHandle.RectTopLeft => shape.End,
+            AnnotationHandle.RectTopRight => new Point(shape.Start.X, shape.End.Y),
+            AnnotationHandle.RectBottomLeft => new Point(shape.End.X, shape.Start.Y),
+            _ => shape.Start,
+        };
 
         private static bool IsCornerHandle(AnnotationHandle handle) =>
             handle is AnnotationHandle.RectTopLeft or AnnotationHandle.RectTopRight
@@ -1676,6 +1706,253 @@ namespace screenzap
             }
         }
 
+        // Keyboard move/resize gesture. Auto-repeat fires a KeyDown per repeat, so the
+        // presses are folded into ONE undo step that is closed when the arrow key comes back
+        // up (ImageEditor_KeyUp) or when the mouse takes the selection over.
+        private bool annotationKeyTransformActive;
+        private bool annotationKeyTransformChanged;
+        private bool annotationKeyTransformStagedShapes;
+        private bool annotationKeyTransformStagedTexts;
+
+        /// <summary>
+        /// Arrow keys drive the selected annotation objects: plain arrows nudge the whole
+        /// selection (shapes and texts alike) by one image pixel, Shift accelerates to 10, and
+        /// Ctrl resizes the selected SHAPES instead of moving them (Ctrl+Shift for 10px steps).
+        /// Returns false whenever the selection isn't the right target, so the marquee handler
+        /// and WinForms' own navigation still get their turn.
+        /// </summary>
+        private bool TryHandleAnnotationArrowKey(Keys keyData)
+        {
+            var code = keyData & Keys.KeyCode;
+            bool ctrl = (keyData & Keys.Control) == Keys.Control;
+            bool alt = (keyData & Keys.Alt) == Keys.Alt;
+            bool shift = (keyData & Keys.Shift) == Keys.Shift;
+
+            // Alt+Arrow belongs to the marquee's clone gesture and to the system menu.
+            if (alt)
+                return false;
+
+            if (!HasEditableImage || pictureBox1?.Image == null)
+                return false;
+
+            if (isStraightenToolActive || isCensorToolActive || isFreeRotateToolActive)
+                return false;
+
+            // While a text annotation is being edited the arrows belong to the caret. Moving
+            // the box out from under the caret mid-word is never what the keystroke meant.
+            if (activeTextAnnotation?.IsEditing == true)
+                return false;
+
+            if (selectedShapes.Count == 0 && selectedTexts.Count == 0)
+                return false;
+
+            // A drag owns the selection while it is in flight.
+            if (IsMouseGestureInFlight)
+                return false;
+
+            var focused = ActiveControl ?? FindFocusedControl();
+            if (focused is TextBoxBase || focused is ComboBox || focused is ToolStrip || focused?.Parent is ToolStrip)
+                return false;
+
+            int step = shift ? 10 : 1;
+            var delta = code switch
+            {
+                Keys.Left => new Size(-step, 0),
+                Keys.Right => new Size(step, 0),
+                Keys.Up => new Size(0, -step),
+                Keys.Down => new Size(0, step),
+                _ => Size.Empty,
+            };
+
+            if (delta.IsEmpty)
+                return false;
+
+            BeginAnnotationKeyTransform();
+
+            bool changed = ctrl
+                ? ResizeSelectedShapesBy(delta)
+                : MoveSelectionByKeyboard(delta);
+
+            if (changed)
+            {
+                annotationKeyTransformChanged = true;
+                pictureBox1.Invalidate();
+            }
+
+            // Claimed either way: a press that clamped against the canvas edge must still not
+            // fall through and become focus navigation.
+            return true;
+        }
+
+        /// <summary>
+        /// True while one of THIS editor's mouse gestures is in flight. The arrow-key handlers
+        /// used to ask Control.MouseButtons instead, which reports a button held anywhere in
+        /// the OS — including over an entirely different window — so a keyboard nudge silently
+        /// did nothing whenever the user happened to be holding a mouse button elsewhere.
+        /// </summary>
+        private bool IsMouseGestureInFlight =>
+            isDrawingAnnotation
+            || activeAnnotationHandle != AnnotationHandle.None
+            || isTextAnnotationDragging
+            || isDrawingRubberBand
+            || isMovingSelection
+            || isCtrlResizingSelection
+            || isLayerInteractionActive;
+
+        private bool MoveSelectionByKeyboard(Size delta)
+        {
+            var clamped = ClampMultiSelectionMoveDelta(new Point(delta.Width, delta.Height));
+            if (clamped.X == 0 && clamped.Y == 0)
+            {
+                return false;
+            }
+
+            TranslateSelectionBy(clamped);
+            return true;
+        }
+
+        /// <summary>
+        /// Grow or shrink every selected shape from its far corner - the one the bottom-right
+        /// resize handle drags. Rectangles and arrows move their End point; a highlighter's
+        /// sampled path is scaled about its top-left so the stroke keeps its shape, matching
+        /// what a corner-handle drag does to it.
+        /// </summary>
+        private bool ResizeSelectedShapesBy(Size delta)
+        {
+            bool changed = false;
+            foreach (var shape in selectedShapes)
+            {
+                changed |= ResizeShapeBy(shape, delta);
+            }
+
+            return changed;
+        }
+
+        private bool ResizeShapeBy(AnnotationShape shape, Size delta)
+        {
+            var bounds = GetImageBounds();
+
+            if (shape.Type == AnnotationType.Highlighter)
+            {
+                return ScaleHighlighterBy(shape, delta, bounds);
+            }
+
+            // Rectangles are normalized (Start is the top-left), so their far corner may not
+            // shrink past the anchor - IsValid() drops a rectangle thinner than 2px. An arrow's
+            // End is free to travel anywhere but onto its Start.
+            var end = shape.End;
+            int minX = shape.Type == AnnotationType.Rectangle ? shape.Start.X + 2 : bounds.Left;
+            int minY = shape.Type == AnnotationType.Rectangle ? shape.Start.Y + 2 : bounds.Top;
+
+            var moved = new Point(
+                Math.Clamp(end.X + delta.Width, Math.Min(minX, bounds.Right), bounds.Right),
+                Math.Clamp(end.Y + delta.Height, Math.Min(minY, bounds.Bottom), bounds.Bottom));
+
+            if (moved == end || (shape.Type == AnnotationType.Arrow && moved == shape.Start))
+            {
+                return false;
+            }
+
+            shape.End = moved;
+            return true;
+        }
+
+        /// <summary>
+        /// Scale a freehand stroke so its bounding box grows by <paramref name="delta"/>, held
+        /// in place by its top-left corner. The new box is computed in integers and the points
+        /// are mapped onto it, so the outer bounds stay exact across repeated presses.
+        /// </summary>
+        private static bool ScaleHighlighterBy(AnnotationShape shape, Size delta, Rectangle bounds)
+        {
+            var points = shape.Points;
+            if (points == null || points.Count == 0)
+            {
+                return false;
+            }
+
+            var box = shape.GetBounds();
+            // A stroke drawn on a single axis has a zero-width or zero-height box; there is no
+            // ratio to scale on that axis, so leave it alone rather than exploding it.
+            int newWidth = box.Width == 0 ? 0 : Math.Max(1, box.Width + delta.Width);
+            int newHeight = box.Height == 0 ? 0 : Math.Max(1, box.Height + delta.Height);
+            newWidth = Math.Min(newWidth, bounds.Right - box.Left);
+            newHeight = Math.Min(newHeight, bounds.Bottom - box.Top);
+
+            if (newWidth == box.Width && newHeight == box.Height)
+            {
+                return false;
+            }
+
+            double scaleX = box.Width == 0 ? 1.0 : (double)newWidth / box.Width;
+            double scaleY = box.Height == 0 ? 1.0 : (double)newHeight / box.Height;
+
+            for (int i = 0; i < points.Count; i++)
+            {
+                var p = points[i];
+                points[i] = new Point(
+                    box.Left + (int)Math.Round((p.X - box.Left) * scaleX),
+                    box.Top + (int)Math.Round((p.Y - box.Top) * scaleY));
+            }
+
+            shape.Start = points[0];
+            shape.End = points[points.Count - 1];
+            return true;
+        }
+
+        private void BeginAnnotationKeyTransform()
+        {
+            if (annotationKeyTransformActive)
+            {
+                return;
+            }
+
+            annotationKeyTransformActive = true;
+            annotationKeyTransformChanged = false;
+
+            // Only stage the snapshots that aren't staged already - one left by another gesture
+            // belongs to that gesture, and stomping it would corrupt its undo step.
+            annotationKeyTransformStagedShapes = selectedShapes.Count > 0 && annotationSnapshotBeforeEdit == null;
+            if (annotationKeyTransformStagedShapes)
+            {
+                annotationSnapshotBeforeEdit = CloneAnnotations();
+            }
+
+            annotationKeyTransformStagedTexts = selectedTexts.Count > 0 && textAnnotationSnapshotBeforeEdit == null;
+            if (annotationKeyTransformStagedTexts)
+            {
+                textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
+            }
+        }
+
+        /// <summary>
+        /// Close the keyboard move/resize gesture, pushing the accumulated presses as a single
+        /// undo step. A gesture that never moved anything (every press clamped against an edge)
+        /// discards its own snapshots instead of pushing an empty step.
+        /// </summary>
+        private void EndAnnotationKeyTransform()
+        {
+            if (!annotationKeyTransformActive)
+            {
+                return;
+            }
+
+            annotationKeyTransformActive = false;
+
+            if (annotationKeyTransformChanged)
+            {
+                CommitAnnotationUndo();
+            }
+            else
+            {
+                if (annotationKeyTransformStagedShapes) annotationSnapshotBeforeEdit = null;
+                if (annotationKeyTransformStagedTexts) textAnnotationSnapshotBeforeEdit = null;
+            }
+
+            annotationKeyTransformChanged = false;
+            annotationKeyTransformStagedShapes = false;
+            annotationKeyTransformStagedTexts = false;
+        }
+
         /// <summary>
         /// Remove every selected shape and text annotation in one combined undo step.
         /// Caller is responsible for ensuring this is the intended action (e.g. Delete
@@ -1752,7 +2029,13 @@ namespace screenzap
             }
             else
             {
-                workingAnnotation.End = ClampPointToImage(pixelPoint);
+                // Space-translate moved the whole draft; its End is already final and the
+                // cursor is no longer sitting on a corner, so leave the geometry alone.
+                if (!annotationTranslateModeActive)
+                {
+                    workingAnnotation.End = ResolveDraftCorner(pixelPoint);
+                }
+
                 if (workingAnnotation.Type == AnnotationType.Rectangle)
                 {
                     NormalizeRectangleAnnotation(workingAnnotation);
@@ -1883,6 +2166,50 @@ namespace screenzap
             }
 
             return new Point(offsetX, offsetY);
+        }
+
+        /// <summary>
+        /// Turn a raw cursor position into the draft's far corner: Shift squares a rectangle
+        /// off the drag anchor, and the result is kept inside the canvas. Both the drag and
+        /// the release go through here — resolving the corner on mouse-move only left
+        /// mouse-up writing the unconstrained cursor position back into End, so a
+        /// Shift-drawn square snapped back to a rectangle the moment the button came up.
+        /// </summary>
+        private Point ResolveDraftCorner(Point pixelPoint)
+        {
+            if (workingAnnotation?.Type == AnnotationType.Rectangle && IsShiftModifierDown())
+            {
+                return ConstrainDraftCornerToSquare(annotationDraftAnchorPixel, pixelPoint);
+            }
+
+            return ClampPointToImage(pixelPoint);
+        }
+
+        /// <summary>
+        /// Square-constrain the dragged corner and keep it square inside the canvas. Clamping
+        /// the constrained point per-axis would shear the square back into a rectangle as soon
+        /// as the drag ran past an edge, so the side length is capped by the room available in
+        /// BOTH directions before the corner is placed.
+        /// </summary>
+        private Point ConstrainDraftCornerToSquare(Point anchor, Point current)
+        {
+            var square = ConstrainPointToSquare(anchor, current);
+            if (pictureBox1?.Image == null)
+            {
+                return square;
+            }
+
+            var bounds = GetImageBounds();
+            int signX = square.X >= anchor.X ? 1 : -1;
+            int signY = square.Y >= anchor.Y ? 1 : -1;
+            // ConstrainPointToSquare guarantees equal |dx| and |dy|, so either is the side.
+            int size = Math.Abs(square.X - anchor.X);
+
+            int roomX = signX > 0 ? bounds.Right - anchor.X : anchor.X - bounds.Left;
+            int roomY = signY > 0 ? bounds.Bottom - anchor.Y : anchor.Y - bounds.Top;
+            size = Math.Min(size, Math.Min(roomX, roomY));
+
+            return new Point(anchor.X + signX * size, anchor.Y + signY * size);
         }
 
         private static Point ConstrainPointToSquare(Point anchor, Point current)

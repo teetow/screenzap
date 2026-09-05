@@ -42,7 +42,7 @@ namespace screenzap
         private ToolStripTextBox? layerAngleTextBox;
         private CheckBox? layerAspectLockCheckBox;
         private bool isSyncingLayerToolbarControls;
-        private bool isLayerCropModifierHeld_TestOverride;
+        private bool? isLayerCropModifierHeld_TestOverride;
 
         // Handle dimensions in screen pixels (constant regardless of zoom).
         private const float LayerHandleScreenSize = 8f;
@@ -494,11 +494,11 @@ namespace screenzap
 
         private bool IsLayerCropModifierDown =>
             isLayerCropModifierHeld_TestOverride
-            || System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Control);
+            ?? System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Control);
 
         private bool IsLayerAspectInvertModifierDown =>
             isShiftHeld_TestOverride
-            || System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift);
+            ?? System.Windows.Forms.Control.ModifierKeys.HasFlag(System.Windows.Forms.Keys.Shift);
 
         private bool LayerAspectRatioLocked => layerAspectLockCheckBox?.Checked == true;
 

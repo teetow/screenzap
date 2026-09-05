@@ -61,12 +61,21 @@ namespace screenzap
             pictureBox1_MouseUp(pictureBox1!, up1);
             var down2 = new MouseEventArgs(button, 2, clientPoint.X, clientPoint.Y, 0);
             pictureBox1_MouseDown(pictureBox1!, down2);
-            // Fire the picturebox DoubleClick event, which any handler hooked to it depends on.
-            pictureBox1?.GetType()
-                .GetMethod("OnDoubleClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-                ?.Invoke(pictureBox1, new object[] { System.EventArgs.Empty });
+            // Windows raises both DoubleClick and MouseDoubleClick from WM_LBUTTONUP, ahead of
+            // MouseUp (Control.WmMouseUp). Raise both: DoubleClick alone leaves handlers hooked
+            // to MouseDoubleClick — which is where the editor listens — completely unexercised.
+            var dbl = new MouseEventArgs(button, 2, clientPoint.X, clientPoint.Y, 0);
+            InvokeProtectedMouseHandler("OnDoubleClick", dbl);
+            InvokeProtectedMouseHandler("OnMouseDoubleClick", dbl);
             var up2 = new MouseEventArgs(button, 2, clientPoint.X, clientPoint.Y, 0);
             pictureBox1_MouseUp(pictureBox1!, up2);
+        }
+
+        private void InvokeProtectedMouseHandler(string methodName, MouseEventArgs args)
+        {
+            typeof(Control)
+                .GetMethod(methodName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?.Invoke(pictureBox1, new object[] { args });
         }
 
         internal bool TestFireProcessCmdKey(Keys keyData)
@@ -238,10 +247,18 @@ namespace screenzap
         internal int TestSelectedShapeCount => selectedShapes.Count;
         internal int TestSelectedTextCount => selectedTexts.Count;
         internal IReadOnlyList<AnnotationShape> TestSelectedShapes => selectedShapes;
+        // The live lists, not the selection: undo rebuilds both from cloned snapshots, so a
+        // test holding a reference from before an undo would be inspecting an orphan.
+        internal IReadOnlyList<AnnotationShape> TestAnnotationShapes => annotationShapes;
+        internal IReadOnlyList<TextAnnotation> TestTextAnnotations => textAnnotations;
         internal IReadOnlyList<TextAnnotation> TestSelectedTexts => selectedTexts;
         internal string TestAnnotationColorButtonText => annotationColorButton?.Text ?? string.Empty;
         internal Color TestAnnotationColorButtonBackColor => annotationColorButton?.BackColor ?? Color.Empty;
 
+        // These PIN the modifier for the rest of the editor's life — passing false is an
+        // assertion that Shift is up, not a hand-back to the real keyboard. Tests that need
+        // the no-modifier path must say so, otherwise they read whatever the person running
+        // them happens to be holding.
         internal void TestSetShiftHeld(bool held) => isShiftHeld_TestOverride = held;
 
         internal void TestSetCtrlHeld(bool held) => isCtrlHeld_TestOverride = held;
@@ -357,6 +374,12 @@ namespace screenzap
         {
             if (pictureBox1 != null) pictureBox1.ZoomLevel = zoom;
         }
+
+        internal Components.Shared.ViewportMetrics TestViewportMetrics =>
+            pictureBox1?.Metrics ?? default;
+
+        /// <summary>Pan the viewport the way a middle-drag does, so tests can dirty the view.</summary>
+        internal void TestPanViewportBy(Size delta) => pictureBox1?.PanBy(delta);
 
         internal bool TestAlphaViewEnabled => pictureBox1?.AlphaViewEnabled ?? true;
 

@@ -264,15 +264,16 @@ namespace Screenzap.ViewportTests
                 Assert.Equal(1, editor.TestSelectedShapeCount);
                 Assert.Equal(screenzap.DrawingTool.Rectangle, editor.TestActiveDrawingTool);
 
-                // Esc #1: clear the selection, keep the tool.
-                editor.TestFireKeyDown(Keys.Escape);
-                Assert.Equal(0, editor.TestSelectedShapeCount);
-                Assert.Equal(screenzap.DrawingTool.Rectangle, editor.TestActiveDrawingTool);
-
-                // Esc #2: drop the tool → Move mode.
+                // Esc #1: drop the tool → Move mode. Leaving a MODE outranks dropping a
+                // selection, so the shape you just drew survives and is now handle-draggable.
                 editor.TestFireKeyDown(Keys.Escape);
                 Assert.Equal(screenzap.DrawingTool.None, editor.TestActiveDrawingTool);
                 Assert.True(editor.TestMoveButtonChecked);
+                Assert.Equal(1, editor.TestSelectedShapeCount);
+
+                // Esc #2: clear the selection.
+                editor.TestFireKeyDown(Keys.Escape);
+                Assert.Equal(0, editor.TestSelectedShapeCount);
             });
         }
 
