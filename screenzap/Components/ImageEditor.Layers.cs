@@ -680,7 +680,18 @@ namespace screenzap
             isLayerInteractionActive = false;
             var handleAtBegin = activeLayerHandle;
             activeLayerHandle = ImageLayerHandle.None;
+            _ = handleAtBegin; // currently unused; kept for future per-handle metadata.
 
+            CommitLayerInteractionUndo();
+        }
+
+        /// <summary>
+        /// Push the layer diff captured since the interaction began as one undo step, or drop
+        /// the snapshot when nothing actually moved. Shared by the mouse gesture and the
+        /// keyboard one so both produce identical undo entries.
+        /// </summary>
+        private void CommitLayerInteractionUndo()
+        {
             if (!layerChangedDuringInteraction || layerInteractionLayersBefore == null)
             {
                 // Interaction was a click without drag — discard the captured before-state.
@@ -718,7 +729,123 @@ namespace screenzap
             layerInteractionLayersBefore = null;
             layerChangedDuringInteraction = false;
             UpdateLayerToolbarState();
-            _ = handleAtBegin; // currently unused; kept for future per-handle metadata.
+        }
+
+        // Keyboard move/resize of the selected layer. Mirrors the annotation gesture: presses
+        // coalesce into one undo step, closed when the arrow key comes back up.
+        private bool layerKeyTransformActive;
+
+        /// <summary>
+        /// Arrow keys drive the selected image layer, matching what they already do for shapes
+        /// and texts: plain arrows nudge it a pixel, Shift accelerates to 10, and Ctrl resizes
+        /// from the frame's top-left (free aspect — the aspect lock belongs to corner drags).
+        /// </summary>
+        private bool TryHandleLayerArrowKey(System.Windows.Forms.Keys keyData)
+        {
+            var code = keyData & System.Windows.Forms.Keys.KeyCode;
+            bool ctrl = (keyData & System.Windows.Forms.Keys.Control) == System.Windows.Forms.Keys.Control;
+            bool alt = (keyData & System.Windows.Forms.Keys.Alt) == System.Windows.Forms.Keys.Alt;
+            bool shift = (keyData & System.Windows.Forms.Keys.Shift) == System.Windows.Forms.Keys.Shift;
+
+            if (alt || !HasSelectedLayer || !HasEditableImage)
+            {
+                return false;
+            }
+
+            if (isStraightenToolActive || isCensorToolActive || isFreeRotateToolActive)
+            {
+                return false;
+            }
+
+            if (activeTextAnnotation?.IsEditing == true)
+            {
+                return false;
+            }
+
+            // A mouse gesture owns the layer while it is in flight.
+            if (isLayerInteractionActive && !layerKeyTransformActive)
+            {
+                return false;
+            }
+
+            var focused = ActiveControl ?? FindFocusedControl();
+            if (focused is System.Windows.Forms.TextBoxBase || focused is System.Windows.Forms.ComboBox
+                || focused is System.Windows.Forms.ToolStrip || focused?.Parent is System.Windows.Forms.ToolStrip)
+            {
+                return false;
+            }
+
+            int step = shift ? 10 : 1;
+            var delta = code switch
+            {
+                System.Windows.Forms.Keys.Left => new SizeF(-step, 0),
+                System.Windows.Forms.Keys.Right => new SizeF(step, 0),
+                System.Windows.Forms.Keys.Up => new SizeF(0, -step),
+                System.Windows.Forms.Keys.Down => new SizeF(0, step),
+                _ => SizeF.Empty,
+            };
+
+            if (delta.IsEmpty)
+            {
+                return false;
+            }
+
+            BeginLayerKeyTransform();
+
+            var layer = imageLayers[selectedLayerIndex];
+            var frame = layer.Frame;
+            RectangleF next;
+            if (ctrl)
+            {
+                // Anchored at the top-left, like the shape keyboard resize.
+                next = new RectangleF(
+                    frame.X,
+                    frame.Y,
+                    Math.Max(1f, frame.Width + delta.Width),
+                    Math.Max(1f, frame.Height + delta.Height));
+            }
+            else
+            {
+                next = frame;
+                next.Offset(delta.Width, delta.Height);
+            }
+
+            if (next != frame)
+            {
+                layer.Frame = next;
+                layerChangedDuringInteraction = true;
+                UpdateLayerToolbarState();
+                pictureBox1?.Invalidate();
+            }
+
+            // Claimed either way, so a clamped press cannot become focus navigation.
+            return true;
+        }
+
+        private void BeginLayerKeyTransform()
+        {
+            if (layerKeyTransformActive)
+            {
+                return;
+            }
+
+            layerKeyTransformActive = true;
+            layerInteractionLayersBefore ??= CloneLayers();
+            layerChangedDuringInteraction = false;
+        }
+
+        /// <summary>
+        /// Close the keyboard layer gesture, committing the accumulated presses as one step.
+        /// </summary>
+        private void EndLayerKeyTransform()
+        {
+            if (!layerKeyTransformActive)
+            {
+                return;
+            }
+
+            layerKeyTransformActive = false;
+            CommitLayerInteractionUndo();
         }
 
         private void DrawSelectedLayerOverlay(Graphics graphics)

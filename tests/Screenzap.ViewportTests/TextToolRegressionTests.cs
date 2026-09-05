@@ -62,8 +62,7 @@ namespace Screenzap.ViewportTests
                 editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = editor.TestImagePixelToClient(pixelPoint);
-                var handled = (bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!;
+                var handled = editor.TestHandleTextToolMouseDown(pixelPoint);
 
                 Assert.True(handled);
                 Assert.Equal(distinctFont, fontCombo.Text);
@@ -99,11 +98,10 @@ namespace Screenzap.ViewportTests
                 editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = editor.TestImagePixelToClient(pixelPoint);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
+                Assert.True(editor.TestHandleTextToolMouseDown(pixelPoint));
                 Assert.False(annotation.IsEditing);
 
-                var handled = (bool)InvokePrivate(editor, "HandleTextToolKeyPress", new KeyPressEventArgs('Z'))!;
+                var handled = editor.TestHandleTextToolKeyPress('Z');
 
                 Assert.False(handled);
                 Assert.False(annotation.IsEditing);
@@ -133,15 +131,14 @@ namespace Screenzap.ViewportTests
                 editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = editor.TestImagePixelToClient(pixelPoint);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
+                Assert.True(editor.TestHandleTextToolMouseDown(pixelPoint));
 
                 var keyDown = new KeyEventArgs(Keys.Enter);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolKeyDown", keyDown)!);
+                Assert.True(editor.TestHandleTextToolKeyDown(keyDown.KeyData));
                 Assert.True(annotation.IsEditing);
 
                 var keyPress = new KeyPressEventArgs('!');
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolKeyPress", keyPress)!);
+                Assert.True(editor.TestHandleTextToolKeyPress(keyPress.KeyChar));
                 Assert.Equal("Hello!", annotation.Text);
             });
         }
@@ -168,17 +165,16 @@ namespace Screenzap.ViewportTests
                 editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = editor.TestImagePixelToClient(pixelPoint);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
+                Assert.True(editor.TestHandleTextToolMouseDown(pixelPoint));
 
                 var keyDown = new KeyEventArgs(Keys.Enter);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolKeyDown", keyDown)!);
+                Assert.True(editor.TestHandleTextToolKeyDown(keyDown.KeyData));
                 Assert.True(annotation.IsEditing);
 
-                InvokePrivate(editor, "SuspendTextEditingForUiFocus");
+                editor.TestSuspendTextEditingForUiFocus();
                 Assert.False(annotation.IsEditing);
 
-                InvokePrivate(editor, "ResumeSelectedTextEditing");
+                editor.TestResumeSelectedTextEditing();
                 Assert.True(annotation.IsEditing);
             });
         }
@@ -205,21 +201,19 @@ namespace Screenzap.ViewportTests
                 editor.TestAddTextAnnotation(annotation);
 
                 var pixelPoint = new Point(annotation.Position.X + 2, annotation.Position.Y + 2);
-                var formPoint = editor.TestImagePixelToClient(pixelPoint);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", pixelPoint, formPoint)!);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolKeyDown", new KeyEventArgs(Keys.Enter))!);
+                Assert.True(editor.TestHandleTextToolMouseDown(pixelPoint));
+                Assert.True(editor.TestHandleTextToolKeyDown(Keys.Enter));
                 Assert.True(annotation.IsEditing);
 
                 var dummyInput = new TextBox();
                 editor.Controls.Add(dummyInput);
                 dummyInput.Focus();
-                InvokePrivate(editor, "SuspendTextEditingForUiFocus");
+                editor.TestSuspendTextEditingForUiFocus();
                 Assert.False(annotation.IsEditing);
 
                 int beforeCount = editor.TestTextAnnotationCount;
                 var emptyPixel = new Point(120, 70);
-                var emptyForm = editor.TestImagePixelToClient(emptyPixel);
-                Assert.True((bool)InvokePrivate(editor, "HandleTextToolMouseDown", emptyPixel, emptyForm)!);
+                Assert.True(editor.TestHandleTextToolMouseDown(emptyPixel));
 
                 Assert.Equal(beforeCount, editor.TestTextAnnotationCount);
                 Assert.True(annotation.IsEditing);
@@ -304,12 +298,5 @@ namespace Screenzap.ViewportTests
             return value!;
         }
 
-        private static object? InvokePrivate(object target, string methodName, params object[] args)
-        {
-            var argTypes = args.Select(arg => arg.GetType()).ToArray();
-            var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic, binder: null, types: argTypes, modifiers: null);
-            Assert.NotNull(method);
-            return method!.Invoke(target, args);
-        }
     }
 }

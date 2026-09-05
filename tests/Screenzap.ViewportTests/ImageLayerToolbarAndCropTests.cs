@@ -10,6 +10,10 @@ namespace Screenzap.ViewportTests
         private static screenzap.ImageEditor PrepareEditor(out RectangleF frame)
         {
             var editor = new screenzap.ImageEditor();
+            // This suite drives Ctrl (crop) and Shift (aspect invert) heavily, and both read
+            // the real keyboard unless pinned. It keeps its own uncleared — therefore
+            // transparent — canvas, so it takes the pinning without the rest of the fixture.
+            EditorFixture.PinModifiers(editor);
             using var canvas = new Bitmap(80, 60);
             editor.LoadImage(canvas);
 

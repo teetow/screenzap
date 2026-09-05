@@ -22,6 +22,11 @@ namespace screenzap.lib
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool AddClipboardFormatListener(IntPtr hwnd);
 
+        //Reference https://www.pinvoke.net/default.aspx/user32/RemoveClipboardFormatListener.html
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+
         //Reference https://www.pinvoke.net/default.aspx/user32.setparent
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);

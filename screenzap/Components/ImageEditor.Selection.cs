@@ -721,6 +721,7 @@ namespace screenzap
             // close it here so its presses commit as their own undo step rather than folding
             // into whatever the drag about to start does.
             EndAnnotationKeyTransform();
+            EndLayerKeyTransform();
 
             if (isStraightenToolActive)
             {

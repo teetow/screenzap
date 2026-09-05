@@ -194,9 +194,31 @@ namespace screenzap
             );
         }
 
+        // The window handle registered with AddClipboardFormatListener, remembered so Dispose
+        // can unregister exactly what was registered. ClipboardMonitor pairs these calls; this
+        // editor used to add without ever removing, leaving destroyed windows on the OS
+        // clipboard-listener chain (265 of them over a single test run).
+        private IntPtr clipboardListenerHandle = IntPtr.Zero;
+
+        /// <summary>
+        /// Undo the AddClipboardFormatListener from <see cref="Init"/>. Safe to call twice --
+        /// the handle is cleared once released.
+        /// </summary>
+        private void ReleaseClipboardListener()
+        {
+            if (clipboardListenerHandle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            NativeMethods.RemoveClipboardFormatListener(clipboardListenerHandle);
+            clipboardListenerHandle = IntPtr.Zero;
+        }
+
         private void Init()
         {
-            NativeMethods.AddClipboardFormatListener(Handle);
+            clipboardListenerHandle = Handle;
+            NativeMethods.AddClipboardFormatListener(clipboardListenerHandle);
 
             BackColor = Color.Gray;
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, true);
@@ -2122,7 +2144,9 @@ namespace screenzap
             // clones. Arrows are dialog-navigation keys and never reach KeyDown, so they are
             // intercepted here.
             if ((keyData & Keys.KeyCode) is Keys.Left or Keys.Right or Keys.Up or Keys.Down
-                && (TryHandleAnnotationArrowKey(keyData) || TryHandleMarqueeArrowKey(keyData)))
+                && (TryHandleAnnotationArrowKey(keyData)
+                    || TryHandleLayerArrowKey(keyData)
+                    || TryHandleMarqueeArrowKey(keyData)))
             {
                 return true;
             }
@@ -2584,6 +2608,7 @@ namespace screenzap
             if (e.KeyCode is Keys.Left or Keys.Right or Keys.Up or Keys.Down)
             {
                 EndAnnotationKeyTransform();
+                EndLayerKeyTransform();
             }
 
             // Close keyboard-initiated stamp/clone gestures when their modifier is released.

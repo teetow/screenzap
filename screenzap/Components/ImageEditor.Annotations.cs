@@ -1524,6 +1524,15 @@ namespace screenzap
                 clamped = ConstrainDraftCornerToSquare(annotationResizeAnchorPixel, clamped);
             }
 
+            // Dragging either end of an arrow with Shift snaps it about the OTHER end, so the
+            // held end stays put — the same rule the draw gesture uses about its anchor.
+            if (target.Type == AnnotationType.Arrow && IsShiftModifierDown()
+                && activeAnnotationHandle is AnnotationHandle.ArrowStart or AnnotationHandle.ArrowEnd)
+            {
+                var pivot = activeAnnotationHandle == AnnotationHandle.ArrowStart ? target.End : target.Start;
+                clamped = ClampPointToImage(ConstrainPointToAngle(pivot, clamped));
+            }
+
             switch (activeAnnotationHandle)
             {
                 case AnnotationHandle.Move:
@@ -1635,6 +1644,15 @@ namespace screenzap
 
             double sx = dx / denomX;
             double sy = dy / denomY;
+
+            // Shift locks the stroke's aspect: take the larger magnitude so the drag still
+            // follows the cursor outward, and keep each axis' direction so it can still mirror.
+            if (IsShiftModifierDown())
+            {
+                double uniform = Math.Max(Math.Abs(sx), Math.Abs(sy));
+                sx = uniform * Math.Sign(sx);
+                sy = uniform * Math.Sign(sy);
+            }
 
             var pts = target.Points;
             for (int i = 0; i < highlighterResizeOriginalPoints.Count; i++)
@@ -1770,7 +1788,7 @@ namespace screenzap
             BeginAnnotationKeyTransform();
 
             bool changed = ctrl
-                ? ResizeSelectedShapesBy(delta)
+                ? ResizeSelectedShapesBy(delta) | ResizeSelectedTextsBy(delta)
                 : MoveSelectionByKeyboard(delta);
 
             if (changed)
@@ -1827,6 +1845,50 @@ namespace screenzap
 
             return changed;
         }
+
+        /// <summary>
+        /// Ctrl+Arrow on a text object changes its FONT SIZE — the only sizing a text block
+        /// really has. Right/Down grow and Left/Up shrink, matching which arrows grow a shape.
+        /// Previously these presses were swallowed and did nothing at all.
+        /// </summary>
+        private bool ResizeSelectedTextsBy(Size delta)
+        {
+            if (selectedTexts.Count == 0)
+            {
+                return false;
+            }
+
+            // One axis is always zero (arrows are single-axis), so this is just "the step".
+            int step = delta.Width + delta.Height;
+            if (step == 0)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            foreach (var text in selectedTexts)
+            {
+                float next = Math.Clamp(text.FontSize + step, MinKeyboardFontSize, MaxKeyboardFontSize);
+                if (Math.Abs(next - text.FontSize) < 0.01f)
+                {
+                    continue;
+                }
+
+                text.FontSize = next;
+                changed = true;
+            }
+
+            if (changed && selectedTextAnnotation != null)
+            {
+                // Keep the text toolbar showing what the selection actually is.
+                SyncTextToolbarFromAnnotation(selectedTextAnnotation);
+            }
+
+            return changed;
+        }
+
+        private const float MinKeyboardFontSize = 4f;
+        private const float MaxKeyboardFontSize = 400f;
 
         private bool ResizeShapeBy(AnnotationShape shape, Size delta)
         {
@@ -2177,12 +2239,43 @@ namespace screenzap
         /// </summary>
         private Point ResolveDraftCorner(Point pixelPoint)
         {
-            if (workingAnnotation?.Type == AnnotationType.Rectangle && IsShiftModifierDown())
+            if (IsShiftModifierDown())
             {
-                return ConstrainDraftCornerToSquare(annotationDraftAnchorPixel, pixelPoint);
+                if (workingAnnotation?.Type == AnnotationType.Rectangle)
+                {
+                    return ConstrainDraftCornerToSquare(annotationDraftAnchorPixel, pixelPoint);
+                }
+
+                if (workingAnnotation?.Type == AnnotationType.Arrow)
+                {
+                    return ClampPointToImage(ConstrainPointToAngle(annotationDraftAnchorPixel, pixelPoint));
+                }
             }
 
             return ClampPointToImage(pixelPoint);
+        }
+
+        /// <summary>
+        /// Snap the far end of a line to the nearest 45 degrees about its anchor, preserving the
+        /// cursor's distance from the anchor. The rectangle's Shift means "square"; for a line
+        /// the same key means "straight", which is the only constraint an arrow has to offer.
+        /// </summary>
+        private static Point ConstrainPointToAngle(Point anchor, Point current)
+        {
+            double dx = current.X - anchor.X;
+            double dy = current.Y - anchor.Y;
+            if (dx == 0 && dy == 0)
+            {
+                return current;
+            }
+
+            const double Step = Math.PI / 4;
+            double length = Math.Sqrt(dx * dx + dy * dy);
+            double snapped = Math.Round(Math.Atan2(dy, dx) / Step) * Step;
+
+            return new Point(
+                anchor.X + (int)Math.Round(Math.Cos(snapped) * length),
+                anchor.Y + (int)Math.Round(Math.Sin(snapped) * length));
         }
 
         /// <summary>

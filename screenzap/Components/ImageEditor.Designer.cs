@@ -15,6 +15,7 @@
         {
             if (disposing)
             {
+                ReleaseClipboardListener();
                 undoStack?.Dispose();
                 ReleaseCensorPreviewBuffer();
                 components?.Dispose();

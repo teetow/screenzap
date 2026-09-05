@@ -78,6 +78,23 @@ namespace screenzap
                 ?.Invoke(pictureBox1, new object[] { args });
         }
 
+        // Seams for the text-tool handlers that report whether they CLAIMED the input. The
+        // public pipeline swallows that answer, which is why these were being reached through
+        // reflection — a rename would have broken those tests silently at runtime instead of
+        // at compile time.
+        internal bool TestHandleTextToolMouseDown(Point imagePixel) =>
+            HandleTextToolMouseDown(imagePixel, PixelToFormCoord(imagePixel));
+
+        internal bool TestHandleTextToolKeyDown(Keys keyData) =>
+            HandleTextToolKeyDown(new KeyEventArgs(keyData));
+
+        internal bool TestHandleTextToolKeyPress(char ch) =>
+            HandleTextToolKeyPress(new KeyPressEventArgs(ch));
+
+        internal void TestSuspendTextEditingForUiFocus() => SuspendTextEditingForUiFocus();
+
+        internal void TestResumeSelectedTextEditing() => ResumeSelectedTextEditing();
+
         internal bool TestFireProcessCmdKey(Keys keyData)
         {
             var msg = new Message();

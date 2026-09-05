@@ -45,21 +45,22 @@ Covered by `ToolModeRegressionTests` (8 tests, real input pipeline).
 
 | # | Area | Description |
 |---|------|-------------|
-| L1 | Layer handles | Hit-tolerance is always 8px screen-pixels regardless of zoom level — at high zoom, handles become very hard to hit |
+| ~~L1~~ | Layer handles | ~~Hit-tolerance is always 8px regardless of zoom~~ **Not reproducible** — `HitTestLayerHandle` computes `tol = screenTol / zoom` (and unrotates the test point first), so handles keep a constant 8px *screen* target at every zoom |
 | L2 | Layer selection | No multi-layer selection; only one layer at a time |
 | L3 | Layer resize | ~~No Shift-to-preserve-aspect-ratio~~ **Fixed** — corner drags preserve aspect by default ("Lock aspect ratio" starts checked); Shift inverts the lock for the duration of a drag |
 | L4 | Annotation tools | ~~Arrow/Rectangle still use click-to-create semantics; no Move-mode integration (Slice 3 work)~~ **Fixed in `7cdb845`** — click-to-select/drag/delete/Escape all work in Move mode; 6 unit tests added |
+| L6 | Keyboard sizing | Ctrl+Arrow resizes a shape or layer from its top-left and a text by font size; it does **not** honour the layer aspect-ratio lock (that stays a corner-drag behaviour) |
 | L5 | Rendering | Handle/box rendering was verified via offscreen `Graphics` only; pixel-snapping at fractional zoom was not eyeballed in live GUI before the kit was built |
 
 ## Open — Unexercised flows (potential bugs unknown)
 
 | # | Area | Notes |
 |---|------|-------|
-| U1 | Annotation drawing (Arrow, Rectangle) | Cascade was touched during Slice 2 but not driven through the real input pipeline |
-| U2 | Censor / Straighten / Crop tools | Not covered by `--ui-capture` |
-| U3 | Color correction | Not covered |
-| U4 | ClipboardHistoryPanel thumbnail strip | Clicking thumbnails to switch items not wired through kit |
-| U5 | Reload / Revert / Duplicate | Not covered |
+| ~~U1~~ | Annotation drawing (Arrow, Rectangle) | **Covered** — `AnnotationSelectionTests`, `ShapeKeyboardTransformTests`, `ConstraintAndLayerKeyboardTests` all drive the real input pipeline |
+| ~~U2~~ | Censor / Straighten / Crop tools | **Covered** — `ToolModeRegressionTests` (censor + straighten modal keyboard), `ImageEditorCropTests` |
+| U3 | Color correction | **Still uncovered** — `ToolMenuCommandTests` only asserts the menu item enables; no behavioural test |
+| ~~U4~~ | ClipboardHistoryPanel thumbnail strip | **Covered** — `ThumbnailActionRegressionTests`, `ClipboardHistoryRegressionTests` |
+| ~~U5~~ | Reload / Revert / Duplicate | **Covered** — `ImageEditorReloadTests`, `RevertUndoRegressionTests`, `ThumbnailActionRegressionTests` |
 | U6 | Multi-monitor / DPI scaling | Not covered |
 | U7 | Persistence reload across app-restart | Not covered |
-| U8 | Unstaged changes from separate agent | `ClipboardHistoryItem.cs`, `ClipboardHistoryPanel.cs`, `ImageEditor.cs`, `ThumbnailActionRegressionTests.cs` — review before continuing |
+| ~~U8~~ | Unstaged changes from separate agent | **Done** — committed in `a62a0a3` |
