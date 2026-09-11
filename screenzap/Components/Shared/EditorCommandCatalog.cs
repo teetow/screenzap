@@ -34,6 +34,7 @@ namespace screenzap.Components.Shared
             { EditorCommandId.FlipVertical, new EditorCommandDescriptor { Id = EditorCommandId.FlipVertical, Label = "Flip Vertical", ToolTip = "Flip vertically", Icon = IconChar.UpDown } },
             { EditorCommandId.StraightenTool, new EditorCommandDescriptor { Id = EditorCommandId.StraightenTool, Label = "Straighten", ToolTip = "Auto-detect and correct rotation/perspective", Icon = IconChar.Rotate, Shortcut = Keys.Control | Keys.L } },
             { EditorCommandId.FreeRotateTool, new EditorCommandDescriptor { Id = EditorCommandId.FreeRotateTool, Label = "Free Rotate", ToolTip = "Rotate the image or selection by any angle", Icon = IconChar.ArrowsSpin } },
+            { EditorCommandId.DeJpeg, new EditorCommandDescriptor { Id = EditorCommandId.DeJpeg, Label = "De-JPEG", ToolTip = "Remove JPEG artifacts", Icon = IconChar.Magic } },
             { EditorCommandId.ResizeImage, new EditorCommandDescriptor { Id = EditorCommandId.ResizeImage, Label = "Resize Image...", ToolTip = "Resize the image", Icon = IconChar.Expand } },
             { EditorCommandId.CensorTool, new EditorCommandDescriptor { Id = EditorCommandId.CensorTool, Label = "Censor", ToolTip = "Detect text and censor selections", Icon = IconChar.UserSecret, Shortcut = Keys.Control | Keys.E } },
             { EditorCommandId.ReplaceBackground, new EditorCommandDescriptor { Id = EditorCommandId.ReplaceBackground, Label = "Replace Background", ToolTip = "Replace the background", Icon = IconChar.Eraser, Shortcut = Keys.Control | Keys.B } },

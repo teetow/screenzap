@@ -72,6 +72,7 @@ namespace screenzap
     internal Action? ContentEditedCallback;
     private void MarkDirtyAndNotify()
     {
+        deJpegRevision++;
         hasUnsavedChanges = true;
         try { ContentEditedCallback?.Invoke(); }
         catch (Exception ex) { lib.Logger.Log($"ContentEditedCallback threw: {ex.Message}"); }
@@ -227,6 +228,7 @@ namespace screenzap
             InitializeToolbarLayout();
             InitializeLayerToolbar();
             InitializeResizeImageCommand();
+            InitializeDeJpegCommand();
             ConfigureToolbarIcons();
 
             MouseWheel += ImageEditor_MouseWheel;
@@ -700,6 +702,7 @@ namespace screenzap
             LogViewportDebug($"=== LoadImage START: imgData.Size={imgData.Size}, treatAsPlaceholder={treatAsPlaceholder} ===");
             LogViewportDebug($"LoadImage: current pictureBox1.ClientSize={pictureBox1.ClientSize}, panOffset={pictureBox1.Metrics.PanOffset}");
 
+            deJpegRevision++;
             isPlaceholderImage = treatAsPlaceholder;
             bufferTimestamp = treatAsPlaceholder ? (DateTime?)null : (ClipboardMetadata.LastCaptureTimestamp ?? DateTime.Now);
             currentSavePath = null;
@@ -1755,6 +1758,7 @@ namespace screenzap
                 expandCanvasToolStripButton.Enabled = enable;
             }
             UpdateResizeImageCommandState(enable);
+            if (deJpegButton != null) deJpegButton.Enabled = enable;
             if (flipHorizontalToolStripButton != null)
             {
                 flipHorizontalToolStripButton.Enabled = enable;
@@ -3414,6 +3418,7 @@ namespace screenzap
                 EditorCommandId.StraightenTool => HasEditableImage,
                 EditorCommandId.FreeRotateTool => HasEditableImage,
                 EditorCommandId.ResizeImage => HasEditableImage,
+                EditorCommandId.DeJpeg => HasEditableImage,
                 EditorCommandId.CensorTool => HasEditableImage,
                 EditorCommandId.ReplaceBackground => HasEditableImage,
                 EditorCommandId.ColorCorrect => HasEditableImage,
@@ -3503,6 +3508,9 @@ namespace screenzap
                     return ExecuteStraighten();
                 case EditorCommandId.FreeRotateTool:
                     return ActivateFreeRotateTool();
+                case EditorCommandId.DeJpeg:
+                    ShowDeJpegDialog();
+                    return true;
                 case EditorCommandId.ResizeImage:
                     if (!HasEditableImage) return false;
                     ShowResizeImageDialog();

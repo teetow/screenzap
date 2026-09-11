@@ -565,6 +565,7 @@ namespace screenzap.Components
             tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.StraightenTool));
             tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FreeRotateTool));
             tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ResizeImage));
+            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.DeJpeg));
             tools.DropDownItems.Add(new ToolStripSeparator());
             tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.CensorTool));
             tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ReplaceBackground));

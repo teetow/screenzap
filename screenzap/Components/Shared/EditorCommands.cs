@@ -36,7 +36,8 @@ namespace screenzap.Components.Shared
         CensorTool,
         ReplaceBackground,
         ColorCorrect,
-        OptimizeText
+        OptimizeText,
+        DeJpeg
     }
 
     internal sealed class EditorCommandDescriptor

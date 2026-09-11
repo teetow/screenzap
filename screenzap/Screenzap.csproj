@@ -89,6 +89,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Workflows\dejpeg-api.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Workflows\Start-ImageBackend.ps1" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="res\screenzap-icon.ico" />
     <Content Include="res\screenzap0001_fav.ico" />
     <Content Include="res\zap.wav">
