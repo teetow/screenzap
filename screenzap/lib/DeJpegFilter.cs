@@ -1,7 +1,8 @@
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json.Nodes;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using Microsoft.ML.OnnxRuntime;
+using Microsoft.Windows.AI.MachineLearning;
 
 namespace screenzap.lib;
 
@@ -10,93 +11,179 @@ internal interface IDeJpegFilter
     Task<byte[]> CleanAsync(byte[] png, IProgress<string>? progress, CancellationToken cancellation);
 }
 
-internal sealed class ComfyDeJpegFilter : IDeJpegFilter
+internal sealed class OnnxDeJpegFilter : IDeJpegFilter
 {
-    private readonly HttpClient client;
-    private readonly string workflow;
-    private readonly TimeSpan pollInterval;
-    private readonly TimeSpan timeout;
-
-    public ComfyDeJpegFilter(HttpClient client, string workflow,
-        TimeSpan? pollInterval = null, TimeSpan? timeout = null)
-    {
-        this.client = client;
-        this.workflow = workflow;
-        this.pollInterval = pollInterval ?? TimeSpan.FromSeconds(1);
-        this.timeout = timeout ?? TimeSpan.FromMinutes(10);
-    }
-
-    public static Uri ParseEndpoint(string value)
-    {
-        if (!Uri.TryCreate(value.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var uri)
-            || uri.Scheme != "http" || !uri.IsLoopback || !string.IsNullOrEmpty(uri.UserInfo)
-            || uri.AbsolutePath != "/" || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
-            throw new ArgumentException("Use a local ComfyUI address such as http://127.0.0.1:8188.");
-        return uri;
-    }
+    // Only one GPU job at a time, including jobs from other editor windows.
+    private static readonly SemaphoreSlim gpu = new(1, 1);
+    private static bool providersReady;
+    internal static string ModelPath => Path.Combine(AppContext.BaseDirectory, "Models", "swinir-jpeg10.onnx");
 
     public async Task<byte[]> CleanAsync(byte[] png, IProgress<string>? progress, CancellationToken cancellation)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        deadline.CancelAfter(timeout);
-        var token = deadline.Token;
+        progress?.Report("Preparing JPEG cleanup…");
+        await gpu.WaitAsync(cancellation).ConfigureAwait(false);
         try
         {
-            var graph = JsonNode.Parse(workflow)?.AsObject() ?? throw new InvalidOperationException("Invalid workflow JSON.");
-            progress?.Report("Preparing image…");
-            using var upload = new MultipartFormDataContent();
-            using var file = new ByteArrayContent(png);
-            file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
-            upload.Add(file, "image", $"screenzap-{Guid.NewGuid():N}.png");
-            upload.Add(new StringContent("input"), "type");
-            var uploaded = await SendJsonAsync(HttpMethod.Post, "upload/image", upload, token).ConfigureAwait(false);
-            var name = uploaded["name"]?.GetValue<string>() ?? throw new InvalidOperationException("ComfyUI did not return an uploaded filename.");
-            var folder = uploaded["subfolder"]?.GetValue<string>();
-            graph["1"]!["inputs"]!["image"] = string.IsNullOrEmpty(folder) ? name : folder + "/" + name;
-            graph["9"]!["inputs"]!["filename_prefix"] = $"Screenzap/{Guid.NewGuid():N}";
-            progress?.Report("Removing JPEG artifacts…");
-            using var payload = new StringContent(new JsonObject { ["prompt"] = graph }.ToJsonString(), Encoding.UTF8, "application/json");
-            var submitted = await SendJsonAsync(HttpMethod.Post, "prompt", payload, token).ConfigureAwait(false);
-            var id = submitted["prompt_id"]?.GetValue<string>() ?? throw new InvalidOperationException("ComfyUI rejected the workflow: " + submitted.ToJsonString());
-            while (true)
-            {
-                token.ThrowIfCancellationRequested();
-                var history = await SendJsonAsync(HttpMethod.Get, "history/" + Uri.EscapeDataString(id), null, token).ConfigureAwait(false);
-                if (history[id] is JsonObject job)
-                {
-                    var status = job["status"];
-                    if (status?["status_str"]?.GetValue<string>() == "error")
-                        throw new InvalidOperationException("JPEG cleanup failed: " + status.ToJsonString());
-                    if (status?["completed"]?.GetValue<bool>() == true)
-                    {
-                        var output = job["outputs"]?["9"]?["images"]?[0];
-                        if (output == null) throw new InvalidOperationException("ComfyUI completed without an output image.");
-                        string Field(string key) => Uri.EscapeDataString(output[key]?.GetValue<string>() ?? "");
-                        progress?.Report("Finishing cleanup…");
-                        return await client.GetByteArrayAsync($"view?filename={Field("filename")}&subfolder={Field("subfolder")}&type={Field("type")}", token).ConfigureAwait(false);
-                    }
-                }
-                await Task.Delay(pollInterval, token).ConfigureAwait(false);
-            }
+            await PrepareProvidersAsync(progress, cancellation).ConfigureAwait(false);
+            return await Task.Run(() => Clean(png, progress, cancellation), cancellation).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
-        {
-            throw new TimeoutException("ComfyUI timed out. Check its queue, model setup, and available GPU memory.");
-        }
-        catch (HttpRequestException ex)
-        {
-            throw new InvalidOperationException("Cannot reach local ComfyUI. Start it and check the server address. " + ex.Message, ex);
-        }
-        // Cancellation stops this client only. /interrupt could kill another client's job.
+        finally { gpu.Release(); }
     }
 
-    private async Task<JsonObject> SendJsonAsync(HttpMethod method, string path, HttpContent? content, CancellationToken token)
+    private static async Task PrepareProvidersAsync(IProgress<string>? progress, CancellationToken cancellation)
     {
-        using var request = new HttpRequestMessage(method, path) { Content = content };
-        using var response = await client.SendAsync(request, token).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"ComfyUI {path} failed ({(int)response.StatusCode}): {body[..Math.Min(body.Length, 2000)]}");
-        return JsonNode.Parse(body)?.AsObject() ?? throw new InvalidOperationException("ComfyUI returned invalid JSON.");
+        if (providersReady) return;
+        _ = OrtEnv.Instance();
+        var catalog = ExecutionProviderCatalog.GetDefault();
+        if (catalog != null)
+        {
+            progress?.Report("Preparing acceleration… First use may download Windows ML components.");
+            try
+            {
+                await catalog.EnsureAndRegisterCertifiedAsync().AsTask(cancellation).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                // An offline Store must not prevent use of bundled GPU/CPU providers.
+                Logger.Log($"Windows ML provider download unavailable: {ex.Message}");
+                await catalog.RegisterCertifiedAsync().AsTask(cancellation).ConfigureAwait(false);
+            }
+        }
+        cancellation.ThrowIfCancellationRequested();
+        providersReady = true;
+        Logger.Log("De-JPEG available providers: " + string.Join(", ", OrtEnv.Instance().GetEpDevices()
+            .Select(device => $"{device.EpName} ({device.HardwareDevice.Type})")));
+    }
+
+    private static byte[] Clean(byte[] png, IProgress<string>? progress, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        if (!File.Exists(ModelPath))
+            throw new FileNotFoundException("The De-JPEG model is missing. Reinstall Screenzap with its Models folder.", ModelPath);
+        using var options = new SessionOptions
+        {
+            EnableMemoryPattern = false,
+            ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+            IntraOpNumThreads = Math.Max(1, Math.Min(4, Environment.ProcessorCount - 2)),
+            InterOpNumThreads = 1,
+            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+        };
+        options.AddSessionConfigEntry("session.intra_op.allow_spinning", "0");
+        options.SetEpSelectionPolicy(ExecutionProviderDevicePolicy.MAX_PERFORMANCE);
+        var profileDirectory = Environment.GetEnvironmentVariable("SCREENZAP_DEJPEG_PROFILE_DIR");
+        if (!string.IsNullOrEmpty(profileDirectory))
+        {
+            Directory.CreateDirectory(profileDirectory);
+            options.ProfileOutputPathPrefix = Path.Combine(profileDirectory, "dejpeg-" + Guid.NewGuid().ToString("N"));
+            options.EnableProfiling = true;
+        }
+        // Dispose after each operation so the app does not hold GPU memory while idle.
+        using var session = new InferenceSession(ModelPath, options);
+        using var run = new RunOptions();
+        using var cancelRun = cancellation.Register(() => run.Terminate = true);
+        try
+        {
+            using var stream = new MemoryStream(png);
+            using var source = new Bitmap(stream);
+            using var result = DeJpegTiles.Clean(source, tile =>
+            {
+                using var input = OrtValue.CreateTensorValueFromMemory(tile, new long[] { 1, 3, DeJpegTiles.TileSize, DeJpegTiles.TileSize });
+                using var output = session.Run(run, new[] { "image" }, new[] { input }, new[] { "clean" });
+                return output[0].GetTensorDataAsSpan<float>().ToArray();
+            }, progress, cancellation);
+            using var encoded = new MemoryStream();
+            result.Save(encoded, ImageFormat.Png);
+            return encoded.ToArray();
+        }
+        catch (OnnxRuntimeException) when (cancellation.IsCancellationRequested)
+        { throw new OperationCanceledException(cancellation); }
+        finally
+        {
+            if (options.EnableProfiling) Logger.Log("De-JPEG profile: " + session.EndProfiling());
+        }
+    }
+}
+
+internal static class DeJpegTiles
+{
+    internal const int TileSize = 252;
+    private const int Border = 28;
+    private const int Step = TileSize - Border * 2;
+
+    // Feed each tile extra context, then keep its centre. Mirror at image edges,
+    // including tiny images; never resize. Tile origins stay on the seven-pixel grid.
+    internal static Bitmap Clean(Bitmap source, Func<float[], float[]> infer, IProgress<string>? progress, CancellationToken cancellation)
+    {
+        int width = source.Width, height = source.Height;
+        var bounds = new Rectangle(0, 0, width, height);
+        using var rgb = source.Clone(bounds, PixelFormat.Format32bppArgb);
+        var pixels = new byte[checked(width * height * 4)];
+        var locked = rgb.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            for (int y = 0; y < height; y++)
+                Marshal.Copy(locked.Scan0 + y * locked.Stride, pixels, y * width * 4, width * 4);
+        }
+        finally { rgb.UnlockBits(locked); }
+        var output = new byte[pixels.Length];
+        int plane = TileSize * TileSize;
+        var tile = new float[3 * plane];
+        int total = ((width + Step - 1) / Step) * ((height + Step - 1) / Step), done = 0;
+        for (int top = 0; top < height; top += Step)
+        for (int left = 0; left < width; left += Step)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            progress?.Report($"Removing JPEG artifacts… {++done}/{total}");
+            for (int y = 0; y < TileSize; y++)
+            for (int x = 0; x < TileSize; x++)
+            {
+                int pixel = (Reflect(top + y - Border, height) * width + Reflect(left + x - Border, width)) * 4;
+                int index = y * TileSize + x;
+                tile[index] = pixels[pixel + 2] / 255f;
+                tile[plane + index] = pixels[pixel + 1] / 255f;
+                tile[plane * 2 + index] = pixels[pixel] / 255f;
+            }
+            var clean = infer(tile);
+            cancellation.ThrowIfCancellationRequested();
+            if (clean.Length != tile.Length) throw new InvalidOperationException("The De-JPEG model returned an unexpected image size.");
+            for (int y = 0; y < Math.Min(Step, height - top); y++)
+            for (int x = 0; x < Math.Min(Step, width - left); x++)
+            {
+                int pixel = ((top + y) * width + left + x) * 4;
+                int index = (y + Border) * TileSize + x + Border;
+                output[pixel] = ToByte(clean[plane * 2 + index]);
+                output[pixel + 1] = ToByte(clean[plane + index]);
+                output[pixel + 2] = ToByte(clean[index]);
+                output[pixel + 3] = pixels[pixel + 3];
+            }
+        }
+        var result = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+        try
+        {
+            var target = result.LockBits(bounds, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                for (int y = 0; y < height; y++)
+                    Marshal.Copy(output, y * width * 4, target.Scan0 + y * target.Stride, width * 4);
+            }
+            finally { result.UnlockBits(target); }
+            return result;
+        }
+        catch { result.Dispose(); throw; }
+    }
+
+    private static byte ToByte(float value)
+    {
+        if (!float.IsFinite(value)) throw new InvalidOperationException("The De-JPEG model returned invalid pixels.");
+        return (byte)Math.Clamp((int)MathF.Round(value * 255), 0, 255);
+    }
+
+    private static int Reflect(int position, int length)
+    {
+        if (length == 1) return 0;
+        int period = 2 * (length - 1);
+        position = (position % period + period) % period;
+        return position < length ? position : period - position;
     }
 }

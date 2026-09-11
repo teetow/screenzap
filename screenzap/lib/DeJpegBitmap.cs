@@ -37,7 +37,7 @@ internal sealed class DeJpegBitmap : IDisposable
         using var stream = new MemoryStream(result);
         using var decoded = Image.FromStream(stream);
         if (decoded.Size != InputSize)
-            throw new InvalidOperationException($"ComfyUI returned {decoded.Width}×{decoded.Height}; expected {InputSize.Width}×{InputSize.Height}. Check the workflow dimensions.");
+            throw new InvalidOperationException($"De-JPEG returned {decoded.Width}×{decoded.Height}; expected {InputSize.Width}×{InputSize.Height}.");
         var restored = new Bitmap(original.Width, original.Height, PixelFormat.Format32bppArgb);
         try
         {

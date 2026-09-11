@@ -12,3 +12,10 @@ obj/
 *.user
 
 .fake
+# Generated De-JPEG model and build-only export environment
+screenzap/Models/*.onnx
+tools/dejpeg/.venv/
+tools/dejpeg/*.pth
+
+# Agent handoff notes (working scratch, not project docs)
+docs/image-improvement-handoff.md

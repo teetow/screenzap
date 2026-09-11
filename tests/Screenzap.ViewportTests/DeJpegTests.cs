@@ -1,11 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Net;
-using System.Net.Http;
-using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -18,100 +14,52 @@ namespace Screenzap.ViewportTests;
 
 public class DeJpegTests
 {
-    private static string Workflow => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Workflows", "dejpeg-api.json"));
-
-    [Fact]
-    public async Task ClientUploadsSubstitutesPollsAndRetrievesOnlyItsOutput()
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 13)]
+    [InlineData(391, 253)]
+    [InlineData(1201, 35)]
+    public void TilingPreservesEveryPixelAcrossSeamsAndSmallOrOddEdges(int width, int height)
     {
-        var paths = new List<string>();
-        int polls = 0;
-        using var handler = new Handler(async request =>
-        {
-            string path = request.RequestUri!.AbsolutePath;
-            paths.Add(path);
-            if (path == "/upload/image")
-            {
-                Assert.IsType<MultipartFormDataContent>(request.Content);
-                return Json("{\"name\":\"input.png\",\"subfolder\":\"test\"}");
-            }
-            if (path == "/prompt")
-            {
-                var graph = JsonNode.Parse(await request.Content!.ReadAsStringAsync())!["prompt"]!;
-                Assert.Equal("test/input.png", graph["1"]!["inputs"]!["image"]!.GetValue<string>());
-                Assert.Equal("006_colorCAR_DFWB_s126w7_SwinIR-M_jpeg10.pth", graph["2"]!["inputs"]!["model_name"]!.GetValue<string>());
-                Assert.Equal("ImageUpscaleWithModel", graph["3"]!["class_type"]!.GetValue<string>());
-                Assert.Equal(4, graph.AsObject().Count);
-                return Json("{\"prompt_id\":\"our-job\"}");
-            }
-            if (path == "/history/our-job")
-            {
-                if (polls++ == 0) return Json("{}");
-                return Json("""{"our-job":{"status":{"completed":true,"status_str":"success"},"outputs":{"9":{"images":[{"filename":"a b.png","subfolder":"Screenzap","type":"output"}]}}}}""");
-            }
-            Assert.Equal("/view", path);
-            Assert.Contains("filename=a%20b.png", request.RequestUri.Query);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 1, 2, 3 }) };
-        });
-        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:8188/") };
-        var result = await new ComfyDeJpegFilter(client, Workflow, TimeSpan.Zero).CleanAsync(
-            new byte[] { 42 }, null, CancellationToken.None);
-        Assert.Equal(new byte[] { 1, 2, 3 }, result);
-        Assert.Equal(new[] { "/upload/image", "/prompt", "/history/our-job", "/history/our-job", "/view" }, paths);
+        using var source = new Bitmap(width, height);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+            source.SetPixel(x, y, Color.FromArgb((x * 17 + y) % 256, (y * 11 + x) % 256, (x + y * 3) % 256));
+        using var result = DeJpegTiles.Clean(source, tile => tile, null, CancellationToken.None);
+        Assert.Equal(source.Size, result.Size);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+            Assert.Equal(source.GetPixel(x, y), result.GetPixel(x, y));
     }
 
-    [Theory]
-    [InlineData("validation")]
-    [InlineData("execution")]
-    [InlineData("missing_output")]
-    [InlineData("unavailable")]
-    public async Task ClientSurfacesFailures(string failure)
+    [Fact]
+    public void CancellationStopsBeforeTheNextTile()
     {
-        using var handler = new Handler(request =>
+        using var source = new Bitmap(600, 300);
+        using var cancellation = new CancellationTokenSource();
+        int calls = 0;
+        Assert.Throws<OperationCanceledException>(() => DeJpegTiles.Clean(source, tile =>
         {
-            if (failure == "unavailable") throw new HttpRequestException("Connection refused");
-            var path = request.RequestUri!.AbsolutePath;
-            if (path == "/upload/image") return Task.FromResult(Json("{\"name\":\"input.png\"}"));
-            if (path == "/prompt") return Task.FromResult(failure == "validation"
-                ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("Missing model") }
-                : Json("{\"prompt_id\":\"job\"}"));
-            return Task.FromResult(Json(failure == "execution"
-                ? """{"job":{"status":{"completed":false,"status_str":"error","messages":[["execution_error",{"exception_message":"out of memory"}]]}}}"""
-                : """{"job":{"status":{"completed":true,"status_str":"success"},"outputs":{}}}"""));
-        });
-        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:8188/") };
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new ComfyDeJpegFilter(client, Workflow, TimeSpan.Zero).CleanAsync(new byte[] { 1 }, null, CancellationToken.None));
-        Assert.Contains(failure switch { "validation" => "Missing model", "execution" => "out of memory", "unavailable" => "Start it", _ => "without an output" }, error.Message);
+            calls++;
+            cancellation.Cancel();
+            return tile;
+        }, null, cancellation.Token));
+        Assert.Equal(1, calls);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ClientCancellationAndTimeoutNeverInterruptOtherJobs(bool timeout)
+    public void InvalidModelOutputIsRejected(bool wrongSize)
     {
-        using var cts = new CancellationTokenSource();
-        var paths = new List<string>();
-        using var handler = new Handler(request =>
+        using var source = new Bitmap(1, 1);
+        Assert.Throws<InvalidOperationException>(() => DeJpegTiles.Clean(source, tile =>
         {
-            string path = request.RequestUri!.AbsolutePath; paths.Add(path);
-            if (path == "/upload/image") return Task.FromResult(Json("{\"name\":\"input.png\"}"));
-            if (path == "/prompt") return Task.FromResult(Json("{\"prompt_id\":\"job\"}"));
-            if (!timeout) cts.Cancel();
-            return Task.FromResult(Json("{}"));
-        });
-        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:8188/") };
-        var backend = new ComfyDeJpegFilter(client, Workflow, TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(100));
-        if (timeout) await Assert.ThrowsAsync<TimeoutException>(() => backend.CleanAsync(new byte[] { 1 }, null, cts.Token));
-        else await Assert.ThrowsAnyAsync<OperationCanceledException>(() => backend.CleanAsync(new byte[] { 1 }, null, cts.Token));
-        Assert.DoesNotContain("/interrupt", paths);
-        Assert.DoesNotContain("/queue", paths);
+            if (wrongSize) return Array.Empty<float>();
+            Array.Fill(tile, float.NaN);
+            return tile;
+        }, null, CancellationToken.None));
     }
-
-    [Theory]
-    [InlineData("https://example.com")]
-    [InlineData("http://192.168.1.10:8188")]
-    [InlineData("http://localhost:8188/other")]
-    public void EndpointIsStrictlyLocal(string address) => Assert.Throws<ArgumentException>(() => ComfyDeJpegFilter.ParseEndpoint(address));
 
     [Fact]
     public void BitmapRestoresSizeAndExactAlphaAndRejectsWrongDimensions()
@@ -179,7 +127,7 @@ public class DeJpegTests
             using var source = new Bitmap(32, 32);
             var backend = new DelayedBackend();
             bool current = true;
-            using var dialog = new DeJpegDialog(source, () => current, _ => backend);
+            using var dialog = new DeJpegDialog(source, () => current, () => backend);
             dialog.CreateControl();
             var task = dialog.CleanAsync();
             PumpUntil(() => backend.Started.Task.IsCompleted);
@@ -201,7 +149,7 @@ public class DeJpegTests
         {
             using var source = new Bitmap(47, 31);
             var backend = new DelayedBackend();
-            using var dialog = new DeJpegDialog(source, () => true, _ => backend);
+            using var dialog = new DeJpegDialog(source, () => true, () => backend);
             using var timer = new System.Windows.Forms.Timer { Interval = 20 };
             timer.Tick += (_, _) =>
             {
@@ -236,11 +184,4 @@ public class DeJpegTests
     { using var image = editor.CloneBaseBitmapForTests(); Assert.Equal(color.ToArgb(), image!.GetPixel(10, 10).ToArgb()); }
     private static byte[] Png(Image image)
     { using var stream = new MemoryStream(); image.Save(stream, ImageFormat.Png); return stream.ToArray(); }
-    private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
-    private sealed class Handler : HttpMessageHandler
-    {
-        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> send;
-        internal Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) => this.send = send;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request);
-    }
 }

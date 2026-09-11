@@ -1,8 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <PlatformTarget>x64</PlatformTarget>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion>10.0.18362.0</SupportedOSPlatformVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -22,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="2.3.42" />
     <PackageReference Include="Nito.AsyncEx" Version="5.1.0" />
     <PackageReference Include="OpenCvSharp4.Extensions" Version="4.10.0.20241108" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
@@ -89,8 +91,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Workflows\dejpeg-api.json" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Workflows\Start-ImageBackend.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="ThirdParty\*.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Models\SwinIR-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Models\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Models\swinir-jpeg10.onnx" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="res\screenzap-icon.ico" />
     <Content Include="res\screenzap0001_fav.ico" />
     <Content Include="res\zap.wav">
@@ -100,6 +104,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <Target Name="RequireDeJpegModel" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\Models\swinir-jpeg10.onnx')" Text="De-JPEG model missing. Run tools/dejpeg/prepare.ps1 once before building." />
+  </Target>
 
   <Target Name="InstallStableOutput" AfterTargets="Build" Condition="'$(InstallAfterBuild)' == 'true'">
     <ItemGroup>

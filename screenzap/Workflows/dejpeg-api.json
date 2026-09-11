@@ -1,6 +1,0 @@
-{
-  "1": {"class_type": "LoadImage", "inputs": {"image": "input.png"}},
-  "2": {"class_type": "UpscaleModelLoader", "inputs": {"model_name": "006_colorCAR_DFWB_s126w7_SwinIR-M_jpeg10.pth"}},
-  "3": {"class_type": "ImageUpscaleWithModel", "inputs": {"image": ["1", 0], "upscale_model": ["2", 0]}},
-  "9": {"class_type": "SaveImage", "inputs": {"images": ["3", 0], "filename_prefix": "Screenzap/dejpeg"}}
-}

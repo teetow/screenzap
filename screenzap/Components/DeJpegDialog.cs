@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Net.Http;
 using System.Windows.Forms;
 using screenzap.lib;
 
@@ -12,14 +11,14 @@ internal sealed class DeJpegDialog : Form
     private readonly ProgressBar progressBar = new() { Dock = DockStyle.Fill, Style = ProgressBarStyle.Marquee };
     private readonly Bitmap source;
     private readonly Func<bool> isCurrent;
-    private readonly Func<string, IDeJpegFilter>? backendFactory;
+    private readonly Func<IDeJpegFilter>? backendFactory;
     private CancellationTokenSource? pending;
     private bool finished;
     internal Bitmap? Result { get; private set; }
     internal string StatusForDiagnostics => status.Text;
     internal bool FinishedForDiagnostics => finished;
 
-    internal DeJpegDialog(Image image, Func<bool> isCurrent, Func<string, IDeJpegFilter>? backendFactory = null)
+    internal DeJpegDialog(Image image, Func<bool> isCurrent, Func<IDeJpegFilter>? backendFactory = null)
     {
         source = new Bitmap(image);
         this.isCurrent = isCurrent;
@@ -53,13 +52,7 @@ internal sealed class DeJpegDialog : Form
         try
         {
             if (!isCurrent()) throw new InvalidOperationException("The image changed. Close and try again.");
-            string address = Environment.GetEnvironmentVariable("SCREENZAP_COMFYUI_URL") ?? "http://127.0.0.1:8188";
-            using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-            { BaseAddress = ComfyDeJpegFilter.ParseEndpoint(address), Timeout = TimeSpan.FromSeconds(30) };
-            if (backendFactory == null)
-                await ComfyBackendLauncher.EnsureAvailableAsync(client, progress, cancellation.Token);
-            var backend = backendFactory?.Invoke(address) ?? new ComfyDeJpegFilter(client,
-                await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Workflows", "dejpeg-api.json"), cancellation.Token));
+            var backend = backendFactory?.Invoke() ?? new OnnxDeJpegFilter();
             var result = await Task.Run(async () =>
             {
                 using var input = new DeJpegBitmap(snapshot);

@@ -5,6 +5,9 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using screenzap.lib;
 using System.Windows.Forms;
 using screenzap;
 using screenzap.Components.Shared;
@@ -12,19 +15,19 @@ using Xunit;
 
 namespace Screenzap.ViewportTests;
 
-// Explicit opt-in: these tests use the actual GPU/backend, no injected responses.
-public sealed class LiveComfyFactAttribute : FactAttribute
+// Explicit opt-in: these tests use the bundled model and Windows ML providers, no injected responses.
+public sealed class LiveDeJpegFactAttribute : FactAttribute
 {
-    public LiveComfyFactAttribute()
+    public LiveDeJpegFactAttribute()
     {
-        if (Environment.GetEnvironmentVariable("SCREENZAP_LIVE_COMFYUI") != "1")
-            Skip = "Set SCREENZAP_LIVE_COMFYUI=1 and SCREENZAP_LIVE_INPUT_DIR to run actual GPU/UI validation.";
+        if (Environment.GetEnvironmentVariable("SCREENZAP_LIVE_DEJPEG") != "1")
+            Skip = "Set SCREENZAP_LIVE_DEJPEG=1 and SCREENZAP_LIVE_INPUT_DIR to run actual GPU/UI validation.";
     }
 }
 
 public class LiveDeJpegTests
 {
-    [LiveComfyFact]
+    [LiveDeJpegFact]
     public void RealOneClickCleanupUndoRedo()
     {
         string directory = Environment.GetEnvironmentVariable("SCREENZAP_LIVE_INPUT_DIR")
@@ -37,6 +40,32 @@ public class LiveDeJpegTests
         {
             StaTest.Run(() => Exercise(file, artifacts));
         }
+    }
+
+    [LiveDeJpegFact]
+    public async Task RealCancellationReleasesGpuForTheNextRun()
+    {
+        string directory = Environment.GetEnvironmentVariable("SCREENZAP_LIVE_INPUT_DIR")!;
+        byte[] input = await File.ReadAllBytesAsync(Path.Combine(directory, "screenshot.png"));
+        using var cancellation = new CancellationTokenSource();
+        var progress = new ImmediateProgress(message =>
+        {
+            if (message.StartsWith("Removing JPEG artifacts")) cancellation.Cancel();
+        });
+        var filter = new OnnxDeJpegFilter();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => filter.CleanAsync(input, progress, cancellation.Token));
+        byte[] result = await filter.CleanAsync(input, null, CancellationToken.None);
+        using var image = new Bitmap(new MemoryStream(result));
+        Assert.True(image.Width > 0);
+        // Verify the Windows ML runtime came from the app bundle.
+        using var process = Process.GetCurrentProcess();
+        var module = process.Modules.Cast<ProcessModule>().Single(m => m.ModuleName.Equals("Microsoft.Windows.AI.MachineLearning.dll", StringComparison.OrdinalIgnoreCase));
+        Assert.StartsWith(AppContext.BaseDirectory, module.FileName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class ImmediateProgress(Action<string> report) : IProgress<string>
+    {
+        public void Report(string value) => report(value);
     }
 
     private static void Exercise(string file, string artifacts)

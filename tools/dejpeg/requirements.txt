@@ -1,0 +1,4 @@
+spandrel==0.4.1
+onnx==1.19.1
+onnxruntime==1.24.4
+numpy==2.4.1

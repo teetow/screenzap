@@ -38,8 +38,21 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Setup model export Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Prepare De-JPEG model
+        run: ./tools/dejpeg/prepare.ps1
+
       - name: Publish
-        run: dotnet publish screenzap/Screenzap.csproj -c Release -o ${{ github.workspace }}\publish\Screenzap
+        env:
+          DOTNET_PROCESSOR_COUNT: '4'
+        run: dotnet publish screenzap/Screenzap.csproj -c Release -m:2 -p:UseSharedCompilation=false -o ${{ github.workspace }}\publish\Screenzap
+
+      - name: Package app, runtime and model
+        run: Compress-Archive -Path publish/Screenzap/* -DestinationPath publish/Screenzap.zip
 
       - name: upload windows artifact
         uses: actions/upload-release-asset@v1
@@ -47,6 +60,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: D:\a\screenzap\screenzap\publish\Screenzap\Screenzap.exe
-          asset_name: Screenzap-${{ github.ref_name }}.exe
-          asset_content_type: application/octet-stream
+          asset_path: ${{ github.workspace }}\publish\Screenzap.zip
+          asset_name: Screenzap-${{ github.ref_name }}.zip
+          asset_content_type: application/zip
