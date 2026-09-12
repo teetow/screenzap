@@ -3101,11 +3101,16 @@ namespace screenzap
             // selection-origin / canvas-center behavior.
             var canvasSize = pictureBox1.Image.Size;
             RectangleF frame;
+            // Placement is rounded to whole pixels: halving an odd span (an odd-sized paste, or
+            // a canvas whose parity differs from the paste) otherwise parks the layer on a
+            // half-pixel, and a half-pixel destination makes the bake resample every pixel in
+            // the region. The NearestNeighbor viewport snaps that away on screen, so an
+            // unrounded frame looks perfectly 1:1 right up until it is committed.
             if (dropCenter.HasValue)
             {
                 frame = new RectangleF(
-                    dropCenter.Value.X - source.Width / 2f,
-                    dropCenter.Value.Y - source.Height / 2f,
+                    MathF.Round(dropCenter.Value.X - source.Width / 2f),
+                    MathF.Round(dropCenter.Value.Y - source.Height / 2f),
                     source.Width,
                     source.Height);
             }
@@ -3114,8 +3119,8 @@ namespace screenzap
                 frame = !Selection.IsEmpty
                     ? new RectangleF(Selection.X, Selection.Y, source.Width, source.Height)
                     : new RectangleF(
-                        (canvasSize.Width - source.Width) / 2f,
-                        (canvasSize.Height - source.Height) / 2f,
+                        MathF.Round((canvasSize.Width - source.Width) / 2f),
+                        MathF.Round((canvasSize.Height - source.Height) / 2f),
                         source.Width,
                         source.Height);
             }

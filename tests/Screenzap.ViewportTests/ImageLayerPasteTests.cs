@@ -1,4 +1,6 @@
+using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using screenzap.Components;
 using screenzap.Components.Shared;
 using Xunit;
@@ -98,6 +100,66 @@ namespace Screenzap.ViewportTests
                 Assert.Equal(Color.Lime.ToArgb(), composite.GetPixel(20, 15).ToArgb());
                 // Corner is still white (untouched by layer).
                 Assert.Equal(Color.White.ToArgb(), composite.GetPixel(0, 0).ToArgb());
+            });
+        }
+
+        [Fact]
+        public void Paste_CentredOnOddParityCanvas_LandsOnWholePixels()
+        {
+            StaTest.Run(() =>
+            {
+                // 64-21 and 48-13 are both odd, so the "/ 2f" centring used to park the layer
+                // on a half-pixel. The NearestNeighbor viewport snapped that away on screen, so
+                // the misalignment only became visible once the paste was baked.
+                using var editor = EditorFixture.WithCanvas(64, 48);
+                using var pasted = new Bitmap(21, 13);
+                editor.SetInternalClipboardImageForDiagnostics(pasted);
+                Assert.True(editor.PasteFromClipboardForDiagnostics());
+
+                var frame = editor.GetImageLayerFrameForTests(0);
+                Assert.Equal(frame.X, MathF.Round(frame.X));
+                Assert.Equal(frame.Y, MathF.Round(frame.Y));
+            });
+        }
+
+        [Fact]
+        public void ApplyFloatingPaste_BakesPastedPixelsVerbatim_NoResampling()
+        {
+            StaTest.Run(() =>
+            {
+                // A 1:1 paste must survive the commit bit-for-bit. A checkerboard is the
+                // harshest probe available: any resampling at all turns it to grey mush.
+                using var editor = EditorFixture.WithCanvas(64, 48);
+
+                using var pasted = new Bitmap(21, 13, PixelFormat.Format32bppArgb);
+                for (int y = 0; y < pasted.Height; y++)
+                {
+                    for (int x = 0; x < pasted.Width; x++)
+                    {
+                        int v = (x + y) % 2 == 0 ? 0 : 255;
+                        pasted.SetPixel(x, y, Color.FromArgb(255, v, v, v));
+                    }
+                }
+
+                editor.SetInternalClipboardImageForDiagnostics(pasted);
+                Assert.True(editor.PasteFromClipboardForDiagnostics());
+
+                var frame = editor.GetImageLayerFrameForTests(0);
+                Assert.True(editor.ApplyFloatingPasteForTests());
+
+                using var baked = editor.CloneBaseBitmapForTests()!;
+                int originX = (int)MathF.Round(frame.X);
+                int originY = (int)MathF.Round(frame.Y);
+
+                for (int y = 0; y < pasted.Height; y++)
+                {
+                    for (int x = 0; x < pasted.Width; x++)
+                    {
+                        Assert.Equal(
+                            pasted.GetPixel(x, y).ToArgb(),
+                            baked.GetPixel(originX + x, originY + y).ToArgb());
+                    }
+                }
             });
         }
 

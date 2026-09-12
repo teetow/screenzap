@@ -951,6 +951,22 @@ namespace screenzap
                         layer.Fill, GraphicsUnit.Pixel);
                     graphics.Restore(state);
                 }
+                else if (dest.Width == layer.Fill.Width && dest.Height == layer.Fill.Height)
+                {
+                    // Native scale: the layer must land pixel-for-pixel. Graphics.FromImage hands
+                    // back GDI+'s defaults (bilinear + PixelOffsetMode.None), which stay exact on
+                    // a whole-pixel destination but smear the entire region across its neighbours
+                    // the moment it is not — so pin the sampling rather than trusting the caller's
+                    // state and the frame's fractional part. Same convention as the censor, rotate
+                    // and resize paths. Scaled layers fall through and keep the caller's setup.
+                    var previousInterpolation = graphics.InterpolationMode;
+                    var previousPixelOffset = graphics.PixelOffsetMode;
+                    graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+                    graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                    graphics.DrawImage(layer.Source, dest, layer.Fill, GraphicsUnit.Pixel);
+                    graphics.InterpolationMode = previousInterpolation;
+                    graphics.PixelOffsetMode = previousPixelOffset;
+                }
                 else
                 {
                     graphics.DrawImage(layer.Source, dest, layer.Fill, GraphicsUnit.Pixel);
