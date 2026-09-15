@@ -23,18 +23,23 @@ namespace screenzap.Components.Shared
         /// <summary>Load the given history item into the presenter and restore any stashed state.</summary>
         void LoadHistoryItem(ClipboardHistoryItem item);
 
-        /// <summary>Snapshot transient editor state (e.g. undo stack, current image) into the item before switching away.</summary>
-        void StashHistoryItemState(ClipboardHistoryItem item);
-
         /// <summary>
-        /// Copy live editing state into the item for a periodic autosave, while the user keeps
-        /// working. Unlike <see cref="StashHistoryItemState"/> this must not take anything away
-        /// from the presenter — in particular it must not extract the undo stack, which is a
-        /// move, not a copy. Presenters with no recoverable live state can leave it a no-op.
+        /// Copy the presenter's live document into the item. Idempotent and non-destructive: the
+        /// presenter keeps everything it had, so this is safe to run repeatedly while the user
+        /// is still working, and the host does exactly that before every save. Presenters with
+        /// no live state of their own can leave it a no-op.
         /// </summary>
-        void FlushLiveStateForAutosave(ClipboardHistoryItem item)
+        void CaptureLiveStateInto(ClipboardHistoryItem item)
         {
         }
+
+        /// <summary>
+        /// Capture, then hand over anything the presenter can only give away once — the undo
+        /// stack is a move rather than a copy — because the presenter is leaving this item.
+        /// Only call this when switching away from the item; on any path where editing
+        /// continues use <see cref="CaptureLiveStateInto"/>, which takes nothing with it.
+        /// </summary>
+        void StashHistoryItemState(ClipboardHistoryItem item);
 
         /// <summary>The current content rendered by the presenter, or null if nothing is loaded. Caller owns the returned bitmap (for images).</summary>
         object? GetCurrentContent();

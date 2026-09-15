@@ -264,7 +264,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void Autosave_PutsAFloatingPasteOnDisk_WithoutAnyCleanShutdown()
+        public void DebouncedSave_PutsAFloatingPasteOnDisk_WithoutAnyCleanShutdown()
         {
             WithTempRoot(root =>
             {
@@ -308,11 +308,11 @@ namespace Screenzap.ViewportTests
                     editor.SetSelectedLayerYForTests(7f);
                     Application.DoEvents();
 
-                    Assert.True(host.HasUnflushedLiveEditsForTests);
-                    host.TriggerLiveStateAutosaveForTests();
-                    Assert.False(host.HasUnflushedLiveEditsForTests);
+                    Assert.True(host.HasUncapturedEditsForTests);
+                    host.TriggerPersistedHistorySaveForTests();
+                    Assert.False(host.HasUncapturedEditsForTests);
 
-                    // Undo history is a move, not a copy — the autosave must not have taken it.
+                    // Undo history is a move, not a copy — capturing must not have taken it.
                     var presenter = (IClipboardDocumentPresenter)editor;
                     Assert.True(presenter.CanExecute(EditorCommandId.Undo));
 
@@ -338,7 +338,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void Autosave_IsANoopUntilSomethingIsEdited()
+        public void Save_DoesNotRecaptureWhenNothingWasEdited()
         {
             WithTempRoot(root =>
             {
@@ -371,15 +371,122 @@ namespace Screenzap.ViewportTests
                     Assert.True(host.ActivateHistoryItem(seeded));
                     Application.DoEvents();
 
-                    host.TriggerLiveStateAutosaveForTests();
-                    Assert.False(host.HasUnflushedLiveEditsForTests);
+                    host.TriggerPersistedHistorySaveForTests();
+                    Assert.False(host.HasUncapturedEditsForTests);
 
                     var currentBefore = seeded.CurrentPngContentForTests;
-                    host.TriggerLiveStateAutosaveForTests();
+                    host.TriggerPersistedHistorySaveForTests();
 
-                    // Nothing edited, so the item's content was not rebuilt.
+                    // Nothing edited, so the item's content was not re-encoded.
                     Assert.Same(currentBefore, seeded.CurrentPngContentForTests);
                 });
+            });
+        }
+
+        [Fact]
+        public void Capture_RefreshesTheThumbnail_WithoutSchedulingAnotherSave()
+        {
+            WithTempRoot(root =>
+            {
+                StaTest.Run(() =>
+                {
+                    // The preview composite moved off the per-edit path and onto the capture.
+                    // It still has to reach the panel, and the signal that carries it must not
+                    // be the one that means "persist me" — that would schedule a save from
+                    // inside the save that produced it.
+                    using var editor = new screenzap.ImageEditor();
+                    using var host = new ClipboardEditorHostForm(
+                        new IClipboardDocumentPresenter[] { editor },
+                        new ClipboardHistoryPersistence(root),
+                        restorePersistedHistory: false,
+                        persistHistoryChanges: true,
+                        allowSystemClipboardWrites: false)
+                    {
+                        SuppressActivation = true,
+                        ShowInTaskbar = false,
+                    };
+                    host.CreateControl();
+                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+
+                    ClipboardHistoryItem seeded;
+                    using (var canvas = SolidBitmap(60, 40, Color.White))
+                    {
+                        seeded = host.HistoryStore.AddObservedImage(canvas);
+                    }
+
+                    host.Show();
+                    Application.DoEvents();
+                    Assert.True(host.ActivateHistoryItem(seeded));
+                    Application.DoEvents();
+
+                    int previewRefreshes = 0;
+                    int itemUpdates = 0;
+                    host.HistoryStore.ItemPreviewRefreshed += (_, _) => previewRefreshes++;
+                    host.HistoryStore.ItemUpdated += (_, _) => itemUpdates++;
+
+                    using (var pasted = SolidBitmap(8, 8, Color.Lime))
+                    {
+                        editor.SetInternalClipboardImageForDiagnostics(pasted);
+                        Assert.True(editor.PasteFromClipboardForDiagnostics());
+                    }
+                    editor.SetSelectedLayerXForTests(0f);
+                    editor.SetSelectedLayerYForTests(0f);
+                    Application.DoEvents();
+
+                    int updatesBeforeSave = itemUpdates;
+                    host.TriggerPersistedHistorySaveForTests();
+
+                    // The floating paste reached the thumbnail source...
+                    Assert.Equal(1, previewRefreshes);
+                    Assert.NotNull(seeded.PreviewComposite);
+                    Assert.Equal(Color.Lime.ToArgb(), seeded.PreviewComposite!.GetPixel(4, 4).ToArgb());
+
+                    // ...and the save raised no persistence-scheduling event of its own.
+                    Assert.Equal(updatesBeforeSave, itemUpdates);
+                });
+            });
+        }
+
+        [Fact]
+        public void Capture_KeepsTheItemInStep_EvenWithPersistenceOff()
+        {
+            StaTest.Run(() =>
+            {
+                // Tracking the editor is not a persistence concern: with saving switched off the
+                // item still has to follow what is on screen, or the thumbnail goes stale.
+                using var editor = new screenzap.ImageEditor();
+                using var host = new ClipboardEditorHostForm(true, editor)
+                {
+                    SuppressActivation = true,
+                    ShowInTaskbar = false,
+                };
+                host.CreateControl();
+                host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
+
+                ClipboardHistoryItem seeded;
+                using (var canvas = SolidBitmap(60, 40, Color.White))
+                {
+                    seeded = host.HistoryStore.AddObservedImage(canvas);
+                }
+
+                host.Show();
+                Application.DoEvents();
+                Assert.True(host.ActivateHistoryItem(seeded));
+                Application.DoEvents();
+
+                using (var pasted = SolidBitmap(8, 8, Color.Lime))
+                {
+                    editor.SetInternalClipboardImageForDiagnostics(pasted);
+                    Assert.True(editor.PasteFromClipboardForDiagnostics());
+                }
+                editor.SetSelectedLayerXForTests(0f);
+                editor.SetSelectedLayerYForTests(0f);
+                Application.DoEvents();
+
+                host.TriggerPersistedHistorySaveForTests();
+
+                var layer = Assert.Single(seeded.ImageLayers!);
+                Assert.Equal(new RectangleF(0f, 0f, 8f, 8f), layer.Frame);
             });
         }
 

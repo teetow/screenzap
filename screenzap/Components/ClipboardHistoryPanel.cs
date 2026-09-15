@@ -171,12 +171,16 @@ namespace screenzap.Components
                 this.store.Changed -= OnStoreChanged;
                 this.store.ActiveItemChanged -= OnActiveItemChanged;
                 this.store.ItemUpdated -= OnItemUpdated;
+                this.store.ItemPreviewRefreshed -= OnItemUpdated;
             }
 
             this.store = store;
             store.Changed += OnStoreChanged;
             store.ActiveItemChanged += OnActiveItemChanged;
             store.ItemUpdated += OnItemUpdated;
+            // Same repaint, different cause: the preview signal carries no "persist me", which
+            // is what lets the host refresh thumbnails from inside a save.
+            store.ItemPreviewRefreshed += OnItemUpdated;
             lastActiveItemId = store.ActiveItem?.Id;
             RebuildAll();
         }

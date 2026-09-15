@@ -110,6 +110,19 @@ namespace screenzap.Components
             ItemUpdated?.Invoke(this, item);
         }
 
+        /// <summary>
+        /// The item's rendered preview changed and anything showing it should repaint. Kept
+        /// apart from <see cref="ItemUpdated"/> because that one also means "persist this", and
+        /// the preview is refreshed *during* a save — firing ItemUpdated there would schedule
+        /// another save from inside the save it came from.
+        /// </summary>
+        public event EventHandler<ClipboardHistoryItem>? ItemPreviewRefreshed;
+
+        public void NotifyItemPreviewRefreshed(ClipboardHistoryItem item)
+        {
+            ItemPreviewRefreshed?.Invoke(this, item);
+        }
+
         public void MarkClean(ClipboardHistoryItem item)
         {
             item.MarkClean();

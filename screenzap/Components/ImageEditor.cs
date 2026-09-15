@@ -3571,19 +3571,25 @@ namespace screenzap
             pictureBox1?.Invalidate();
         }
 
-        void IClipboardDocumentPresenter.FlushLiveStateForAutosave(ClipboardHistoryItem item)
+        void IClipboardDocumentPresenter.CaptureLiveStateInto(ClipboardHistoryItem item) =>
+            CaptureLiveStateInto(item);
+
+        /// <summary>
+        /// Copy the live document into the item: base image, annotations, texts, layers, and the
+        /// flattened preview the thumbnail is drawn from. Everything here is a copy, so the
+        /// editor is exactly as it was afterwards and this can run as often as the host likes.
+        /// </summary>
+        private void CaptureLiveStateInto(ClipboardHistoryItem item)
         {
             if (item == null) return;
 
             using var perf = PerfTrace.Scope(
-                "ImageEditor.FlushLiveStateForAutosave",
+                "ImageEditor.CaptureLiveStateInto",
                 () => $"layers={imageLayers.Count} shapes={annotationShapes.Count} text={textAnnotations.Count}",
                 slowMs: 80);
 
-            // Same copies the stash makes, minus the one thing that would cost the user
-            // something: undoStack.ExtractState() hands the steps over and clears the live
-            // stack, so calling it here would wipe the undo history mid-session. The undo
-            // snapshot is not persisted anyway, so a crash never had it to restore.
+            // Base image stays unflattened so annotations and layers remain editable after a
+            // round-trip through the item.
             if (HasEditableImage && pictureBox1?.Image is Bitmap baseImage)
             {
                 item.UpdateCurrentImageWithoutDirty(baseImage);
@@ -3592,6 +3598,28 @@ namespace screenzap
             item.Annotations = CloneAnnotations();
             item.TextAnnotations = CloneTextAnnotations();
             item.ImageLayers = CloneLayers();
+
+            // Flattened preview for the thumbnail. Skip the full-res copy when there is nothing
+            // to composite — the thumbnail falls back to CurrentImage, which is identical then.
+            if (!HasEditableImage)
+            {
+                item.SetPreviewComposite(null);
+                return;
+            }
+
+            bool needsComposite = annotationShapes.Count > 0
+                || textAnnotations.Count > 0
+                || imageLayers.Count > 0;
+
+            if (needsComposite)
+            {
+                using var composite = BuildCompositeImage();
+                item.SetPreviewComposite(composite);
+            }
+            else
+            {
+                item.SetPreviewComposite(null);
+            }
         }
 
         void IClipboardDocumentPresenter.StashHistoryItemState(ClipboardHistoryItem item)
@@ -3603,42 +3631,13 @@ namespace screenzap
                 () => $"dirty={item.IsDirty} hasImage={HasEditableImage}",
                 slowMs: 80);
 
-            // Preserve base image unflattened so annotations remain editable after round-trip.
-            if (HasEditableImage && pictureBox1?.Image is Bitmap baseImage)
-            {
-                item.UpdateCurrentImageWithoutDirty(baseImage);
-            }
+            CaptureLiveStateInto(item);
 
-            // Clone annotations and layers into the item.
-            item.Annotations = CloneAnnotations();
-            item.TextAnnotations = CloneTextAnnotations();
-            item.ImageLayers = CloneLayers();
+            // The only thing a stash does that a capture does not, and the reason the two are
+            // separate: ExtractState hands the undo steps to the snapshot and clears the live
+            // stack. That is right when the presenter is leaving this item and wrong everywhere
+            // else, so it lives here alone rather than inside the capture.
             item.UndoSnapshot = undoStack.ExtractState();
-
-            // Generate a flattened preview composite just for the thumbnail.
-            // Skip the expensive full-res copy when there is nothing to composite—the
-            // thumbnail will fall back to CurrentImage (just updated above), which is
-            // identical to the composite when no annotations or layers are present.
-            if (HasEditableImage)
-            {
-                bool needsComposite = annotationShapes.Count > 0
-                    || textAnnotations.Count > 0
-                    || imageLayers.Count > 0;
-
-                if (needsComposite)
-                {
-                    using var composite = BuildCompositeImage();
-                    item.SetPreviewComposite(composite);
-                }
-                else
-                {
-                    item.SetPreviewComposite(null);
-                }
-            }
-            else
-            {
-                item.SetPreviewComposite(null);
-            }
         }
 
         object? IClipboardDocumentPresenter.GetCurrentContent()

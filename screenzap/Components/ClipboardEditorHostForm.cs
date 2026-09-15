@@ -31,15 +31,11 @@ namespace screenzap.Components
         private readonly bool persistHistoryChanges;
         private readonly bool allowSystemClipboardWrites;
         private readonly System.Windows.Forms.Timer persistenceSaveTimer;
-        private readonly System.Windows.Forms.Timer liveStateAutosaveTimer;
 
-        // Set whenever the editor reports an edit, cleared by a flush. The autosave tick is a
-        // no-op unless this is set, so an idle session costs nothing.
-        private bool hasUnflushedLiveEdits;
-
-        // Long enough that the periodic re-encode of the base image is irrelevant, short enough
-        // that a crash costs a few seconds of work rather than the whole session.
-        private const int LiveStateAutosaveIntervalMs = 15000;
+        // Set when the editor reports an edit, cleared by a capture. Purely an optimisation:
+        // saves are also scheduled by things that have nothing to do with the open editor (a
+        // new clipboard item, say), and re-encoding the active image for those is wasted work.
+        private bool activeItemHasUncapturedEdits;
         private readonly ClipboardHistoryPanel historyPanel;
         private IClipboardDocumentPresenter? activePresenter;
         private bool hasPendingReloadIndicator;
@@ -53,11 +49,10 @@ namespace screenzap.Components
         internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
         internal ClipboardHistoryStore HistoryStore => historyStore;
 
-        /// <summary>Run one autosave tick now, as the timer would.</summary>
-        internal void TriggerLiveStateAutosaveForTests() =>
-            OnLiveStateAutosaveTimerTick(this, EventArgs.Empty);
+        /// <summary>Run the debounced save now, as the timer would.</summary>
+        internal void TriggerPersistedHistorySaveForTests() => FlushPersistedHistorySave();
 
-        internal bool HasUnflushedLiveEditsForTests => hasUnflushedLiveEdits;
+        internal bool HasUncapturedEditsForTests => activeItemHasUncapturedEdits;
 
         // App-level actions the menu bar surfaces but the tray host (Screenzap) owns. Wired after
         // construction; menu handlers read them lazily so late wiring is fine. Null hooks disable
@@ -129,15 +124,6 @@ namespace screenzap.Components
                 Interval = 350
             };
             persistenceSaveTimer.Tick += OnPersistenceSaveTimerTick;
-            liveStateAutosaveTimer = new System.Windows.Forms.Timer
-            {
-                Interval = LiveStateAutosaveIntervalMs
-            };
-            liveStateAutosaveTimer.Tick += OnLiveStateAutosaveTimerTick;
-            if (persistHistoryChanges)
-            {
-                liveStateAutosaveTimer.Start();
-            }
             if (restorePersistedHistory)
             {
                 RestorePersistedHistory();
@@ -301,10 +287,8 @@ namespace screenzap.Components
                 Application.Idle -= OnApplicationIdle;
                 FormClosed -= OnHostFormClosed;
                 persistenceSaveTimer.Stop();
-                liveStateAutosaveTimer.Stop();
                 FlushPersistedHistorySave();
                 persistenceSaveTimer.Dispose();
-                liveStateAutosaveTimer.Dispose();
                 foreach (var presenter in presenters)
                 {
                     presenter.Dispose();
@@ -871,20 +855,13 @@ namespace screenzap.Components
             var item = historyStore.ActiveItem;
             if (item == null || activePresenter == null) return;
 
-            var content = activePresenter.GetCurrentContent();
-            if (content is Bitmap bmp)
-            {
-                using (bmp)
-                {
-                    // For images, treat presenter output as a preview composite only; base image lives in
-                    // the presenter until StashHistoryItemState flushes it. We still mark dirty + refresh thumb.
-                    item.SetPreviewComposite(bmp);
-                }
-                item.MarkDirtyExternally();
-                historyStore.NotifyItemUpdated(item);
-            }
-
-            hasUnflushedLiveEdits = true;
+            // Flag and notify only. The item's content is copied out of the presenter by the
+            // capture on the debounced save — building a full-size composite here meant two
+            // whole-image allocations on every single edit, more often than the save that
+            // consumed them.
+            activeItemHasUncapturedEdits = true;
+            item.MarkDirtyExternally();
+            historyStore.NotifyItemUpdated(item);
 
             UpdateCommandStates();
         }
@@ -921,7 +898,7 @@ namespace screenzap.Components
 
             // Switching items stashes the one being left, so whatever was outstanding has
             // already landed — and the incoming item has not been edited yet.
-            hasUnflushedLiveEdits = false;
+            activeItemHasUncapturedEdits = false;
             SchedulePersistedHistorySave();
         }
 
@@ -1286,61 +1263,16 @@ namespace screenzap.Components
             UpdateCommandStates();
         }
 
-        private void OnLiveStateAutosaveTimerTick(object? sender, EventArgs e)
-        {
-            if (!persistHistoryChanges || !hasUnflushedLiveEdits)
-            {
-                return;
-            }
-
-            var activeItem = historyStore.ActiveItem;
-            if (activeItem == null || activePresenter == null)
-            {
-                hasUnflushedLiveEdits = false;
-                return;
-            }
-
-            activePresenter.FlushLiveStateForAutosave(activeItem);
-            hasUnflushedLiveEdits = false;
-            hasPendingPersistenceSave = true;
-            FlushPersistedHistorySave();
-        }
-
         private void OnHostFormClosed(object? sender, FormClosedEventArgs e)
         {
             Application.Idle -= OnApplicationIdle;
             persistenceSaveTimer.Stop();
-            liveStateAutosaveTimer.Stop();
             SaveHistoryPanelWidth();
-            FlushLiveEditorStateIntoActiveItem();
-            FlushPersistedHistorySave();
-        }
 
-        /// <summary>
-        /// Push whatever the editor is holding into the active item so the last save sees it.
-        /// Everything that persists runs off store events, which watch items rather than the
-        /// editor, and the live state only reaches an item when it is stashed — on deactivate,
-        /// commit, duplicate or revert. Close the app mid-edit and none of those has happened,
-        /// so the item goes to disk one stash behind and anything floating is simply not in the
-        /// file.
-        ///
-        /// This is deliberately not on the debounced save path: stashing re-encodes the base
-        /// image every time, which would rewrite every base PNG on disk a few times a second
-        /// while someone is editing.
-        /// </summary>
-        private void FlushLiveEditorStateIntoActiveItem()
-        {
-            var activeItem = historyStore.ActiveItem;
-            if (activeItem == null || activePresenter == null)
-            {
-                return;
-            }
-
-            activePresenter.StashHistoryItemState(activeItem);
-
-            // The stash is only worth anything if a save actually follows it.
-            hasUnflushedLiveEdits = false;
-            hasPendingPersistenceSave = true;
+            // Unconditional: a pending save may already have been flushed, but the editor can
+            // still hold edits made since.
+            SyncAndPersistHistory();
+            hasPendingPersistenceSave = false;
         }
 
         internal ClipboardHistoryItem? TryBindPendingCommittedSystemItem(ClipboardHistoryItem incomingSystemItem)
@@ -1388,8 +1320,12 @@ namespace screenzap.Components
             historyStore.LoadPersisted(restored.Items, restored.ActiveItemId);
         }
 
-        private void SavePersistedHistory()
+        private void SyncAndPersistHistory()
         {
+            // Always: the item is the editor's counterpart and has to keep up with it whether
+            // or not anything is written to disk.
+            CaptureActiveItemLiveState();
+
             if (!persistHistoryChanges)
             {
                 return;
@@ -1398,13 +1334,42 @@ namespace screenzap.Components
             historyPersistence.Save(historyStore.Items, historyStore.ActiveItem);
         }
 
-        private void SchedulePersistedHistorySave()
+        /// <summary>
+        /// Copy the open editor's document into its item, immediately before it is written out.
+        /// The item is otherwise only updated when something remembers to stash it — on
+        /// deactivate, commit, duplicate or revert — which left whatever was on screen out of
+        /// every save that happened in between, and out of the last one entirely if the app was
+        /// closed mid-edit. Capturing here means the item is never more than one debounce behind
+        /// the editor and nobody has to remember anything.
+        /// </summary>
+        private void CaptureActiveItemLiveState()
         {
-            if (!persistHistoryChanges)
+            if (!activeItemHasUncapturedEdits)
             {
                 return;
             }
 
+            var activeItem = historyStore.ActiveItem;
+            if (activeItem == null || activePresenter == null)
+            {
+                activeItemHasUncapturedEdits = false;
+                return;
+            }
+
+            activePresenter.CaptureLiveStateInto(activeItem);
+            activeItemHasUncapturedEdits = false;
+
+            // The capture rebuilt the thumbnail source. This signal repaints it without
+            // scheduling the save we are already inside.
+            historyStore.NotifyItemPreviewRefreshed(activeItem);
+        }
+
+        /// <summary>
+        /// Debounce a sync of the open editor into its item, plus a save if persistence is on.
+        /// Deliberately not gated on persistence: the capture half has to happen either way.
+        /// </summary>
+        private void SchedulePersistedHistorySave()
+        {
             hasPendingPersistenceSave = true;
             persistenceSaveTimer.Stop();
             persistenceSaveTimer.Start();
@@ -1424,7 +1389,7 @@ namespace screenzap.Components
             }
 
             hasPendingPersistenceSave = false;
-            SavePersistedHistory();
+            SyncAndPersistHistory();
         }
 
         private async Task DeleteSystemHistoryItemInBackgroundAsync(string systemHistoryId)
