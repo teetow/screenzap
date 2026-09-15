@@ -47,7 +47,7 @@ namespace screenzap
 
             rectCaptureCombo = ParseKeyCombo(Properties.Settings.Default.currentCombo);
             seqCaptureCombo = ParseKeyCombo(Properties.Settings.Default.seqCaptureCombo);
-            Util.MigrateLegacyDllAutoStart(autostartAppName, autoStartCommand);
+            Util.RepairAutoStartTarget(autostartAppName, autoStartCommand);
 
             updateTooltips(rectCaptureCombo);
             if (Properties.Settings.Default.showBalloon == true)
@@ -414,7 +414,7 @@ namespace screenzap
             ShowClipboardEditorForCurrentData();
         }
 
-        private bool GetStartOnLogin() => Util.IsAutoStartEnabled(autostartAppName, autoStartCommand);
+        private bool GetStartOnLogin() => Util.IsAutoStartEnabled(autostartAppName);
 
         private void SetStartOnLogin(bool enabled)
         {
