@@ -181,8 +181,8 @@ namespace Screenzap.ViewportTests
                 using var item = ClipboardHistoryItem.FromImage(canvas);
 
                 presenter.StashHistoryItemState(item);
-                Assert.NotNull(item.ImageLayers);
-                Assert.Single(item.ImageLayers!);
+                Assert.NotNull(item.Overlay);
+                Assert.Single(item.Overlay!.Layers);
 
                 // Clear the editor by loading a fresh image.
                 using var blankCanvas = new Bitmap(40, 30);

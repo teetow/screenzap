@@ -62,21 +62,24 @@ namespace Screenzap.ViewportTests
                         item = ClipboardHistoryItem.FromImage(canvas);
                     }
 
-                    item.ImageLayers = new List<ImageLayer>
+                    item.Overlay = new DocumentOverlay
                     {
-                        new ImageLayer(SolidBitmap(8, 6, Color.Lime), new RectangleF(3f, 4f, 8f, 6f))
+                        Layers = new List<ImageLayer>
                         {
-                            Name = "Paste 1",
-                        },
-                        new ImageLayer(
-                            SolidBitmap(10, 10, Color.Magenta),
-                            new RectangleF(20.5f, 11.25f, 30f, 12f),
-                            new RectangleF(2f, 3f, 6f, 7f),
-                            37.5f,
-                            null)
-                        {
-                            Name = "Paste 2",
-                            IsVisible = false,
+                            new ImageLayer(SolidBitmap(8, 6, Color.Lime), new RectangleF(3f, 4f, 8f, 6f))
+                            {
+                                Name = "Paste 1",
+                            },
+                            new ImageLayer(
+                                SolidBitmap(10, 10, Color.Magenta),
+                                new RectangleF(20.5f, 11.25f, 30f, 12f),
+                                new RectangleF(2f, 3f, 6f, 7f),
+                                37.5f,
+                                null)
+                            {
+                                Name = "Paste 2",
+                                IsVisible = false,
+                            },
                         },
                     };
 
@@ -86,9 +89,9 @@ namespace Screenzap.ViewportTests
                     try
                     {
                         var reloaded = Assert.Single(restored.Items);
-                        var layers = reloaded.ImageLayers;
-                        Assert.NotNull(layers);
-                        Assert.Equal(2, layers!.Count);
+                        Assert.NotNull(reloaded.Overlay);
+                        var layers = reloaded.Overlay!.Layers;
+                        Assert.Equal(2, layers.Count);
 
                         // Stack order is content: the second paste has to come back on top.
                         Assert.Equal(new[] { "Paste 1", "Paste 2" }, layers.Select(l => l.Name).ToArray());
@@ -137,7 +140,7 @@ namespace Screenzap.ViewportTests
                     var restored = new ClipboardHistoryPersistence(root).Load();
                     try
                     {
-                        Assert.Null(Assert.Single(restored.Items).ImageLayers);
+                        Assert.Null(Assert.Single(restored.Items).Overlay);
                     }
                     finally
                     {
@@ -168,16 +171,19 @@ namespace Screenzap.ViewportTests
                     }
 
                     var persistence = new ClipboardHistoryPersistence(root);
-                    item.ImageLayers = new List<ImageLayer>
+                    item.Overlay = new DocumentOverlay
                     {
-                        new ImageLayer(SolidBitmap(8, 8, Color.Lime), new RectangleF(0f, 0f, 8f, 8f)),
+                        Layers = new List<ImageLayer>
+                        {
+                            new ImageLayer(SolidBitmap(8, 8, Color.Lime), new RectangleF(0f, 0f, 8f, 8f)),
+                        },
                     };
                     persistence.Save(new[] { item }, item);
                     Assert.NotEmpty(Directory.GetFiles(root, "*_layer_*.png"));
 
                     // Gluing the paste down clears the layers; the orphaned PNG must be swept up
                     // with everything else the manifest no longer references.
-                    item.ImageLayers = null;
+                    item.Overlay = null;
                     persistence.Save(new[] { item }, item);
                     Assert.Empty(Directory.GetFiles(root, "*_layer_*.png"));
                 }
@@ -242,7 +248,7 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     var item = Assert.Single(restored.Items);
-                    var layers = item.ImageLayers;
+                    var layers = item.Overlay?.Layers;
                     Assert.NotNull(layers);
                     var layer = Assert.Single(layers!);
                     Assert.Equal(new RectangleF(5f, 7f, 8f, 8f), layer.Frame);
@@ -322,7 +328,7 @@ namespace Screenzap.ViewportTests
                     try
                     {
                         var item = Assert.Single(restored.Items);
-                        var layer = Assert.Single(item.ImageLayers!);
+                        var layer = Assert.Single(item.Overlay!.Layers);
                         Assert.Equal(new RectangleF(5f, 7f, 8f, 8f), layer.Frame);
                         Assert.Equal(Color.Lime.ToArgb(), layer.Source.GetPixel(4, 4).ToArgb());
                     }
@@ -485,7 +491,7 @@ namespace Screenzap.ViewportTests
 
                 host.TriggerPersistedHistorySaveForTests();
 
-                var layer = Assert.Single(seeded.ImageLayers!);
+                var layer = Assert.Single(seeded.Overlay!.Layers);
                 Assert.Equal(new RectangleF(0f, 0f, 8f, 8f), layer.Frame);
             });
         }
@@ -503,15 +509,18 @@ namespace Screenzap.ViewportTests
                 var item = ClipboardHistoryItem.FromImage(editor.CloneBaseBitmapForTests()!);
                 try
                 {
-                    item.ImageLayers = new List<ImageLayer>
+                    item.Overlay = new DocumentOverlay
                     {
-                        new ImageLayer(SolidBitmap(8, 8, Color.Lime), new RectangleF(0f, 0f, 8f, 8f))
+                        Layers = new List<ImageLayer>
                         {
-                            Name = "Paste 1",
-                        },
-                        new ImageLayer(SolidBitmap(8, 8, Color.Cyan), new RectangleF(9f, 0f, 8f, 8f))
-                        {
-                            Name = "Paste 2",
+                            new ImageLayer(SolidBitmap(8, 8, Color.Lime), new RectangleF(0f, 0f, 8f, 8f))
+                            {
+                                Name = "Paste 1",
+                            },
+                            new ImageLayer(SolidBitmap(8, 8, Color.Cyan), new RectangleF(9f, 0f, 8f, 8f))
+                            {
+                                Name = "Paste 2",
+                            },
                         },
                     };
                     ((IClipboardDocumentPresenter)editor).LoadHistoryItem(item);

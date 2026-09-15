@@ -197,15 +197,12 @@ namespace screenzap.Components
                 SuppressedSystemHistoryIds = item.SuppressedSystemHistoryIds.ToList(),
                 IsSeededFallback = item.IsSeededFallback,
                 IsUserDuplicate = item.IsUserDuplicate,
-                Annotations = item.Annotations?.Select(ToDto).ToList(),
-                TextAnnotations = item.TextAnnotations?.Select(ToDto).ToList()
+                Annotations = item.Overlay?.Shapes.Select(ToDto).ToList(),
+                TextAnnotations = item.Overlay?.Texts.Select(ToDto).ToList(),
+                ImageLayers = item.Overlay?.Layers
+                    .Select(layer => ToDto(item.Id, layer, keepFiles))
+                    .ToList()
             };
-
-            // Floating pastes are part of the item's state, not a scratch overlay: without this
-            // an item with a paste in flight came back after a restart as a bare canvas.
-            entry.ImageLayers = item.ImageLayers
-                ?.Select(layer => ToDto(item.Id, layer, keepFiles))
-                .ToList();
 
             entry.OriginalImagePath = SaveImageContent(item.Id, "original", item.OriginalPngContent, keepFiles);
             entry.CommittedImagePath = SaveImageContent(item.Id, "committed", item.CommittedPngContent, keepFiles);
@@ -391,9 +388,7 @@ namespace screenzap.Components
                 }
             }
 
-            item.Annotations = entry.Annotations?.Select(FromDto).ToList();
-            item.TextAnnotations = entry.TextAnnotations?.Select(FromDto).ToList();
-            item.ImageLayers = LoadImageLayers(entry.ImageLayers);
+            item.Overlay = LoadOverlay(entry);
             item.SetDirtyFlagForRestore(entry.IsDirty);
         }
 
@@ -469,14 +464,34 @@ namespace screenzap.Components
             return fileName;
         }
 
-        private List<ImageLayer>? LoadImageLayers(List<ImageLayerDto>? dtos)
+        /// <summary>
+        /// Rebuild the overlay from the manifest entry. The on-disk shape stays flat — three
+        /// sibling arrays, exactly as older manifests wrote them — so this reads anything the
+        /// app has ever written; the grouping is in memory, where the forgetting happened.
+        /// </summary>
+        private DocumentOverlay? LoadOverlay(ClipboardHistoryItemEntry entry)
         {
-            if (dtos == null || dtos.Count == 0)
+            if (entry.Annotations == null && entry.TextAnnotations == null && entry.ImageLayers == null)
             {
                 return null;
             }
 
+            return new DocumentOverlay
+            {
+                Shapes = entry.Annotations?.Select(FromDto).ToList() ?? new List<AnnotationShape>(),
+                Texts = entry.TextAnnotations?.Select(FromDto).ToList() ?? new List<TextAnnotation>(),
+                Layers = LoadImageLayers(entry.ImageLayers),
+            };
+        }
+
+        private List<ImageLayer> LoadImageLayers(List<ImageLayerDto>? dtos)
+        {
             var layers = new List<ImageLayer>();
+            if (dtos == null || dtos.Count == 0)
+            {
+                return layers;
+            }
+
             foreach (var dto in dtos)
             {
                 var sourcePath = ResolveExistingPath(dto.SourceImagePath);
@@ -525,7 +540,7 @@ namespace screenzap.Components
                 });
             }
 
-            return layers.Count > 0 ? layers : null;
+            return layers;
         }
 
         /// <summary>

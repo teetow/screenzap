@@ -233,28 +233,23 @@ namespace screenzap.Components
         internal string TestDescribeUndoSnapshot() =>
             UndoSnapshot == null ? "null" : $"steps={UndoSnapshot.Steps.Count} index={UndoSnapshot.Index}";
 
-        /// <summary>Stashed annotation state (arrow/rectangle shapes) for image items. Null if never touched.</summary>
-        internal List<AnnotationShape>? Annotations { get; set; }
-
-        /// <summary>Stashed text annotations for image items. Null if never touched.</summary>
-        internal List<TextAnnotation>? TextAnnotations { get; set; }
-
-        private List<ImageLayer>? imageLayersBackingField;
+        private DocumentOverlay? overlayBackingField;
 
         /// <summary>
-        /// Stashed image layers (smart objects) for image items. Null if never touched.
-        /// The setter disposes the previously-held list so callers can simply assign a freshly-cloned list.
+        /// Stashed overlay — shapes, texts and floating layers — for image items. Null if never
+        /// touched. The setter disposes the previously-held overlay so callers can simply assign
+        /// a freshly-cloned one.
         /// </summary>
-        internal List<ImageLayer>? ImageLayers
+        internal DocumentOverlay? Overlay
         {
-            get => imageLayersBackingField;
+            get => overlayBackingField;
             set
             {
-                if (!ReferenceEquals(imageLayersBackingField, value))
+                if (!ReferenceEquals(overlayBackingField, value))
                 {
-                    DisposeImageLayerList(imageLayersBackingField);
+                    overlayBackingField?.Dispose();
                 }
-                imageLayersBackingField = value;
+                overlayBackingField = value;
             }
         }
 
@@ -426,11 +421,9 @@ namespace screenzap.Components
             }
 
             // UndoSnapshot is intentionally preserved so undo/revert remain available after commit.
-            // Live annotations and layers are cleared because they're now baked into the flattened baseline;
-            // each undo step carries its own pre/post snapshot of those for restoration on undo.
-            Annotations = null;
-            TextAnnotations = null;
-            ImageLayers = null;
+            // The overlay is cleared because it's now baked into the flattened baseline; each
+            // undo step carries its own pre/post snapshot of it for restoration on undo.
+            Overlay = null;
             PruneDecodeCache();
             SetPreviewComposite(null);
             IsDirty = false;
@@ -446,9 +439,7 @@ namespace screenzap.Components
             }
 
             IsDirty = false;
-            Annotations = null;
-            TextAnnotations = null;
-            ImageLayers = null;
+            Overlay = null;
             PruneDecodeCache();
             SetPreviewComposite(null);
         }
@@ -479,11 +470,11 @@ namespace screenzap.Components
                 Rectangle.Empty,
                 Rectangle.Empty,
                 replacesImage: true,
-                shapesBefore: Annotations?.Select(shape => shape.Clone()).ToList() ?? new List<AnnotationShape>(),
+                shapesBefore: Overlay?.Shapes.Select(shape => shape.Clone()).ToList() ?? new List<AnnotationShape>(),
                 shapesAfter: new List<AnnotationShape>(),
-                textsBefore: TextAnnotations?.Select(text => text.Clone()).ToList() ?? new List<TextAnnotation>(),
+                textsBefore: Overlay?.Texts.Select(text => text.Clone()).ToList() ?? new List<TextAnnotation>(),
                 textsAfter: new List<TextAnnotation>(),
-                layersBefore: ImageLayers?.Select(layer => layer.Clone()).ToList() ?? new List<ImageLayer>(),
+                layersBefore: Overlay?.Layers.Select(layer => layer.Clone()).ToList() ?? new List<ImageLayer>(),
                 layersAfter: new List<ImageLayer>());
 
             // Route the push through an UndoRedo instance so a pending redo tail is truncated
@@ -513,9 +504,7 @@ namespace screenzap.Components
             clone.current = current;
             clone.PreviewComposite = PreviewComposite == null ? null : new Bitmap(PreviewComposite);
 
-            clone.Annotations = Annotations?.Select(shape => shape.Clone()).ToList();
-            clone.TextAnnotations = TextAnnotations?.Select(text => text.Clone()).ToList();
-            clone.ImageLayers = ImageLayers?.Select(layer => layer.Clone()).ToList();
+            clone.Overlay = Overlay?.Clone();
             clone.UndoSnapshot = UndoRedo.CloneSnapshot(UndoSnapshot);
             clone.IsDirty = IsDirty;
             clone.lastThumbMaxWidth = lastThumbMaxWidth;
@@ -759,7 +748,7 @@ namespace screenzap.Components
             thumbnailSource?.Dispose();
             PreviewComposite?.Dispose();
             Thumbnail?.Dispose();
-            ImageLayers = null; // setter disposes layer bitmaps
+            Overlay = null; // setter disposes the overlay's layer bitmaps
             original = null;
             committed = null;
             current = null;

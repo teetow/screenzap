@@ -1920,6 +1920,33 @@ namespace screenzap
             return candidate;
         }
 
+        /// <summary>The live overlay, copied. See <see cref="DocumentOverlay"/> for why it is one object.</summary>
+        private DocumentOverlay CloneOverlay()
+        {
+            return new DocumentOverlay
+            {
+                Shapes = CloneAnnotations(),
+                Texts = CloneTextAnnotations(),
+                Layers = CloneLayers(),
+            };
+        }
+
+        /// <summary>
+        /// Restore an overlay into the editor. Null means "not tracked, leave the live state
+        /// alone" — the same convention each part already used individually.
+        /// </summary>
+        private void ApplyOverlay(DocumentOverlay? source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            ApplyAnnotationState(source.Shapes);
+            ApplyTextAnnotationState(source.Texts);
+            ApplyLayerState(source.Layers);
+        }
+
         private Bitmap BuildCompositeImage()
         {
             if (pictureBox1.Image == null)
@@ -3563,9 +3590,7 @@ namespace screenzap
             LoadImage(item.CurrentImage);
             // LoadImage clears the undo stack, annotations, and layers. Restore the stashed state.
             undoStack.RestoreState(item.UndoSnapshot);
-            ApplyAnnotationState(item.Annotations);
-            ApplyTextAnnotationState(item.TextAnnotations);
-            ApplyLayerState(item.ImageLayers);
+            ApplyOverlay(item.Overlay);
             hasUnsavedChanges = item.IsDirty;
             UpdateCommandUI();
             pictureBox1?.Invalidate();
@@ -3595,9 +3620,7 @@ namespace screenzap
                 item.UpdateCurrentImageWithoutDirty(baseImage);
             }
 
-            item.Annotations = CloneAnnotations();
-            item.TextAnnotations = CloneTextAnnotations();
-            item.ImageLayers = CloneLayers();
+            item.Overlay = CloneOverlay();
 
             // Flattened preview for the thumbnail. Skip the full-res copy when there is nothing
             // to composite — the thumbnail falls back to CurrentImage, which is identical then.
