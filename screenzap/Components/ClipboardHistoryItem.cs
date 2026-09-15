@@ -189,6 +189,9 @@ namespace screenzap.Components
         // allowing persistence to retain unchanged files without first loading them.
         internal PngContent? OriginalPngContent => original?.Content;
         internal PngContent? CommittedPngContent => committed?.Content;
+
+        /// <summary>The current role's blob, for tests asserting that an autosave left it alone.</summary>
+        internal PngContent? CurrentPngContentForTests => current?.Content;
         internal PngContent? CurrentPngContent => current?.Content;
 
         // Size + signature per role, persisted so restore can skip the full-image decode that

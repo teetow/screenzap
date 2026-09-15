@@ -18,6 +18,7 @@
                 ReleaseClipboardListener();
                 undoStack?.Dispose();
                 ReleaseCensorPreviewBuffer();
+                DisposeLayersPanel();
                 components?.Dispose();
             }
             base.Dispose(disposing);

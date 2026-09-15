@@ -20,7 +20,7 @@ namespace screenzap.Components.Shared
             { EditorCommandId.Revert, new EditorCommandDescriptor { Id = EditorCommandId.Revert, Label = "Revert", ToolTip = "Revert to the original clipboard content (Ctrl+Z restores your edits)", Icon = IconChar.ArrowRotateLeft } },
             { EditorCommandId.CommitEdits, new EditorCommandDescriptor { Id = EditorCommandId.CommitEdits, Label = "Commit", ToolTip = "Accept edits: push to clipboard and mark clean (undo stack preserved)", Icon = IconChar.Check } },
             { EditorCommandId.Delete, new EditorCommandDescriptor { Id = EditorCommandId.Delete, Label = "Delete", ToolTip = "Remove this item from history", Icon = IconChar.Trash } },
-            { EditorCommandId.ApplyFloatingPaste, new EditorCommandDescriptor { Id = EditorCommandId.ApplyFloatingPaste, Label = "Apply", ToolTip = "Apply floating paste: burn layer(s) into the pixel buffer", Icon = IconChar.Stamp, Shortcut = Keys.Enter } },
+            { EditorCommandId.ApplyFloatingPaste, new EditorCommandDescriptor { Id = EditorCommandId.ApplyFloatingPaste, Label = "Apply", ToolTip = "Apply floating paste: glue the selected layer down into the pixel buffer", Icon = IconChar.Stamp, Shortcut = Keys.Enter } },
             { EditorCommandId.ToggleTransparencyGrid, new EditorCommandDescriptor { Id = EditorCommandId.ToggleTransparencyGrid, Label = "Transparency Grid", ToolTip = "Toggle the transparency checkerboard (show alpha vs. flatten opaque)", Icon = IconChar.ChessBoard, Shortcut = Keys.M } },
 
             { EditorCommandId.SelectMoveTool, new EditorCommandDescriptor { Id = EditorCommandId.SelectMoveTool, Label = "Move / Select", ToolTip = "Move / select tool", Icon = IconChar.ArrowPointer } },

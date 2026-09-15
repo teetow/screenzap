@@ -26,6 +26,16 @@ namespace screenzap.Components.Shared
         /// <summary>Snapshot transient editor state (e.g. undo stack, current image) into the item before switching away.</summary>
         void StashHistoryItemState(ClipboardHistoryItem item);
 
+        /// <summary>
+        /// Copy live editing state into the item for a periodic autosave, while the user keeps
+        /// working. Unlike <see cref="StashHistoryItemState"/> this must not take anything away
+        /// from the presenter — in particular it must not extract the undo stack, which is a
+        /// move, not a copy. Presenters with no recoverable live state can leave it a no-op.
+        /// </summary>
+        void FlushLiveStateForAutosave(ClipboardHistoryItem item)
+        {
+        }
+
         /// <summary>The current content rendered by the presenter, or null if nothing is loaded. Caller owns the returned bitmap (for images).</summary>
         object? GetCurrentContent();
 

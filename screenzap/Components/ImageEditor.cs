@@ -1047,6 +1047,8 @@ namespace screenzap
                 rotateToolStrip.Location = new Point(leftInset, topInset);
                 rotateToolStrip.BringToFront();
             }
+
+            PositionLayersPanel();
         }
 
         private void ClampImageLocationWithinCanvas()
@@ -2455,7 +2457,7 @@ namespace screenzap
                 return;
             }
 
-            if (e.KeyCode == Keys.Enter && e.Modifiers == Keys.None && imageLayers.Count > 0)
+            if (e.KeyCode == Keys.Enter && e.Modifiers == Keys.None && HasSelectedLayer)
             {
                 if (ApplyFloatingPaste())
                 {
@@ -3135,7 +3137,10 @@ namespace screenzap
             var annotationStateBefore = CloneAnnotations();
             var textAnnotationStateBefore = CloneTextAnnotations();
 
-            var newLayer = new ImageLayer(new Bitmap(source), frame);
+            var newLayer = new ImageLayer(new Bitmap(source), frame)
+            {
+                Name = $"Paste {NextPasteLayerNumber()}",
+            };
             imageLayers.Add(newLayer);
             SelectImageLayer(imageLayers.Count - 1);
 
@@ -3164,6 +3169,7 @@ namespace screenzap
             isPlaceholderImage = false;
             UpdateCommandUI();
             UpdateStatusBar();
+            RebuildLayersPanel();
             pictureBox1.Invalidate();
             return true;
         }
@@ -3409,7 +3415,7 @@ namespace screenzap
                 EditorCommandId.Undo => undoStack.CanUndo,
                 EditorCommandId.Redo => undoStack.CanRedo,
                 EditorCommandId.Find => false,
-                EditorCommandId.ApplyFloatingPaste => imageLayers.Count > 0,
+                EditorCommandId.ApplyFloatingPaste => HasSelectedLayer,
                 EditorCommandId.ToggleTransparencyGrid => HasEditableImage,
                 EditorCommandId.SelectMoveTool => HasEditableImage,
                 EditorCommandId.ArrowTool => HasEditableImage,
@@ -3563,6 +3569,29 @@ namespace screenzap
             hasUnsavedChanges = item.IsDirty;
             UpdateCommandUI();
             pictureBox1?.Invalidate();
+        }
+
+        void IClipboardDocumentPresenter.FlushLiveStateForAutosave(ClipboardHistoryItem item)
+        {
+            if (item == null) return;
+
+            using var perf = PerfTrace.Scope(
+                "ImageEditor.FlushLiveStateForAutosave",
+                () => $"layers={imageLayers.Count} shapes={annotationShapes.Count} text={textAnnotations.Count}",
+                slowMs: 80);
+
+            // Same copies the stash makes, minus the one thing that would cost the user
+            // something: undoStack.ExtractState() hands the steps over and clears the live
+            // stack, so calling it here would wipe the undo history mid-session. The undo
+            // snapshot is not persisted anyway, so a crash never had it to restore.
+            if (HasEditableImage && pictureBox1?.Image is Bitmap baseImage)
+            {
+                item.UpdateCurrentImageWithoutDirty(baseImage);
+            }
+
+            item.Annotations = CloneAnnotations();
+            item.TextAnnotations = CloneTextAnnotations();
+            item.ImageLayers = CloneLayers();
         }
 
         void IClipboardDocumentPresenter.StashHistoryItemState(ClipboardHistoryItem item)

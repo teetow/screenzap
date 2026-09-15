@@ -23,11 +23,33 @@ namespace screenzap
             Mask = mask;
         }
 
+        /// <summary>
+        /// Identity that survives cloning, restacking and a round-trip through the history
+        /// store. Persistence names the layer's PNG after it, so reordering the stack does not
+        /// rewrite every layer file.
+        /// </summary>
+        public Guid Id { get; init; } = Guid.NewGuid();
+
         public Bitmap Source { get; }
         public RectangleF Frame { get; set; }
         public RectangleF Fill { get; set; }
         public float RotationDeg { get; set; }
         public Bitmap? Mask { get; }
+
+        /// <summary>
+        /// Muting a layer (the panel's eye) hides it everywhere the layer counts as content:
+        /// the viewport, the flattened composite, and hit-testing. It is not a view-only
+        /// toggle — a muted layer is left out of a save or a copy exactly as it is left off
+        /// the screen.
+        /// </summary>
+        public bool IsVisible { get; set; } = true;
+
+        /// <summary>
+        /// Display name for the layers panel. Assigned once when the layer is created and
+        /// carried through clones so a row keeps its identity across undo and restacking —
+        /// numbering by stack position would renumber every row each time one is glued down.
+        /// </summary>
+        public string Name { get; set; } = "Paste";
 
         public ImageLayer Clone()
         {
@@ -36,7 +58,12 @@ namespace screenzap
                 Frame,
                 Fill,
                 RotationDeg,
-                Mask == null ? null : new Bitmap(Mask));
+                Mask == null ? null : new Bitmap(Mask))
+            {
+                Id = Id,
+                IsVisible = IsVisible,
+                Name = Name,
+            };
         }
 
         public void Dispose()

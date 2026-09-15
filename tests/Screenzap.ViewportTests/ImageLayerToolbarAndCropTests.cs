@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Globalization;
 using System.Windows.Forms;
 using screenzap.Components.Shared;
 using Xunit;
@@ -284,6 +285,94 @@ namespace Screenzap.ViewportTests
         {
             Assert.InRange(System.Math.Abs(expected.X - actual.X), 0f, 0.001f);
             Assert.InRange(System.Math.Abs(expected.Y - actual.Y), 0f, 0.001f);
+        }
+
+        [Fact]
+        public void ToolbarCoordinates_MoveTheLayer_AndAreUndoable()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditor(out var original);
+
+                editor.SetSelectedLayerXForTests(12f);
+                editor.SetSelectedLayerYForTests(7f);
+
+                var moved = editor.GetImageLayerFrameForTests(0);
+                Assert.Equal(new RectangleF(12f, 7f, original.Width, original.Height), moved);
+
+                // X and Y are separate edits, so they are separate undo steps.
+                var presenter = (IClipboardDocumentPresenter)editor;
+                Assert.True(presenter.TryExecute(EditorCommandId.Undo));
+                Assert.Equal(
+                    new RectangleF(12f, original.Y, original.Width, original.Height),
+                    editor.GetImageLayerFrameForTests(0));
+                Assert.True(presenter.TryExecute(EditorCommandId.Undo));
+                Assert.Equal(original, editor.GetImageLayerFrameForTests(0));
+            });
+        }
+
+        [Fact]
+        public void ToolbarCoordinates_AlignSeveralLayersOnOneAxis()
+        {
+            StaTest.Run(() =>
+            {
+                // The point of the coordinate fields: type one X into each layer and their
+                // left edges line up exactly, instead of a drag landing near-but-not-on.
+                using var editor = PrepareEditor(out _);
+                using var second = new Bitmap(12, 9);
+                editor.SetInternalClipboardImageForDiagnostics(second);
+                Assert.True(editor.PasteFromClipboardForDiagnostics());
+                Assert.Equal(2, editor.ImageLayerCountForTests);
+
+                editor.SetSelectedLayerXForTests(4f);
+                editor.SetSelectedLayerForTests(0);
+                editor.SetSelectedLayerXForTests(4f);
+
+                Assert.Equal(4f, editor.GetImageLayerFrameForTests(0).X);
+                Assert.Equal(4f, editor.GetImageLayerFrameForTests(1).X);
+            });
+        }
+
+        [Fact]
+        public void ToolbarCoordinates_AcceptNegative_ForOffCanvasParking()
+        {
+            StaTest.Run(() =>
+            {
+                // Unlike W/H, a coordinate has no floor - hanging a layer off the top-left
+                // edge is a legitimate placement.
+                using var editor = PrepareEditor(out var original);
+                editor.SetSelectedLayerXForTests(-6f);
+                editor.SetSelectedLayerYForTests(-3f);
+
+                Assert.Equal(
+                    new RectangleF(-6f, -3f, original.Width, original.Height),
+                    editor.GetImageLayerFrameForTests(0));
+            });
+        }
+
+        [Fact]
+        public void ToolbarCoordinates_FollowABodyDrag()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = PrepareEditor(out var original);
+                editor.Show();
+                Application.DoEvents();
+                Assert.True(editor.LayerPositionInputAvailableForTests);
+
+                var centre = new Point(
+                    (int)(original.X + original.Width / 2f),
+                    (int)(original.Y + original.Height / 2f));
+                Assert.True(editor.BeginLayerInteractionForTests(centre));
+                editor.UpdateLayerInteractionForTests(new Point(centre.X + 5, centre.Y + 3));
+                editor.EndLayerInteractionForTests();
+
+                var moved = editor.GetImageLayerFrameForTests(0);
+                Assert.Equal(original.X + 5f, moved.X);
+                Assert.Equal(original.Y + 3f, moved.Y);
+                Assert.Equal(moved.X.ToString("0.##", CultureInfo.CurrentCulture), editor.LayerXTextForTests);
+                Assert.Equal(moved.Y.ToString("0.##", CultureInfo.CurrentCulture), editor.LayerYTextForTests);
+            });
         }
     }
 }

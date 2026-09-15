@@ -37,6 +37,8 @@ namespace screenzap
         private List<ImageLayer>? layerInteractionLayersBefore;
         private bool layerChangedDuringInteraction;
         private ToolStrip? layerOptionsToolStrip;
+        private ToolStripTextBox? layerXTextBox;
+        private ToolStripTextBox? layerYTextBox;
         private ToolStripTextBox? layerHeightTextBox;
         private ToolStripTextBox? layerWidthTextBox;
         private ToolStripTextBox? layerAngleTextBox;
@@ -76,6 +78,13 @@ namespace screenzap
 
         internal bool LayerRotationInputAvailableForTests => layerAngleTextBox != null;
 
+        internal bool LayerPositionInputAvailableForTests =>
+            layerXTextBox != null && layerYTextBox != null;
+
+        internal string? LayerXTextForTests => layerXTextBox?.Text;
+
+        internal string? LayerYTextForTests => layerYTextBox?.Text;
+
         internal void SetLayerAspectLockForTests(bool locked)
         {
             if (layerAspectLockCheckBox != null)
@@ -95,6 +104,12 @@ namespace screenzap
 
         internal void SetSelectedLayerAngleForTests(float angle) =>
             ApplySelectedLayerAngle(angle);
+
+        internal void SetSelectedLayerXForTests(float x) =>
+            ApplySelectedLayerPosition(x, updateX: true);
+
+        internal void SetSelectedLayerYForTests(float y) =>
+            ApplySelectedLayerPosition(y, updateX: false);
 
         internal void ResetSelectedLayerForTests() => ResetSelectedLayerDimensions();
 
@@ -149,6 +164,7 @@ namespace screenzap
                 ? selectionToRestore
                 : -1;
             UpdateLayerToolbarState();
+            RebuildLayersPanel();
         }
 
         private void ApplyCropToImageLayers(Point cropOrigin, Size newSize)
@@ -186,6 +202,7 @@ namespace screenzap
 
             selectedLayerIndex = selectedLayer != null ? imageLayers.IndexOf(selectedLayer) : -1;
             UpdateLayerToolbarState();
+            RebuildLayersPanel();
         }
 
         private void InitializeHistoryImageDrop()
@@ -236,10 +253,28 @@ namespace screenzap
             }
             imageLayers.Clear();
             selectedLayerIndex = -1;
+            ResetLayerInteractionState();
+            UpdateLayerToolbarState();
+            RebuildLayersPanel();
+        }
+
+        /// <summary>
+        /// Drop any in-flight gesture state. The captured before-snapshot is disposed rather
+        /// than dropped: it holds cloned layer bitmaps, and the step it belonged to is gone.
+        /// </summary>
+        private void ResetLayerInteractionState()
+        {
             isLayerInteractionActive = false;
             activeLayerHandle = ImageLayerHandle.None;
-            layerInteractionLayersBefore = null;
-            UpdateLayerToolbarState();
+            layerChangedDuringInteraction = false;
+            if (layerInteractionLayersBefore != null)
+            {
+                foreach (var layer in layerInteractionLayersBefore)
+                {
+                    layer.Dispose();
+                }
+                layerInteractionLayersBefore = null;
+            }
         }
 
         private void SelectImageLayer(int index)
@@ -251,6 +286,7 @@ namespace screenzap
             if (selectedLayerIndex == index)
             {
                 UpdateLayerToolbarState();
+                UpdateLayersPanelSelection();
                 return;
             }
             selectedLayerIndex = index;
@@ -270,15 +306,16 @@ namespace screenzap
             }
 
             UpdateLayerToolbarState();
+            UpdateLayersPanelSelection();
             pictureBox1?.Invalidate();
         }
 
         private int? HitTestLayerBody(Point pixelPoint)
         {
-            // Top-most first.
+            // Top-most first. A muted layer is not on screen, so it is not clickable either.
             for (int i = imageLayers.Count - 1; i >= 0; i--)
             {
-                if (PointIsInLayerBody(pixelPoint, imageLayers[i]))
+                if (imageLayers[i].IsVisible && PointIsInLayerBody(pixelPoint, imageLayers[i]))
                     return i;
             }
             return null;
@@ -855,6 +892,12 @@ namespace screenzap
                 return;
             }
 
+            // No frame or grips around something that is not being drawn.
+            if (!imageLayers[selectedLayerIndex].IsVisible)
+            {
+                return;
+            }
+
             float zoom = pictureBox1 != null ? (float)pictureBox1.ZoomLevel : 1f;
             PointF pan = pictureBox1 != null ? pictureBox1.Metrics.PanOffset : PointF.Empty;
 
@@ -916,9 +959,15 @@ namespace screenzap
             }
         }
 
-        private void DrawImageLayers(Graphics graphics, AnnotationSurface surface)
+        private void DrawImageLayers(Graphics graphics, AnnotationSurface surface) =>
+            DrawImageLayers(graphics, imageLayers, surface);
+
+        private void DrawImageLayers(
+            Graphics graphics,
+            IReadOnlyList<ImageLayer> layers,
+            AnnotationSurface surface)
         {
-            if (imageLayers.Count == 0)
+            if (layers.Count == 0)
             {
                 return;
             }
@@ -931,8 +980,13 @@ namespace screenzap
                 pan = pictureBox1.Metrics.PanOffset;
             }
 
-            foreach (var layer in imageLayers)
+            foreach (var layer in layers)
             {
+                if (!layer.IsVisible)
+                {
+                    continue;
+                }
+
                 var dest = new RectangleF(
                     pan.X + layer.Frame.X * zoom,
                     pan.Y + layer.Frame.Y * zoom,
@@ -974,17 +1028,39 @@ namespace screenzap
             }
         }
 
-        private bool ApplyFloatingPaste()
+        /// <summary>
+        /// Glue the selected layer down. Nothing selected means nothing to glue — Enter and the
+        /// Apply command are both no-ops there rather than quietly burning the whole stack.
+        /// </summary>
+        private bool ApplyFloatingPaste() =>
+            HasSelectedLayer && ApplyFloatingPaste(selectedLayerIndex);
+
+        /// <summary>
+        /// Burn one layer into the pixel buffer. A hardened layer joins the canvas, so anything
+        /// still floating now draws above it even if it used to sit underneath: "glue this one
+        /// down" puts it in the background, and floating things are on top of the background.
+        /// </summary>
+        private bool ApplyFloatingPaste(int index)
         {
-            if (imageLayers.Count == 0) return false;
+            if (index < 0 || index >= imageLayers.Count) return false;
             if (pictureBox1?.Image == null) return false;
+
+            var doomed = imageLayers[index];
+
+            // Gluing down something you have muted would drop invisible pixels into the canvas.
+            if (!doomed.IsVisible) return false;
 
             var beforeImage = new Bitmap(pictureBox1.Image);
             var layersBefore = CloneLayers();
             var selectionBefore = Selection;
 
-            using var composite = BuildCompositeImage();
-            var afterImage = new Bitmap(composite);
+            // Only this layer gets burned in. BuildCompositeImage would also flatten the live
+            // annotations and texts, which stay live here and would then render twice.
+            var afterImage = new Bitmap(pictureBox1.Image);
+            using (var graphics = Graphics.FromImage(afterImage))
+            {
+                DrawImageLayers(graphics, new[] { doomed }, AnnotationSurface.Image);
+            }
 
             var currentZoom = ZoomLevel;
             pictureBox1.Image?.Dispose();
@@ -992,8 +1068,14 @@ namespace screenzap
             ZoomLevel = currentZoom;
             pictureBox1.ClampPan();
 
-            ClearImageLayers();
-            var layersAfter = CloneLayers(); // empty list
+            imageLayers.Remove(doomed);
+            doomed.Dispose();
+
+            // Hand the selection to the top of what is left so a second Enter glues the next
+            // layer down — mashing Enter walks the stack one layer at a time.
+            selectedLayerIndex = imageLayers.Count > 0 ? imageLayers.Count - 1 : -1;
+            ResetLayerInteractionState();
+            var layersAfter = CloneLayers();
 
             PushUndoStep(
                 Rectangle.Empty,
@@ -1011,22 +1093,27 @@ namespace screenzap
 
             UpdateCommandUI();
             UpdateLayerToolbarState();
+            RebuildLayersPanel();
             pictureBox1.Invalidate();
             return true;
         }
 
         private bool HasSelectedLayer => selectedLayerIndex >= 0 && selectedLayerIndex < imageLayers.Count;
 
-        private bool TryDeleteSelectedLayer()
+        private bool TryDeleteSelectedLayer() =>
+            HasSelectedLayer && TryDeleteLayerAt(selectedLayerIndex);
+
+        private bool TryDeleteLayerAt(int index)
         {
-            if (!HasSelectedLayer) return false;
+            if (index < 0 || index >= imageLayers.Count) return false;
 
             var layersBefore = CloneLayers();
-            var doomed = imageLayers[selectedLayerIndex];
-            imageLayers.RemoveAt(selectedLayerIndex);
+            var doomed = imageLayers[index];
+            imageLayers.RemoveAt(index);
             doomed.Dispose();
             selectedLayerIndex = -1;
             UpdateLayerToolbarState();
+            RebuildLayersPanel();
             var layersAfter = CloneLayers();
 
             Bitmap? baseClone = pictureBox1?.Image is Bitmap b ? new Bitmap(b) : null;
@@ -1055,6 +1142,9 @@ namespace screenzap
             if (!HasSelectedLayer) return false;
             selectedLayerIndex = -1;
             UpdateLayerToolbarState();
+            // Escape and empty-canvas clicks land here rather than in SelectImageLayer, so the
+            // panel needs telling directly or it keeps a row lit that is no longer selected.
+            UpdateLayersPanelSelection();
             pictureBox1?.Invalidate();
             return true;
         }
@@ -1078,6 +1168,14 @@ namespace screenzap
                 CanOverflow = false
             };
 
+            layerXTextBox = CreateLayerDimensionTextBox(
+                "layerXTextBox",
+                "Layer left edge in canvas pixels (type the same X into several layers to align them)",
+                () => CommitLayerPositionText(layerXTextBox, updateX: true));
+            layerYTextBox = CreateLayerDimensionTextBox(
+                "layerYTextBox",
+                "Layer top edge in canvas pixels (type the same Y into several layers to align them)",
+                () => CommitLayerPositionText(layerYTextBox, updateX: false));
             layerHeightTextBox = CreateLayerDimensionTextBox(
                 "layerHeightTextBox",
                 "Layer height in pixels",
@@ -1115,10 +1213,15 @@ namespace screenzap
             };
             resetButton.Click += (_, _) => ResetSelectedLayerDimensions();
 
-            layerOptionsToolStrip.Items.Add(new ToolStripLabel("H"));
-            layerOptionsToolStrip.Items.Add(layerHeightTextBox);
+            layerOptionsToolStrip.Items.Add(new ToolStripLabel("X"));
+            layerOptionsToolStrip.Items.Add(layerXTextBox);
+            layerOptionsToolStrip.Items.Add(new ToolStripLabel("Y"));
+            layerOptionsToolStrip.Items.Add(layerYTextBox);
+            layerOptionsToolStrip.Items.Add(new ToolStripSeparator());
             layerOptionsToolStrip.Items.Add(new ToolStripLabel("W"));
             layerOptionsToolStrip.Items.Add(layerWidthTextBox);
+            layerOptionsToolStrip.Items.Add(new ToolStripLabel("H"));
+            layerOptionsToolStrip.Items.Add(layerHeightTextBox);
             layerOptionsToolStrip.Items.Add(new ToolStripLabel("Rotation"));
             layerOptionsToolStrip.Items.Add(layerAngleTextBox);
             layerOptionsToolStrip.Items.Add(new ToolStripSeparator());
@@ -1127,6 +1230,7 @@ namespace screenzap
 
             Controls.Add(layerOptionsToolStrip);
             UpdateLayerToolbarState();
+            InitializeLayersPanel();
         }
 
         private ToolStripTextBox CreateLayerDimensionTextBox(string name, string toolTip, Action commit)
@@ -1168,7 +1272,11 @@ namespace screenzap
             }
 
             ToolStripTextBox? focusedTextBox = null;
-            if (layerHeightTextBox?.Control.Focused == true)
+            if (layerXTextBox?.Control.Focused == true)
+                focusedTextBox = layerXTextBox;
+            else if (layerYTextBox?.Control.Focused == true)
+                focusedTextBox = layerYTextBox;
+            else if (layerHeightTextBox?.Control.Focused == true)
                 focusedTextBox = layerHeightTextBox;
             else if (layerWidthTextBox?.Control.Focused == true)
                 focusedTextBox = layerWidthTextBox;
@@ -1177,7 +1285,11 @@ namespace screenzap
 
             if (focusedTextBox != null && e.KeyCode == Keys.Enter)
             {
-                if (focusedTextBox == layerHeightTextBox)
+                if (focusedTextBox == layerXTextBox)
+                    CommitLayerPositionText(focusedTextBox, updateX: true);
+                else if (focusedTextBox == layerYTextBox)
+                    CommitLayerPositionText(focusedTextBox, updateX: false);
+                else if (focusedTextBox == layerHeightTextBox)
                     CommitLayerDimensionText(focusedTextBox, updateWidth: false);
                 else if (focusedTextBox == layerWidthTextBox)
                     CommitLayerDimensionText(focusedTextBox, updateWidth: true);
@@ -1210,6 +1322,7 @@ namespace screenzap
             }
 
             bool show = HasSelectedLayer;
+            bool wasVisible = layerOptionsToolStrip.Visible;
             layerOptionsToolStrip.Visible = show;
             if (!show)
             {
@@ -1220,20 +1333,44 @@ namespace screenzap
             isSyncingLayerToolbarControls = true;
             try
             {
-                if (layerHeightTextBox != null)
-                    layerHeightTextBox.Text = FormatLayerToolbarValue(layer.Frame.Height);
-                if (layerWidthTextBox != null)
-                    layerWidthTextBox.Text = FormatLayerToolbarValue(layer.Frame.Width);
-                if (layerAngleTextBox != null)
-                    layerAngleTextBox.Text = FormatLayerToolbarValue(layer.RotationDeg);
+                SetLayerToolbarText(layerXTextBox, layer.Frame.X);
+                SetLayerToolbarText(layerYTextBox, layer.Frame.Y);
+                SetLayerToolbarText(layerHeightTextBox, layer.Frame.Height);
+                SetLayerToolbarText(layerWidthTextBox, layer.Frame.Width);
+                SetLayerToolbarText(layerAngleTextBox, layer.RotationDeg);
             }
             finally
             {
                 isSyncingLayerToolbarControls = false;
             }
 
-            PositionOverlayToolStrips();
-            layerOptionsToolStrip.BringToFront();
+            // Placing the strip repaints the whole band it sits in, and this method runs on
+            // every mouse-move of a layer drag — which strobed that band over the canvas and
+            // made the selection grips flicker. The strip only needs seating when it has just
+            // appeared; a window resize goes through HandleResize instead.
+            if (!wasVisible)
+            {
+                PositionOverlayToolStrips();
+                layerOptionsToolStrip.BringToFront();
+            }
+        }
+
+        /// <summary>
+        /// Write a value into a toolbar box, skipping the assignment when the text is already
+        /// right — an unchanged value should not cost the strip a repaint mid-drag.
+        /// </summary>
+        private static void SetLayerToolbarText(ToolStripTextBox? textBox, float value)
+        {
+            if (textBox == null)
+            {
+                return;
+            }
+
+            var text = FormatLayerToolbarValue(value);
+            if (textBox.Text != text)
+            {
+                textBox.Text = text;
+            }
         }
 
         private static string FormatLayerToolbarValue(float value) =>
@@ -1262,6 +1399,25 @@ namespace screenzap
             }
         }
 
+        private void CommitLayerPositionText(ToolStripTextBox? textBox, bool updateX)
+        {
+            if (isSyncingLayerToolbarControls || textBox == null)
+            {
+                return;
+            }
+
+            // Unlike W/H there is no lower bound: a layer is allowed to hang off the canvas,
+            // and negative coordinates are how you park it there.
+            if (TryParseLayerToolbarValue(textBox.Text, out float value))
+            {
+                ApplySelectedLayerPosition(value, updateX);
+            }
+            else
+            {
+                UpdateLayerToolbarState();
+            }
+        }
+
         private void CommitLayerAngleText()
         {
             if (isSyncingLayerToolbarControls || layerAngleTextBox == null)
@@ -1277,6 +1433,30 @@ namespace screenzap
             {
                 UpdateLayerToolbarState();
             }
+        }
+
+        /// <summary>
+        /// Move the selected layer so its frame origin lands on <paramref name="value"/>. The
+        /// coordinate is the unrotated frame's top-left, i.e. the same origin a body drag moves,
+        /// so typing one X into several layers lines their frames up exactly.
+        /// </summary>
+        private void ApplySelectedLayerPosition(float value, bool updateX)
+        {
+            if (!HasSelectedLayer || !float.IsFinite(value))
+            {
+                UpdateLayerToolbarState();
+                return;
+            }
+
+            var layer = imageLayers[selectedLayerIndex];
+            var before = CloneLayers();
+            var frame = layer.Frame;
+
+            layer.Frame = updateX
+                ? new RectangleF(value, frame.Y, frame.Width, frame.Height)
+                : new RectangleF(frame.X, value, frame.Width, frame.Height);
+
+            FinishLayerToolbarMutation(before, frame, layer.Fill, layer.RotationDeg);
         }
 
         private void ApplySelectedLayerDimension(float value, bool updateWidth)

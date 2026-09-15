@@ -24,6 +24,11 @@ namespace screenzap.Components
         // byte read at all.
         private readonly Dictionary<string, byte[]> lastSavedBytesByFile = new(StringComparer.OrdinalIgnoreCase);
 
+        // Same unchanged-content trick for layer sources, keyed on the Bitmap instance. A layer's
+        // Source is never mutated — transforms are sidecars — so reference identity means the
+        // file on disk is still current and the PNG encode can be skipped entirely.
+        private readonly Dictionary<string, Bitmap> lastSavedLayerBitmapByFile = new(StringComparer.OrdinalIgnoreCase);
+
         public ClipboardHistoryPersistence()
         {
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -130,6 +135,11 @@ namespace screenzap.Components
                         lastSavedBytesByFile.Remove(stale);
                     }
                 }
+
+                foreach (var stale in lastSavedLayerBitmapByFile.Keys.Where(k => !keepFiles.Contains(k)).ToList())
+                {
+                    lastSavedLayerBitmapByFile.Remove(stale);
+                }
             }
             catch
             {
@@ -190,6 +200,12 @@ namespace screenzap.Components
                 Annotations = item.Annotations?.Select(ToDto).ToList(),
                 TextAnnotations = item.TextAnnotations?.Select(ToDto).ToList()
             };
+
+            // Floating pastes are part of the item's state, not a scratch overlay: without this
+            // an item with a paste in flight came back after a restart as a bare canvas.
+            entry.ImageLayers = item.ImageLayers
+                ?.Select(layer => ToDto(item.Id, layer, keepFiles))
+                .ToList();
 
             entry.OriginalImagePath = SaveImageContent(item.Id, "original", item.OriginalPngContent, keepFiles);
             entry.CommittedImagePath = SaveImageContent(item.Id, "committed", item.CommittedPngContent, keepFiles);
@@ -377,6 +393,7 @@ namespace screenzap.Components
 
             item.Annotations = entry.Annotations?.Select(FromDto).ToList();
             item.TextAnnotations = entry.TextAnnotations?.Select(FromDto).ToList();
+            item.ImageLayers = LoadImageLayers(entry.ImageLayers);
             item.SetDirtyFlagForRestore(entry.IsDirty);
         }
 
@@ -389,6 +406,139 @@ namespace screenzap.Components
 
             var path = Path.GetFullPath(Path.Combine(rootDirectory, relativePath));
             return File.Exists(path) ? path : null;
+        }
+
+        private ImageLayerDto ToDto(Guid itemId, ImageLayer layer, HashSet<string> keepFiles)
+        {
+            return new ImageLayerDto
+            {
+                Id = layer.Id,
+                Name = layer.Name,
+                IsVisible = layer.IsVisible,
+                RotationDeg = layer.RotationDeg,
+                FrameX = layer.Frame.X,
+                FrameY = layer.Frame.Y,
+                FrameWidth = layer.Frame.Width,
+                FrameHeight = layer.Frame.Height,
+                FillX = layer.Fill.X,
+                FillY = layer.Fill.Y,
+                FillWidth = layer.Fill.Width,
+                FillHeight = layer.Fill.Height,
+                SourceImagePath = SaveLayerBitmap(itemId, $"layer_{layer.Id:N}", layer.Source, keepFiles),
+                MaskImagePath = layer.Mask == null
+                    ? null
+                    : SaveLayerBitmap(itemId, $"layer_{layer.Id:N}_mask", layer.Mask, keepFiles),
+            };
+        }
+
+        private string? SaveLayerBitmap(Guid itemId, string role, Bitmap bitmap, HashSet<string> keepFiles)
+        {
+            var fileName = $"{itemId:N}_{role}.png";
+            var path = Path.Combine(rootDirectory, fileName);
+
+            if (lastSavedLayerBitmapByFile.TryGetValue(fileName, out var previous)
+                && ReferenceEquals(previous, bitmap)
+                && File.Exists(path))
+            {
+                keepFiles.Add(fileName);
+                return fileName;
+            }
+
+            using var perf = PerfTrace.Scope(
+                "ClipboardHistoryPersistence.SaveLayerImage",
+                () => $"role={role} size={bitmap.Width}x{bitmap.Height}",
+                slowMs: 30,
+                summaryEvery: 50);
+
+            try
+            {
+                using var buffer = new MemoryStream();
+                bitmap.Save(buffer, ImageFormat.Png);
+                File.WriteAllBytes(path, buffer.ToArray());
+            }
+            catch (Exception ex)
+            {
+                // A layer we cannot encode is dropped from the manifest rather than taking the
+                // whole save down with it.
+                Logger.Log($"ClipboardHistoryPersistence: layer {role} failed to save: {ex.Message}");
+                return null;
+            }
+
+            lastSavedLayerBitmapByFile[fileName] = bitmap;
+            keepFiles.Add(fileName);
+            return fileName;
+        }
+
+        private List<ImageLayer>? LoadImageLayers(List<ImageLayerDto>? dtos)
+        {
+            if (dtos == null || dtos.Count == 0)
+            {
+                return null;
+            }
+
+            var layers = new List<ImageLayer>();
+            foreach (var dto in dtos)
+            {
+                var sourcePath = ResolveExistingPath(dto.SourceImagePath);
+                if (sourcePath == null)
+                {
+                    // No pixels, no layer. Better a missing paste than an empty frame with
+                    // grips the user cannot fill.
+                    continue;
+                }
+
+                Bitmap source;
+                try
+                {
+                    source = LoadStandaloneBitmap(sourcePath);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"ClipboardHistoryPersistence: layer source {dto.SourceImagePath} failed to load: {ex.Message}");
+                    continue;
+                }
+
+                Bitmap? mask = null;
+                var maskPath = ResolveExistingPath(dto.MaskImagePath);
+                if (maskPath != null)
+                {
+                    try
+                    {
+                        mask = LoadStandaloneBitmap(maskPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"ClipboardHistoryPersistence: layer mask {dto.MaskImagePath} failed to load: {ex.Message}");
+                    }
+                }
+
+                layers.Add(new ImageLayer(
+                    source,
+                    new RectangleF(dto.FrameX, dto.FrameY, dto.FrameWidth, dto.FrameHeight),
+                    new RectangleF(dto.FillX, dto.FillY, dto.FillWidth, dto.FillHeight),
+                    dto.RotationDeg,
+                    mask)
+                {
+                    Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
+                    IsVisible = dto.IsVisible,
+                    Name = string.IsNullOrWhiteSpace(dto.Name) ? "Paste" : dto.Name,
+                });
+            }
+
+            return layers.Count > 0 ? layers : null;
+        }
+
+        /// <summary>
+        /// Decode a PNG into a bitmap that owns its own pixels. Constructing a Bitmap over a file
+        /// or a stream leaves it tied to that source for life — the copy is what makes it safe to
+        /// hold, draw and later re-encode.
+        /// </summary>
+        private static Bitmap LoadStandaloneBitmap(string path)
+        {
+            var bytes = File.ReadAllBytes(path);
+            using var buffer = new MemoryStream(bytes, writable: false);
+            using var decoded = new Bitmap(buffer);
+            return new Bitmap(decoded);
         }
 
         private static AnnotationShapeDto ToDto(AnnotationShape shape)
@@ -487,6 +637,25 @@ namespace screenzap.Components
             public string? ThumbnailImagePath { get; set; }
             public List<AnnotationShapeDto>? Annotations { get; set; }
             public List<TextAnnotationDto>? TextAnnotations { get; set; }
+            public List<ImageLayerDto>? ImageLayers { get; set; }
+        }
+
+        private sealed class ImageLayerDto
+        {
+            public Guid Id { get; set; }
+            public string? Name { get; set; }
+            public bool IsVisible { get; set; } = true;
+            public float RotationDeg { get; set; }
+            public float FrameX { get; set; }
+            public float FrameY { get; set; }
+            public float FrameWidth { get; set; }
+            public float FrameHeight { get; set; }
+            public float FillX { get; set; }
+            public float FillY { get; set; }
+            public float FillWidth { get; set; }
+            public float FillHeight { get; set; }
+            public string? SourceImagePath { get; set; }
+            public string? MaskImagePath { get; set; }
         }
 
         private sealed class ImageRoleMetaDto

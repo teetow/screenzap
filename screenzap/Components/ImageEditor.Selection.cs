@@ -910,17 +910,26 @@ namespace screenzap
                 return;
             }
 
-            // Hover cursor feedback over a selected layer's handles / body.
+            // Hover cursor feedback over a selected layer's handles / body. A match owns the
+            // cursor and returns: the selection-hover block further down ends in an
+            // unconditional reset to Cursors.Default, so letting both run set the grip cursor
+            // and then immediately stomped it, once per mouse-move — which reads as the cursor
+            // flickering the whole time it is over a hit area.
             if (e.Button == MouseButtons.None && HasSelectedLayer)
             {
                 var hoverHandle = HitTestSelectedLayerHandle(cursorPixel);
                 if (hoverHandle != ImageLayerHandle.None)
                 {
                     Cursor = CursorForLayerHandle(hoverHandle);
+                    base.OnMouseMove(e);
+                    return;
                 }
-                else if (HitTestLayerBody(cursorPixel) is int idx && idx == selectedLayerIndex)
+
+                if (HitTestLayerBody(cursorPixel) is int idx && idx == selectedLayerIndex)
                 {
                     Cursor = Cursors.SizeAll;
+                    base.OnMouseMove(e);
+                    return;
                 }
             }
 
