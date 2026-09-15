@@ -10,6 +10,13 @@ public class Util
     private const string RUN_LOCATION = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     /// <summary>
+    /// Scratch Run key for tests, so they never read or write the real one. Null in production.
+    /// </summary>
+    internal static string? RunLocationForDiagnostics;
+
+    private static string RunLocation => RunLocationForDiagnostics ?? RUN_LOCATION;
+
+    /// <summary>
     /// Sets the autostart value for the application command.
     /// </summary>
     /// <param name="keyName">Registry Key Name</param>
@@ -19,7 +26,7 @@ public class Util
         ArgumentException.ThrowIfNullOrEmpty(keyName);
         ArgumentException.ThrowIfNullOrEmpty(startupCommand);
 
-        using RegistryKey? key = Registry.CurrentUser.CreateSubKey(RUN_LOCATION);
+        using RegistryKey? key = Registry.CurrentUser.CreateSubKey(RunLocation);
         if (key == null)
         {
             throw new InvalidOperationException("Failed to open the registry Run key for writing.");
@@ -44,7 +51,7 @@ public class Util
     {
         ArgumentException.ThrowIfNullOrEmpty(keyName);
 
-        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RUN_LOCATION, writable: false);
+        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunLocation, writable: false);
         if (key == null)
         {
             return false;
@@ -61,7 +68,7 @@ public class Util
     {
         ArgumentException.ThrowIfNullOrEmpty(keyName);
 
-        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RUN_LOCATION, writable: true);
+        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunLocation, writable: true);
         if (key == null)
         {
             return;
@@ -89,7 +96,7 @@ public class Util
         ArgumentException.ThrowIfNullOrEmpty(keyName);
         ArgumentException.ThrowIfNullOrEmpty(startupCommand);
 
-        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RUN_LOCATION, writable: true);
+        using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunLocation, writable: true);
         if (key == null)
         {
             return false;
