@@ -336,13 +336,55 @@ namespace screenzap.Components.Shared
                 return;
             }
 
+            var zoomingOut = newZoom < zoomLevel;
             var focusPixel = ClientToPixel(clientFocus);
             ZoomLevel = newZoom;
             var focusAfter = PixelToClient(focusPixel);
             var correction = new Size(focusAfter.X - clientFocus.X, focusAfter.Y - clientFocus.Y);
             panOffset = new PointF(panOffset.X - correction.Width, panOffset.Y - correction.Height);
-            ClampPan();
+            SettleZoomPan(zoomingOut);
             Invalidate();
+        }
+
+        /// <summary>
+        /// Pull the image back where holding the cursor's pixel still would have stranded it.
+        ///
+        /// Anchoring on the cursor is what makes zooming in on a detail work, but it is a bad deal
+        /// in two cases. An axis the image no longer fills has no detail worth holding under the
+        /// cursor, and the anchoring contracts the image into whichever corner the cursor is in —
+        /// zoom out far enough with the pointer near an edge and the picture ends up hanging off
+        /// the side of the viewport with only the overscroll margin still showing. And zooming out
+        /// along an axis the image does fill can uncover an edge that was covered a moment ago,
+        /// which is the drift that walks the picture into that corner in the first place.
+        ///
+        /// So an axis the image does not fill is centred, and zooming out may not uncover an edge.
+        /// Zooming in still honours whatever overscroll a drag set up: that gap was asked for, and
+        /// there is detail under the cursor worth keeping there.
+        /// </summary>
+        private void SettleZoomPan(bool zoomingOut)
+        {
+            var scaled = GetScaledImageSize();
+            if (!scaled.IsEmpty)
+            {
+                panOffset = new PointF(
+                    SettleZoomAxis(panOffset.X, scaled.Width, ClientSize.Width, zoomingOut),
+                    SettleZoomAxis(panOffset.Y, scaled.Height, ClientSize.Height, zoomingOut));
+            }
+
+            ClampPan();
+        }
+
+        private static float SettleZoomAxis(float pan, float scaledExtent, int clientExtent, bool zoomingOut)
+        {
+            if (scaledExtent <= clientExtent)
+            {
+                // Whole pixels, for the same reason CenterImage rounds.
+                return MathF.Round((clientExtent - scaledExtent) / 2f);
+            }
+
+            // Covered means the image spans the viewport: its left/top edge at or before 0, its
+            // right/bottom edge at or after the far side.
+            return zoomingOut ? Math.Min(0f, Math.Max(clientExtent - scaledExtent, pan)) : pan;
         }
 
         public Point PixelToClient(Point pixel)
