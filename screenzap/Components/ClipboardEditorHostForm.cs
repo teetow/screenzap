@@ -40,6 +40,13 @@ namespace screenzap.Components
         private IClipboardDocumentPresenter? activePresenter;
         private bool hasPendingReloadIndicator;
         private bool hasPendingPersistenceSave;
+        // Window-size guessing state: what we last set the window to, whether the resize in
+        // flight is ours, whether the user has overridden the guess, and whether there is a
+        // position worth keeping yet. See FitToContent.
+        private Size lastAppliedWindowSize;
+        private bool applyingWindowBounds;
+        private bool hasUserSizedWindow;
+        private bool hasBeenShownToUser;
         private DateTime? suppressExternalClipboardUntilUtc;
         private Guid? pendingCommittedItemId;
         private DateTime? pendingCommittedItemUntilUtc;
@@ -169,6 +176,7 @@ namespace screenzap.Components
             FormClosed += OnHostFormClosed;
 
             WindowLayoutHelper.ApplyInitialGeometry(this);
+            lastAppliedWindowSize = Size;
             if (!ActivatePreferredHistoryItem()
                 && presenters.FirstOrDefault() is IClipboardDocumentPresenter firstPresenter)
             {
@@ -1057,6 +1065,11 @@ namespace screenzap.Components
             historyStore.Activate(item);
             ActivatePresenter(presenter);
             presenter.LoadHistoryItem(item);
+
+            // Loading resets the zoom, so fit the new content to the window we already have.
+            // Opening the editor re-runs this after resizing; switching items in an open window
+            // is the case that would otherwise drop a 4K capture in at 1:1.
+            presenter.FitContentToView();
             UpdateCommandStates();
             return true;
         }
@@ -1130,36 +1143,155 @@ namespace screenzap.Components
         }
 
         /// <summary>
-        /// Resize the host so the active presenter's content fits at native size. No-op when the
-        /// presenter doesn't expose a natural content size (e.g. text). When the natural size
-        /// would overflow the working area we shrink to fit — the picture box will then
-        /// zoom-to-fit the image into the available space. The window position is preserved
-        /// (only Size changes) so the window stays where the user expects it.
+        /// Size the host to the active presenter's content, then have the presenter fit its
+        /// content to whatever size the window ended up with.
+        ///
+        /// The size is a guess, and it yields in both directions: it is capped at
+        /// <see cref="WindowLayoutHelper.MaxWorkingAreaFraction"/> of the target screen, because a
+        /// screenshot at 1:1 nearly always wants more room than the screen it came from, and it is
+        /// skipped outright once the user has sized the window themselves. Either way the content
+        /// may not fit at 1:1, which is why the zoom pass at the end is unconditional.
+        ///
+        /// The window is centred on its own centre rather than grown from its top-left, so it does
+        /// not walk toward the bottom-right corner across successive opens. Before the first show
+        /// there is no centre worth keeping, so it opens on the screen under the cursor.
         /// </summary>
         public void FitToContent()
         {
             var presenter = activePresenter;
             if (presenter == null) return;
-            var natural = presenter.GetNaturalContentSize();
-            if (natural == null) return;
 
-            // Chrome the host adds around the presenter view.
-            var hostChromeW = Math.Max(0, ClientSize.Width - presenterHostPanel.ClientSize.Width);
-            var hostChromeH = Math.Max(0, ClientSize.Height - presenterHostPanel.ClientSize.Height);
+            // A minimized window's bounds are meaningless (Windows parks it off-screen) and it is
+            // about to be restored to the size it already had, so leave the geometry alone.
+            if (!hasUserSizedWindow && WindowState == FormWindowState.Normal)
+            {
+                if (presenter.GetNaturalContentSize() is PresenterContentSize natural)
+                {
+                    var anchor = hasBeenShownToUser
+                        ? Bounds
+                        : Screen.FromPoint(Cursor.Position).WorkingArea;
 
-            var desiredClient = new Size(
-                Math.Max(MinimumSize.Width, natural.Value.Width + hostChromeW),
-                Math.Max(MinimumSize.Height, natural.Value.Height + hostChromeH));
+                    ApplyWindowBounds(MeasureWindowFor(natural, anchor));
+                }
+            }
 
-            var nonClientW = Math.Max(0, Size.Width - ClientSize.Width);
-            var nonClientH = Math.Max(0, Size.Height - ClientSize.Height);
-            var desiredOuter = new Size(desiredClient.Width + nonClientW, desiredClient.Height + nonClientH);
+            // The presenter measures against its own view, so it needs the layout the new size
+            // implies, not the one it had on the way in.
+            PerformLayout();
+            presenter.FitContentToView();
+        }
 
-            // Clamp to working area. Anchor on the current top-left so position is preserved
-            // when possible; ClampToWorkingArea will nudge inward if the new size overflows.
-            var proposed = new Rectangle(Location, desiredOuter);
-            var clamped = screenzap.lib.WindowLayoutHelper.ClampToWorkingArea(proposed);
-            Bounds = clamped;
+        /// <summary>
+        /// Outer bounds that show <paramref name="natural"/> as fully as the screen allows.
+        ///
+        /// Two passes. The first asks for the content at 1:1 and lets the cap answer. If the cap
+        /// took anything, the content is going to be zoomed out to fit what it got, so the second
+        /// pass asks again for the content at that zoom — otherwise a 3840x1080 capture, pinned to
+        /// the width cap and rendered 575px tall, would sit in a 1080px-tall canvas with empty
+        /// bands above and below it.
+        /// </summary>
+        private Rectangle MeasureWindowFor(PresenterContentSize natural, Rectangle anchor)
+        {
+            // Everything around the content that does not scale: the presenter's own furniture,
+            // the panels this host docks around it, and the border and title bar. Working in outer
+            // sizes keeps the comparison against MinimumSize — an outer size — like for like.
+            // Clamping a client size to an outer minimum and adding the non-client area on top used
+            // to inflate the floor: a 200x120 image opened at 916x639 rather than 900x600.
+            var fixedChrome = new Size(
+                natural.Chrome.Width
+                    + Math.Max(0, ClientSize.Width - presenterHostPanel.ClientSize.Width)
+                    + Math.Max(0, Size.Width - ClientSize.Width),
+                natural.Chrome.Height
+                    + Math.Max(0, ClientSize.Height - presenterHostPanel.ClientSize.Height)
+                    + Math.Max(0, Size.Height - ClientSize.Height));
+
+            var content = natural.Content;
+            var bounds = WindowLayoutHelper.CenterOnAnchor(
+                anchor,
+                new Size(content.Width + fixedChrome.Width, content.Height + fixedChrome.Height),
+                MinimumSize);
+
+            if (content.Width <= 0 || content.Height <= 0)
+            {
+                return bounds;
+            }
+
+            var granted = new Size(
+                Math.Max(1, bounds.Width - fixedChrome.Width),
+                Math.Max(1, bounds.Height - fixedChrome.Height));
+            var scale = Math.Min(
+                (double)granted.Width / content.Width,
+                (double)granted.Height / content.Height);
+            if (scale >= 1d)
+            {
+                return bounds;
+            }
+
+            return WindowLayoutHelper.CenterOnAnchor(
+                anchor,
+                new Size(
+                    (int)Math.Ceiling(content.Width * scale) + fixedChrome.Width,
+                    (int)Math.Ceiling(content.Height * scale) + fixedChrome.Height),
+                MinimumSize);
+        }
+
+        /// <summary>
+        /// Set the window's geometry as the app rather than as the user, so
+        /// <see cref="OnSizeChanged"/> does not mistake our own resize for the user grabbing a
+        /// border. The size is recorded after the assignment, not before: WinForms applies
+        /// MinimumSize inside the setter and what matters is what the window actually became.
+        /// </summary>
+        private void ApplyWindowBounds(Rectangle bounds)
+        {
+            applyingWindowBounds = true;
+            try
+            {
+                Bounds = bounds;
+            }
+            finally
+            {
+                applyingWindowBounds = false;
+                lastAppliedWindowSize = Size;
+            }
+        }
+
+        /// <summary>
+        /// Any resize we did not perform ourselves is the user expressing a preference — dragging a
+        /// border, maximizing, snapping — and from then on the auto-sizing stops. Guessing a size
+        /// is only welcome while the user has not said what they want.
+        ///
+        /// Only armed once the window has been shown for real. Everything before that — the
+        /// constructor's own layout, handle creation, the transparent warm-up show — resizes a
+        /// window nobody can see, so none of it can be the user.
+        /// </summary>
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+
+            if (applyingWindowBounds
+                || !hasBeenShownToUser
+                || WindowState == FormWindowState.Minimized
+                || lastAppliedWindowSize == Size)
+            {
+                return;
+            }
+
+            hasUserSizedWindow = true;
+        }
+
+        /// <summary>True once the user has sized the window themselves, after which FitToContent
+        /// leaves the geometry alone.</summary>
+        internal bool HasUserSizedWindow => hasUserSizedWindow;
+
+        /// <summary>
+        /// Arm the user-resize detection without putting a window on screen. Tests need the armed
+        /// state, and getting it the honest way means a real Show and Activate, which steals focus
+        /// from whoever is using the machine while the suite runs.
+        /// </summary>
+        internal void MarkShownToUserForDiagnostics()
+        {
+            hasBeenShownToUser = true;
+            lastAppliedWindowSize = Size;
         }
 
         /// <summary>
@@ -1180,6 +1312,12 @@ namespace screenzap.Components
             }
 
             Activate();
+
+            // From here the window has a position the user has seen, so the next FitToContent
+            // grows around it instead of falling back to the screen under the cursor. The warm-up
+            // show does not count: it happens transparently, off in whichever corner the window
+            // was constructed.
+            hasBeenShownToUser = true;
         }
 
         private void FocusHostWindow()

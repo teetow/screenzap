@@ -1097,7 +1097,7 @@ namespace Screenzap.ViewportTests
                 return CurrentColor == Color.Empty ? null : MakeSolid(CurrentColor);
             }
 
-            public System.Drawing.Size? GetNaturalContentSize() => null;
+            public PresenterContentSize? GetNaturalContentSize() => null;
 
             public void Dispose()
             {

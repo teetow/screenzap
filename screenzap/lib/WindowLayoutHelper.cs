@@ -6,28 +6,67 @@ namespace screenzap.lib
 {
     internal static class WindowLayoutHelper
     {
-        private static readonly Size DefaultMinimumSize = new Size(800, 600);
+        private static readonly Size FallbackMinimumSize = new Size(800, 600);
 
-        public static Rectangle GetDefaultBounds()
+        /// <summary>
+        /// The share of the working area an auto-sized window is allowed to take. Screenshots are
+        /// usually about as big as the screen they came from, so sizing one to fit at 1:1 nearly
+        /// always asks for more room than exists; without a cap every large capture produced a
+        /// window exactly the size of the working area, cornered — a window pretending to be
+        /// maximized. The leftover tenth is what makes it read as a window.
+        /// </summary>
+        public const double MaxWorkingAreaFraction = 0.9;
+
+        public static Rectangle GetDefaultBounds(Size minimumSize)
         {
-            var screen = Screen.FromPoint(Cursor.Position);
-            return CenterWithin(screen.WorkingArea, DefaultMinimumSize);
+            var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+            return CenterOnAnchor(workArea, minimumSize, minimumSize);
         }
 
-        public static Rectangle CenterWithin(Rectangle container, Size desired)
+        /// <summary>
+        /// The screen an anchor rectangle belongs to, chosen by its centre point.
+        /// <see cref="Screen.FromRectangle"/> picks by largest intersection, so a proposed size
+        /// wider than the monitor it started on can select a neighbour and teleport the window;
+        /// a centre point cannot.
+        /// </summary>
+        public static Screen ScreenForAnchor(Rectangle anchor)
         {
-            var width = Math.Max(desired.Width, DefaultMinimumSize.Width);
-            var height = Math.Max(desired.Height, DefaultMinimumSize.Height);
+            return Screen.FromPoint(CenterOf(anchor));
+        }
 
-            var left = container.Left + Math.Max(0, (container.Width - width) / 2);
-            var top = container.Top + Math.Max(0, (container.Height - height) / 2);
-            return new Rectangle(left, top, Math.Min(width, container.Width), Math.Min(height, container.Height));
+        /// <summary>
+        /// Bounds for a window that wants <paramref name="desiredOuter"/>: held to
+        /// <see cref="MaxWorkingAreaFraction"/> of the anchor's screen, never below
+        /// <paramref name="minimumOuter"/>, centred on the anchor's centre, and nudged fully
+        /// inside the working area. All three sizes are outer (window) sizes, not client sizes.
+        /// </summary>
+        public static Rectangle CenterOnAnchor(Rectangle anchor, Size desiredOuter, Size minimumOuter)
+        {
+            var workArea = ScreenForAnchor(anchor).WorkingArea;
+
+            var width = FitAxis(
+                desiredOuter.Width,
+                minimumOuter.Width,
+                (int)Math.Round(workArea.Width * MaxWorkingAreaFraction),
+                workArea.Width);
+            var height = FitAxis(
+                desiredOuter.Height,
+                minimumOuter.Height,
+                (int)Math.Round(workArea.Height * MaxWorkingAreaFraction),
+                workArea.Height);
+
+            var center = CenterOf(anchor);
+            var centered = new Rectangle(center.X - width / 2, center.Y - height / 2, width, height);
+            return ClampToWorkingArea(centered, workArea);
         }
 
         public static Rectangle ClampToWorkingArea(Rectangle proposedBounds)
         {
-            var screen = Screen.FromRectangle(proposedBounds);
-            var workArea = screen.WorkingArea;
+            return ClampToWorkingArea(proposedBounds, ScreenForAnchor(proposedBounds).WorkingArea);
+        }
+
+        public static Rectangle ClampToWorkingArea(Rectangle proposedBounds, Rectangle workArea)
+        {
             var width = Math.Min(proposedBounds.Width, workArea.Width);
             var height = Math.Min(proposedBounds.Height, workArea.Height);
 
@@ -45,10 +84,28 @@ namespace screenzap.lib
 
             if (!target.StartPosition.Equals(FormStartPosition.Manual) || target.Bounds.Width == 0 || target.Bounds.Height == 0)
             {
-                var bounds = GetDefaultBounds();
+                // Centre for the size the window will actually have. Centring for a smaller size
+                // and letting WinForms widen it up to MinimumSize afterwards left the window off
+                // centre by half the difference.
+                var minimum = target.MinimumSize.IsEmpty ? FallbackMinimumSize : target.MinimumSize;
                 target.StartPosition = FormStartPosition.Manual;
-                target.Bounds = bounds;
+                target.Bounds = GetDefaultBounds(minimum);
             }
+        }
+
+        private static Point CenterOf(Rectangle rect)
+        {
+            return new Point(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2);
+        }
+
+        /// <summary>
+        /// One axis: the cap is a preference, the window's own minimum and the screen are not, so
+        /// a minimum larger than the cap wins and the working area beats both.
+        /// </summary>
+        private static int FitAxis(int desired, int minimum, int cap, int available)
+        {
+            var ceiling = Math.Min(available, Math.Max(cap, minimum));
+            return Math.Max(Math.Min(minimum, ceiling), Math.Min(desired, ceiling));
         }
     }
 }

@@ -3676,7 +3676,7 @@ namespace screenzap
             return null;
         }
 
-        Size? IClipboardDocumentPresenter.GetNaturalContentSize()
+        PresenterContentSize? IClipboardDocumentPresenter.GetNaturalContentSize()
         {
             if (!HasEditableImage || pictureBox1?.Image == null || canvasPanel == null)
             {
@@ -3690,7 +3690,34 @@ namespace screenzap
             var chrome = new Size(
                 Math.Max(0, ClientSize.Width - canvasPanel.ClientSize.Width),
                 Math.Max(0, ClientSize.Height - canvasPanel.ClientSize.Height));
-            return new Size(pictureBox1.Image.Width + chrome.Width, pictureBox1.Image.Height + chrome.Height);
+            return new PresenterContentSize(pictureBox1.Image.Size, chrome);
+        }
+
+        void IClipboardDocumentPresenter.FitContentToView() => FitImageToCanvas();
+
+        /// <summary>
+        /// Zoom out until the whole image is inside the canvas, and no further: an image smaller
+        /// than the canvas stays at 1:1 rather than being magnified to fill it. The zoom is the
+        /// exact fit rather than the nearest preset from <see cref="ZoomLevels"/>, so nothing is
+        /// left hanging over an edge; zoom in/out still steps back onto the preset ladder.
+        /// </summary>
+        internal void FitImageToCanvas()
+        {
+            if (pictureBox1 == null || !HasEditableImage)
+            {
+                return;
+            }
+
+            var image = pictureBox1.GetImagePixelSize();
+            var view = pictureBox1.ClientSize;
+            if (image.Width <= 0 || image.Height <= 0 || view.Width <= 0 || view.Height <= 0)
+            {
+                return;
+            }
+
+            var scale = Math.Min((decimal)view.Width / image.Width, (decimal)view.Height / image.Height);
+            ZoomLevel = scale >= 1m ? 1m : Math.Round(scale, 3, MidpointRounding.ToZero);
+            pictureBox1.CenterImage();
         }
 
         private void ApplyHostChromeVisibility(bool isHosted)
