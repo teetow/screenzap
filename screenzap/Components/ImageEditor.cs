@@ -1526,6 +1526,8 @@ namespace screenzap
                     output[i + 3] = sourceBytes[i + 3];
                 }
 
+                TextToneNormalizer.Normalize(output);
+
                 var result = new Bitmap(original.Width, original.Height, PixelFormat.Format32bppArgb);
                 var resultData = result.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
                 try
