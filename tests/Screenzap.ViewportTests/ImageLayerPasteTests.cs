@@ -195,7 +195,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void Paste_ThenUndoAfterCommit_RestoresUnflattenedBaselineAndDropsLayer()
+        public void Paste_ThenUndoAfterCommit_RestoresUnflattenedBaselineAndEditableLayer()
         {
             StaTest.Run(() =>
             {
@@ -216,7 +216,7 @@ namespace Screenzap.ViewportTests
 
                 presenter.StashHistoryItemState(item);
                 using var flattened = (Bitmap)presenter.GetCurrentContent()!;
-                item.UpdateCurrentImage(flattened);
+                item.AcceptEdits(flattened);
                 item.MarkClean();
                 presenter.LoadHistoryItem(item);
 
@@ -227,15 +227,19 @@ namespace Screenzap.ViewportTests
                     Assert.Equal(Color.Magenta.ToArgb(), afterCommit.GetPixel(20, 15).ToArgb());
                 }
 
-                // Undo should walk back across the commit by restoring the unflattened base + dropping the layer.
+                // Undo acceptance restores the unflattened base and editable layer.
                 Assert.True(presenter.CanExecute(EditorCommandId.Undo));
                 Assert.True(presenter.TryExecute(EditorCommandId.Undo));
 
-                Assert.Equal(0, editor.ImageLayerCountForTests);
+                Assert.Equal(1, editor.ImageLayerCountForTests);
                 using (var afterUndo = editor.CloneBaseBitmapForTests()!)
                 {
                     Assert.Equal(Color.White.ToArgb(), afterUndo.GetPixel(20, 15).ToArgb());
                 }
+                Assert.True(presenter.TryExecute(EditorCommandId.Undo));
+                Assert.Equal(0, editor.ImageLayerCountForTests);
+                using var originalAgain = editor.BuildCompositeImageForTests();
+                Assert.Equal(Color.White.ToArgb(), originalAgain.GetPixel(20, 15).ToArgb());
             });
         }
     }

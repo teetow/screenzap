@@ -338,7 +338,7 @@ namespace screenzap
             }
         }
 
-        private static bool IsEmojiTextElement(string textElement)
+        internal static bool IsEmojiTextElement(string textElement)
         {
             if (string.IsNullOrEmpty(textElement))
             {
@@ -352,9 +352,20 @@ namespace screenzap
                     return true;
                 }
 
-                if ((rune.Value >= 0x1F1E6 && rune.Value <= 0x1F1FF) ||
-                    (rune.Value >= 0x1F300 && rune.Value <= 0x1FAFF) ||
-                    (rune.Value >= 0x2600 && rune.Value <= 0x27BF))
+                if ((rune.Value >= 0x1F000 && rune.Value <= 0x1FAFF) ||
+                    (rune.Value >= 0x2600 && rune.Value <= 0x27BF) ||
+                    rune.Value is 0x00A9 or 0x00AE or 0x203C or 0x2049 or 0x2122 or 0x2139
+                        or 0x24C2 or 0x2B50 or 0x2B55 or 0x3030 or 0x303D or 0x3297 or 0x3299 ||
+                    (rune.Value >= 0x2194 && rune.Value <= 0x2199) ||
+                    (rune.Value >= 0x21A9 && rune.Value <= 0x21AA) ||
+                    (rune.Value >= 0x231A && rune.Value <= 0x231B) ||
+                    rune.Value is 0x2328 or 0x23CF or 0x23F0 or 0x23F3 ||
+                    (rune.Value >= 0x23E9 && rune.Value <= 0x23FA) ||
+                    rune.Value is 0x25AA or 0x25AB or 0x25B6 or 0x25C0 ||
+                    (rune.Value >= 0x25FB && rune.Value <= 0x25FE) ||
+                    (rune.Value >= 0x2934 && rune.Value <= 0x2935) ||
+                    (rune.Value >= 0x2B05 && rune.Value <= 0x2B07) ||
+                    (rune.Value >= 0x2B1B && rune.Value <= 0x2B1C))
                 {
                     return true;
                 }
@@ -799,6 +810,7 @@ namespace screenzap
         private void UpdateTextToolButtons()
         {
             bool enable = HasEditableImage;
+            if (emojiToolStripButton != null) emojiToolStripButton.Enabled = enable;
 
             if (!enable)
             {

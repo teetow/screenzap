@@ -15,6 +15,7 @@
         {
             if (disposing)
             {
+                DisposeEmojiUi();
                 ReleaseClipboardListener();
                 undoStack?.Dispose();
                 ReleaseCensorPreviewBuffer();

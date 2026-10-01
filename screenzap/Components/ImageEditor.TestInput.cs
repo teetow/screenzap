@@ -191,6 +191,11 @@ namespace screenzap
 
         internal int TestTextAnnotationCount => textAnnotations.Count;
 
+        internal void TestSetEmojiRecentStore(EmojiRecentStore store) => emojiRecentStore = store;
+        internal bool TestBeginEmojiPickerCapture() => BeginEmojiPickerCapture();
+        internal void TestSetEmojiPickerInput(string text) { if (emojiPickerInput != null) emojiPickerInput.Text = text; }
+        internal void TestEndEmojiPickerCapture() => EndEmojiPicker();
+
         internal void TestToggleArrowTool() => ToggleDrawingTool(DrawingTool.Arrow);
 
         internal void TestToggleRectTool() => ToggleDrawingTool(DrawingTool.Rectangle);

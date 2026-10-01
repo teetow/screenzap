@@ -171,7 +171,7 @@ namespace screenzap.Testing
                 }
             }
 
-            // Undo across the commit boundary should unflatten: layer disappears, base reverts to pre-paste.
+            // Undo acceptance unflattens the bitmap and restores the editable layer.
             var presenter = (IClipboardDocumentPresenter)editor;
             if (!presenter.CanExecute(EditorCommandId.Undo))
             {
@@ -197,6 +197,15 @@ namespace screenzap.Testing
                 {
                     failures.Add($"{label}: post-undo base still Magenta at center — undo across commit failed to unflatten.");
                 }
+            }
+
+            if (editor.ImageLayerCountForTests != 1)
+            {
+                failures.Add($"{label}: undo acceptance did not restore the editable layer.");
+            }
+            if (!presenter.TryExecute(EditorCommandId.Undo) || editor.ImageLayerCountForTests != 0)
+            {
+                failures.Add($"{label}: subsequent undo did not remove the paste.");
             }
 
             Logger.Log($"{label} flow validated through host commit pipeline.");
@@ -277,6 +286,8 @@ namespace screenzap.Testing
                 return;
             }
 
+            // This check exercises free resizing; the toolbar locks the aspect ratio by default.
+            editor.SetLayerAspectLockForTests(false);
             // Re-select then drag the bottom-right corner handle to resize.
             if (!editor.BeginLayerInteractionForTests(bodyPoint))
             {

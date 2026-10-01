@@ -805,10 +805,10 @@ namespace screenzap.Components
                 screenzap.lib.Logger.Log($"CommitActiveItemEdits clipboard write failed: {ex.Message}");
             }
 
-            // Bake the flattened state into the item as the new baseline; annotations are consumed.
+            // Preserve the complete editable document as an undo step before baking the overlays.
             if (flattened != null)
             {
-                item.UpdateCurrentImage(flattened);
+                item.AcceptEdits(flattened);
                 flattened.Dispose();
             }
 

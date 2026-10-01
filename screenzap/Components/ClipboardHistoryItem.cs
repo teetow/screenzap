@@ -411,6 +411,20 @@ namespace screenzap.Components
             IsDirty = true;
         }
 
+        /// <summary>
+        /// Record the flattening boundary before replacing the editable document's base bitmap.
+        /// The host stashes live state first, so CurrentImage and Overlay are the pre-accept state.
+        /// </summary>
+        internal void AcceptEdits(Bitmap flattened)
+        {
+            if (Kind != ClipboardItemKind.Image) return;
+            // Pixel edits already have undo steps. Only flattening live objects changes the
+            // document here; adding an identical bitmap snapshot otherwise hides the last edit.
+            if (Overlay?.IsEmpty == false)
+                AppendImageReplacementUndoStep(flattened);
+            UpdateCurrentImage(flattened);
+        }
+
         public void MarkClean()
         {
             // Treat current state as the new committed baseline, but keep OriginalImage immutable.
@@ -421,8 +435,8 @@ namespace screenzap.Components
             }
 
             // UndoSnapshot is intentionally preserved so undo/revert remain available after commit.
-            // The overlay is cleared because it's now baked into the flattened baseline; each
-            // undo step carries its own pre/post snapshot of it for restoration on undo.
+            // AcceptEdits captures the bitmap and overlay before clearing the baked objects.
+            // Undoing that boundary restores the editable document before earlier undo steps run.
             Overlay = null;
             PruneDecodeCache();
             SetPreviewComposite(null);
@@ -433,7 +447,10 @@ namespace screenzap.Components
         {
             if (original != null)
             {
-                AppendRevertUndoStep();
+                if (Kind == ClipboardItemKind.Image && OriginalImage is Bitmap originalBitmap)
+                    AppendImageReplacementUndoStep(originalBitmap);
+                else
+                    UndoSnapshot = null;
                 current = original;
                 committed = original;
             }
@@ -444,29 +461,21 @@ namespace screenzap.Components
             SetPreviewComposite(null);
         }
 
-        /// <summary>
-        /// Capture the pre-revert state (base image + annotations/texts/layers) as an
-        /// image-replacing step appended to <see cref="UndoSnapshot"/>, so revert is undoable
-        /// like commit. Must run before the current/committed roles are reset to original.
-        /// </summary>
-        private void AppendRevertUndoStep()
+        /// <summary>Record a full document replacement, including the overlay it consumes.</summary>
+        private void AppendImageReplacementUndoStep(Bitmap replacement)
         {
-            Bitmap? currentBitmap = Kind == ClipboardItemKind.Image ? CurrentImage : null;
-            Bitmap? originalBitmap = Kind == ClipboardItemKind.Image ? OriginalImage : null;
-            if (currentBitmap == null || originalBitmap == null)
+            if (CurrentImage is not Bitmap currentBitmap)
             {
-                // No image state to capture — fall back to wiping the stack rather than
-                // leaving steps that no longer correspond to the item's content.
                 UndoSnapshot = null;
                 return;
             }
 
             // Empty (not null) after-lists: null means "leave live state alone" to ApplyLayerState
-            // and friends, but redoing a revert must clear annotations and layers.
+            // and friends, but redoing the replacement must clear annotations and layers.
             var step = new ImageUndoStep(
                 Rectangle.Empty,
                 new Bitmap(currentBitmap),
-                new Bitmap(originalBitmap),
+                new Bitmap(replacement),
                 Rectangle.Empty,
                 Rectangle.Empty,
                 replacesImage: true,
@@ -479,7 +488,7 @@ namespace screenzap.Components
 
             // Route the push through an UndoRedo instance so a pending redo tail is truncated
             // (and disposed) with the same semantics as any other edit.
-            var stack = new UndoRedo();
+            using var stack = new UndoRedo();
             stack.RestoreState(UndoSnapshot);
             stack.Push(step);
             UndoSnapshot = stack.ExtractState();

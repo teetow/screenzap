@@ -237,6 +237,7 @@ namespace screenzap
             pictureBox1.ZoomChanged += pictureBox1_ZoomChanged;
             pictureBox1.MouseDoubleClick += pictureBox1_MouseDoubleClick;
             InitializeHistoryImageDrop();
+            InitializeEmojiTool();
 
             ClearSelection();
 
@@ -702,6 +703,7 @@ namespace screenzap
             LogViewportDebug($"=== LoadImage START: imgData.Size={imgData.Size}, treatAsPlaceholder={treatAsPlaceholder} ===");
             LogViewportDebug($"LoadImage: current pictureBox1.ClientSize={pictureBox1.ClientSize}, panOffset={pictureBox1.Metrics.PanOffset}");
 
+            CloseEmojiUi();
             deJpegRevision++;
             isPlaceholderImage = treatAsPlaceholder;
             bufferTimestamp = treatAsPlaceholder ? (DateTime?)null : (ClipboardMetadata.LastCaptureTimestamp ?? DateTime.Now);
@@ -2145,6 +2147,13 @@ namespace screenzap
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (emojiPickerInput?.Focused == true)
+                return base.ProcessCmdKey(ref msg, keyData);
+            if (keyData == Keys.Escape && emojiFlyout?.Visible == true)
+            {
+                CloseEmojiUi();
+                return true;
+            }
             // Intercept arrow/navigation keys for text edit mode before WinForms
             // converts them into focus-movement commands (they never reach KeyDown otherwise).
             // Do NOT steal keys when a toolbar control (font picker, size box, etc.) has focus —

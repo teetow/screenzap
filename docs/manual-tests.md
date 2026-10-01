@@ -67,3 +67,22 @@
 3. Click **Apply** (or press `Enter`). Confirm the canvas resizes to fit the rotated image with no clipped content, and `Ctrl+Z` / `Ctrl+Shift+Z` undo/redo it as one step.
 4. Press `Escape` (or click **Cancel**) mid-drag and confirm the image is unchanged and no undo step was created.
 5. Draw a selection first, then activate Free Rotate and drag. Confirm only the selection's content rotates in place — clipped to the marquee, with the surrounding image untouched — rather than resizing the canvas.
+
+## Emoji
+
+1. Open an image and click the smile icon beside **Text**. Confirm the flyout has eight large emoji and a ninth **…** tile.
+2. Drag several emoji onto different parts of the image. Confirm the flyout stays open, each emoji lands under the drop point, and the most recently used emoji moves to the first tile.
+3. Zoom and pan to a detail, then drag another emoji. Confirm it lands at the drop point. Undo and redo; move it with the Move tool, then press Enter to edit it as text.
+4. Click **…** and choose an emoji from the Windows picker. Confirm it appears at the center of the visible viewport, including at non-default zoom and pan. Try a skin-tone emoji and a joined sequence such as 👩🏽‍💻.
+5. Open the Windows picker again and cancel with Escape or by clicking the canvas. Confirm no object is added, existing text remains unchanged, and no undo step is created.
+6. Toggle the smile icon or press Escape to close the flyout. Restart Screenzap and confirm recent emoji are remembered.
+7. Save or copy the screenshot and confirm emoji remain in color in the exported image.
+
+## Accept Edits Undo
+
+1. Add text or emoji to an image, then **Accept Edits**. Confirm the objects are baked into the image.
+2. Press `Ctrl+Z` once. Confirm the original base bitmap returns and the objects are editable again, without duplicate baked pixels.
+3. Press `Ctrl+Z` again to undo the last annotation. Confirm the annotation and its pixels disappear.
+4. Redo both steps. Confirm the annotation returns, then is baked into the bitmap once.
+5. Repeat with mixed shapes, text, and pasted layers, and after accepting edits several times. Switch history items and back before undoing; confirm the same result.
+6. Make a bitmap-only edit (for example, rotate an image) and **Accept Edits**. Press `Ctrl+Z` once and confirm the bitmap edit is undone immediately; redo restores it.
