@@ -514,7 +514,7 @@
             // 
             this.straightenHintLabel.Name = "straightenHintLabel";
             this.straightenHintLabel.Size = new System.Drawing.Size(300, 23);
-            this.straightenHintLabel.Text = "Draw a reference line that should be horizontal or vertical, then Apply";
+            this.straightenHintLabel.Text = "Drag a rectangle around the area to straighten";
             // 
             // straightenApplyButton
             // 
@@ -669,7 +669,7 @@
             this.straightenToolStripButton.Name = "straightenToolStripButton";
             this.straightenToolStripButton.Size = new System.Drawing.Size(75, 23);
             this.straightenToolStripButton.Text = "Straighten";
-            this.straightenToolStripButton.ToolTipText = "Auto-detect and correct rotation/perspective distortion (Ctrl+L)";
+            this.straightenToolStripButton.ToolTipText = "Adjust four corners to crop and correct perspective (Ctrl+L)";
             this.straightenToolStripButton.Click += new System.EventHandler(this.straightenToolStripButton_Click);
             //
             // freeRotateToolStripButton

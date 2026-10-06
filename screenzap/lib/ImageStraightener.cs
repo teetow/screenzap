@@ -281,6 +281,48 @@ namespace screenzap.lib
             return BitmapConverter.ToBitmap(rotated);
         }
 
+        /// <summary>Checks clockwise, convex corners with no crossed or collapsed edges.</summary>
+        internal static bool IsValidPerspectiveQuad(System.Collections.Generic.IReadOnlyList<System.Drawing.Point>? corners)
+        {
+            if (corners == null || corners.Count != 4) return false;
+            for (int i = 0; i < 4; i++)
+            {
+                var a = corners[i];
+                var b = corners[(i + 1) % 4];
+                var c = corners[(i + 2) % 4];
+                double cross = (double)(b.X - a.X) * (c.Y - b.Y) - (double)(b.Y - a.Y) * (c.X - b.X);
+                if (cross <= 0) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Crops and maps user-positioned corners (TL, TR, BR, BL) to a rectangle.
+        /// Coordinates are pixel centers; adding one keeps an axis-aligned crop pixel-exact.
+        /// </summary>
+        internal static Bitmap CorrectPerspective(Bitmap input, System.Collections.Generic.IReadOnlyList<System.Drawing.Point> corners)
+        {
+            if (!IsValidPerspectiveQuad(corners))
+                throw new ArgumentException("Expected four clockwise convex corners.", nameof(corners));
+            if (corners.Any(p => p.X < 0 || p.Y < 0 || p.X >= input.Width || p.Y >= input.Height))
+                throw new ArgumentOutOfRangeException(nameof(corners), "Corners must be inside the image.");
+
+            var sourcePoints = corners.Select(p => new Point2f(p.X, p.Y)).ToArray();
+            int width = Math.Max(2, (int)Math.Round(Math.Max(Distance(sourcePoints[0], sourcePoints[1]), Distance(sourcePoints[3], sourcePoints[2]))) + 1);
+            int height = Math.Max(2, (int)Math.Round(Math.Max(Distance(sourcePoints[0], sourcePoints[3]), Distance(sourcePoints[1], sourcePoints[2]))) + 1);
+            var destinationPoints = new[]
+            {
+                new Point2f(0, 0), new Point2f(width - 1, 0),
+                new Point2f(width - 1, height - 1), new Point2f(0, height - 1)
+            };
+            using var source = BitmapConverter.ToMat(input);
+            using var transform = Cv2.GetPerspectiveTransform(sourcePoints, destinationPoints);
+            using var result = new Mat();
+            Cv2.WarpPerspective(source, result, transform, new OpenCvSharp.Size(width, height),
+                InterpolationFlags.Linear, BorderTypes.Constant, Scalar.All(0));
+            return BitmapConverter.ToBitmap(result);
+        }
+
         /// <summary>
         /// Orders 4 corner points as: top-left, top-right, bottom-right, bottom-left.
         /// Uses the sum (x+y) and difference (y-x) heuristic.

@@ -727,11 +727,7 @@ namespace screenzap
             {
                 if (e.Button == MouseButtons.Left)
                 {
-                    straightenLineStartPixel = FormCoordToPixel(e.Location);
-                    straightenLineEndPixel = straightenLineStartPixel;
-                    isStraightenLineDragging = true;
-                    UpdateStraightenToolbarState();
-                    pictureBox1.Invalidate();
+                    BeginStraightenDrag(e.Location);
                 }
 
                 base.OnMouseDown(e);
@@ -848,12 +844,10 @@ namespace screenzap
         {
             if (isStraightenToolActive)
             {
-                Cursor = Cursors.Cross;
-                if (isStraightenLineDragging && e.Button == MouseButtons.Left)
+                Cursor = HitTestStraightenCorner(e.Location) >= 0 ? Cursors.SizeAll : Cursors.Cross;
+                if (isStraightenDragging && e.Button == MouseButtons.Left)
                 {
-                    straightenLineEndPixel = FormCoordToPixel(e.Location);
-                    UpdateStraightenToolbarState();
-                    pictureBox1.Invalidate();
+                    UpdateStraightenDrag(e.Location);
                 }
 
                 base.OnMouseMove(e);
@@ -1043,12 +1037,9 @@ namespace screenzap
         {
             if (isStraightenToolActive)
             {
-                if (e.Button == MouseButtons.Left && isStraightenLineDragging)
+                if (e.Button == MouseButtons.Left && isStraightenDragging)
                 {
-                    isStraightenLineDragging = false;
-                    straightenLineEndPixel = FormCoordToPixel(e.Location);
-                    UpdateStraightenToolbarState();
-                    pictureBox1.Invalidate();
+                    EndStraightenDrag(e.Location);
                 }
 
                 base.OnMouseUp(e);

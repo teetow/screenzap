@@ -14,6 +14,15 @@
 2. Press `Ctrl+T` or click **Crop** on the toolbar; the editor window should resize around the cropped content and the selection should clear.
 3. Press `Ctrl+Z` to restore the original image dimensions and selection, then `Ctrl+Shift+Z` to reapply the crop.
 
+## Perspective Straighten
+
+1. Open an image of a skewed rectangular object, click **Straighten** or press `Ctrl+L`, and drag a rectangle around it. If a pixel selection already exists, it supplies the initial rectangle.
+2. Drag each yellow corner onto the object's corresponding corner. Confirm the outline and grid follow the handles, including while zoomed in.
+3. Click **Apply** or press `Enter`. Confirm the outlined area becomes a rectangular image and the surrounding content is cropped away.
+4. Include text, shapes, and a pasted image layer before applying. Confirm they warp with the image; `Ctrl+Z` restores the original canvas, selection, and editable objects, and `Ctrl+Shift+Z` reapplies the result.
+5. Cross two corners or collapse an edge. Confirm the outline turns red, Apply is disabled, and Enter keeps the tool open without changing the image.
+6. Press `Escape` or click **Cancel** after adjusting corners. Confirm the original image and selection remain unchanged.
+
 ## Replace with Background
 
 1. Capture or paste an image, draw a selection around an object, and press `Ctrl+B`, tap `Backspace`, or click **Replace BG**.

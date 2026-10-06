@@ -152,7 +152,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void ActivateStraightenTool_WhenAlreadyActive_PreservesReferenceLine()
+        public void ActivateStraightenTool_WhenAlreadyActive_PreservesCorners()
         {
             StaTest.Run(() =>
             {
@@ -161,18 +161,16 @@ namespace Screenzap.ViewportTests
                 editor.TestFireKeyDown(Keys.Control | Keys.L);
                 Assert.True(editor.TestIsStraightenToolActive);
 
-                // Draw a slightly tilted reference line.
+                // Draw a rectangle.
                 editor.TestFireMouseDownAtImagePixel(new Point(10, 10), MouseButtons.Left);
-                editor.TestFireMouseMoveAtImagePixel(new Point(100, 14), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(100, 14), MouseButtons.Left);
-                Assert.Equal(new Point(10, 10), editor.TestStraightenLineStart);
-                Assert.Equal(new Point(100, 14), editor.TestStraightenLineEnd);
+                editor.TestFireMouseMoveAtImagePixel(new Point(100, 80), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(100, 80), MouseButtons.Left);
+                Assert.Equal(new[] { new Point(10, 10), new Point(100, 10), new Point(100, 80), new Point(10, 80) }, editor.TestStraightenCorners);
 
-                // Programmatic re-activation must be idempotent — no line reset.
+                // Programmatic re-activation must be idempotent — no corner reset.
                 Assert.True(editor.ActivateStraightenTool());
                 Assert.True(editor.TestIsStraightenToolActive);
-                Assert.Equal(new Point(10, 10), editor.TestStraightenLineStart);
-                Assert.Equal(new Point(100, 14), editor.TestStraightenLineEnd);
+                Assert.Equal(new[] { new Point(10, 10), new Point(100, 10), new Point(100, 80), new Point(10, 80) }, editor.TestStraightenCorners);
 
                 // Escape exits the mode and unchecks the rail button.
                 editor.TestFireKeyDown(Keys.Escape);

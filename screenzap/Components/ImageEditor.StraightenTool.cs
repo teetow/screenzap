@@ -8,9 +8,11 @@ namespace screenzap
     public partial class ImageEditor
     {
         // isStraightenToolActive lives on ImageEditor.Tool.cs as a computed accessor.
-        private Point? straightenLineStartPixel;
-        private Point? straightenLineEndPixel;
-        private bool isStraightenLineDragging;
+        // Clockwise in image coordinates: top-left, top-right, bottom-right, bottom-left.
+        private Point[]? straightenCorners;
+        private Point straightenDragOrigin;
+        private int straightenDragCorner = -1;
+        private bool isStraightenDragging;
 
         internal bool ActivateStraightenTool()
         {
@@ -22,14 +24,19 @@ namespace screenzap
             if (isStraightenToolActive)
             {
                 // Already engaged: a second toolbar click / Ctrl+L must not discard the
-                // reference line the user has drawn.
+                // corners the user has positioned.
                 return true;
             }
 
             isStraightenToolActive = true;
-            straightenLineStartPixel = null;
-            straightenLineEndPixel = null;
-            isStraightenLineDragging = false;
+            straightenCorners = null;
+            straightenDragCorner = -1;
+            isStraightenDragging = false;
+            var selection = ClampToImage(Selection);
+            if (selection.Width > 1 && selection.Height > 1)
+            {
+                SetStraightenRectangle(selection.Location, new Point(selection.Right - 1, selection.Bottom - 1));
+            }
 
             Cursor = Cursors.Cross;
 
@@ -59,13 +66,19 @@ namespace screenzap
 
             if (apply)
             {
-                ApplyStraightenLine();
+                // Invalid/crossed corners must not close the tool or mutate the image.
+                if (isStraightenDragging || !lib.ImageStraightener.IsValidPerspectiveQuad(straightenCorners))
+                {
+                    return;
+                }
+                ApplyStraightenPerspective();
             }
 
             isStraightenToolActive = false;
-            isStraightenLineDragging = false;
-            straightenLineStartPixel = null;
-            straightenLineEndPixel = null;
+            isStraightenDragging = false;
+            straightenDragCorner = -1;
+            straightenCorners = null;
+            pictureBox1.Capture = false;
             Cursor = Cursors.Default;
 
             if (straightenToolStripButton != null)
@@ -83,21 +96,124 @@ namespace screenzap
             pictureBox1.Invalidate();
         }
 
-        private void ApplyStraightenLine()
+        private void ApplyStraightenPerspective()
         {
-            if (straightenLineStartPixel == null || straightenLineEndPixel == null)
+            if (!HasEditableImage || pictureBox1.Image == null || straightenCorners == null)
             {
                 return;
             }
 
-            RotateEditorContentBy(GetStraightenCorrectionAngle());
+            // Perspective changes cannot be represented by the affine layer/annotation frames.
+            // Warp the visible composite, keeping the editable originals in the same undo step.
+            using var composite = BuildCompositeImage();
+            using var corrected = lib.ImageStraightener.CorrectPerspective(composite, straightenCorners);
+            CopyImageResolution(pictureBox1.Image, corrected);
+            var before = new Bitmap(pictureBox1.Image);
+            var after = new Bitmap(corrected);
+            var selectionBefore = Selection;
+            var shapesBefore = CloneAnnotations();
+            var textsBefore = CloneTextAnnotations();
+            var layersBefore = CloneLayers();
+
+            pictureBox1.Image.Dispose();
+            pictureBox1.Image = new Bitmap(corrected);
+            ClearSelection();
+            ApplyAnnotationState(new());
+            ApplyTextAnnotationState(new());
+            ApplyLayerState(new());
+            PushUndoStep(Rectangle.Empty, before, after, selectionBefore, Rectangle.Empty,
+                replacesImage: true,
+                shapesBefore: shapesBefore, shapesAfter: CloneAnnotations(),
+                textsBefore: textsBefore, textsAfter: CloneTextAnnotations(),
+                layersBefore: layersBefore, layersAfter: CloneLayers());
+            RecenterViewportAfterImageChange(resizeWindow: true);
+            UpdateStatusBar();
+        }
+
+        private void SetStraightenRectangle(Point start, Point end)
+        {
+            int left = Math.Min(start.X, end.X);
+            int top = Math.Min(start.Y, end.Y);
+            int right = Math.Max(start.X, end.X);
+            int bottom = Math.Max(start.Y, end.Y);
+            straightenCorners = new[]
+            {
+                new Point(left, top), new Point(right, top),
+                new Point(right, bottom), new Point(left, bottom)
+            };
+        }
+
+        private Point ClampStraightenPoint(Point clientPoint)
+        {
+            var pixel = FormCoordToPixel(clientPoint);
+            var size = pictureBox1.Image!.Size;
+            return new Point(Math.Clamp(pixel.X, 0, size.Width - 1), Math.Clamp(pixel.Y, 0, size.Height - 1));
+        }
+
+        private int HitTestStraightenCorner(Point clientPoint)
+        {
+            if (straightenCorners == null) return -1;
+            // Client-space tolerance keeps the handles usable at every zoom level.
+            int closest = -1;
+            double bestDistance = 10 * 10;
+            for (int i = 0; i < 4; i++)
+            {
+                var corner = PixelToFormCoord(straightenCorners[i]);
+                double dx = corner.X - clientPoint.X;
+                double dy = corner.Y - clientPoint.Y;
+                double distance = dx * dx + dy * dy;
+                if (distance <= bestDistance)
+                {
+                    closest = i;
+                    bestDistance = distance;
+                }
+            }
+            return closest;
+        }
+
+        private void BeginStraightenDrag(Point clientPoint)
+        {
+            straightenDragCorner = HitTestStraightenCorner(clientPoint);
+            straightenDragOrigin = ClampStraightenPoint(clientPoint);
+            if (straightenDragCorner < 0)
+            {
+                SetStraightenRectangle(straightenDragOrigin, straightenDragOrigin);
+            }
+            isStraightenDragging = true;
+            pictureBox1.Capture = true;
+            UpdateStraightenToolbarState();
+            pictureBox1.Invalidate();
+        }
+
+        private void UpdateStraightenDrag(Point clientPoint)
+        {
+            if (!isStraightenDragging) return;
+            var point = ClampStraightenPoint(clientPoint);
+            if (straightenDragCorner >= 0)
+            {
+                straightenCorners![straightenDragCorner] = point;
+            }
+            else
+            {
+                SetStraightenRectangle(straightenDragOrigin, point);
+            }
+            UpdateStraightenToolbarState();
+            pictureBox1.Invalidate();
+        }
+
+        private void EndStraightenDrag(Point clientPoint)
+        {
+            UpdateStraightenDrag(clientPoint);
+            isStraightenDragging = false;
+            straightenDragCorner = -1;
+            pictureBox1.Capture = false;
+            UpdateStraightenToolbarState();
         }
 
         /// <summary>
         /// Rotates the current selection in place, or the whole image (expanding the canvas via
-        /// <see cref="lib.ImageStraightener.RotateImage"/>) when no selection is active. Shared by
-        /// the straighten tool (line-inferred angle) and the free-rotate tool (drag/typed angle)
-        /// so both bake through the same, already-exercised path.
+        /// <see cref="lib.ImageStraightener.RotateImage"/>) when no selection is active. Used by
+        /// the free-rotate tool (drag/typed angle).
         /// </summary>
         private void RotateEditorContentBy(double angleDegrees)
         {
@@ -207,98 +323,52 @@ namespace screenzap
             }
         }
 
-        /// <summary>
-        /// Returns the rotation angle (in degrees) needed to align the drawn reference line
-        /// with its nearest axis — horizontal if |angle| ≤ 45°, vertical otherwise.
-        /// Convention matches atan2(dy, dx) in image coords, matching OpenCV's WarpAffine.
-        /// </summary>
-        private double GetStraightenCorrectionAngle()
-        {
-            if (straightenLineStartPixel == null || straightenLineEndPixel == null)
-            {
-                return 0.0;
-            }
-
-            var p1 = straightenLineStartPixel.Value;
-            var p2 = straightenLineEndPixel.Value;
-            double dx = p2.X - p1.X;
-            double dy = p2.Y - p1.Y;
-
-            if (Math.Abs(dx) < 1 && Math.Abs(dy) < 1)
-            {
-                return 0.0;
-            }
-
-            double lineAngle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
-
-            // Snap to nearest axis
-            double targetAngle = Math.Abs(lineAngle) <= 45.0
-                ? 0.0
-                : Math.Sign(lineAngle) * 90.0;
-
-            return lineAngle - targetAngle;
-        }
-
         private void UpdateStraightenToolbarState()
         {
-            bool hasLine = straightenLineStartPixel != null && straightenLineEndPixel != null;
-            double correctionAngle = hasLine ? GetStraightenCorrectionAngle() : 0.0;
-            bool canApply = hasLine && Math.Abs(correctionAngle) >= 0.05;
-
+            bool valid = lib.ImageStraightener.IsValidPerspectiveQuad(straightenCorners);
             if (straightenHintLabel != null)
             {
-                if (!hasLine)
-                {
-                    straightenHintLabel.Text = "Draw a reference line that should be horizontal or vertical, then Apply";
-                }
-                else if (!canApply)
-                {
-                    straightenHintLabel.Text = "Already aligned — no correction needed";
-                }
-                else
-                {
-                    var p1 = straightenLineStartPixel!.Value;
-                    var p2 = straightenLineEndPixel!.Value;
-                    double lineAngle = Math.Atan2(p2.Y - p1.Y, p2.X - p1.X) * 180.0 / Math.PI;
-                    string axis = Math.Abs(lineAngle) <= 45.0 ? "horizontal" : "vertical";
-                    straightenHintLabel.Text = $"{Math.Abs(correctionAngle):F1}° to {axis}";
-                }
+                straightenHintLabel.Text = straightenCorners == null
+                    ? "Drag a rectangle around the area to straighten"
+                    : valid
+                        ? "Adjust the four corners, then Apply (Enter) to crop and straighten"
+                        : "Corners must form a rectangle or convex quadrilateral";
             }
-
             if (straightenApplyButton != null)
             {
-                straightenApplyButton.Enabled = canApply;
+                straightenApplyButton.Enabled = valid && !isStraightenDragging;
             }
         }
 
-        /// <summary>
-        /// Draws the interactive reference line overlay when in straighten-tool mode.
-        /// Call this from pictureBox1_Paint.
-        /// </summary>
         internal void DrawStraightenOverlay(Graphics g)
         {
-            if (!isStraightenToolActive || straightenLineStartPixel == null || straightenLineEndPixel == null)
+            if (!isStraightenToolActive || straightenCorners == null) return;
+            var points = Array.ConvertAll(straightenCorners, PixelToFormCoord);
+            var color = lib.ImageStraightener.IsValidPerspectiveQuad(straightenCorners)
+                ? Color.Yellow : Color.OrangeRed;
+            using var shadowPen = new Pen(Color.FromArgb(160, Color.Black), 4f);
+            using var linePen = new Pen(color, 2f);
+            using var gridPen = new Pen(Color.FromArgb(140, color), 1f);
+            using var dotBrush = new SolidBrush(color);
+            using var shadowBrush = new SolidBrush(Color.FromArgb(160, Color.Black));
+
+            g.DrawPolygon(shadowPen, points);
+            g.DrawPolygon(linePen, points);
+            for (int i = 1; i < 3; i++)
             {
-                return;
+                float t = i / 3f;
+                g.DrawLine(gridPen, Interpolate(points[0], points[3], t), Interpolate(points[1], points[2], t));
+                g.DrawLine(gridPen, Interpolate(points[0], points[1], t), Interpolate(points[3], points[2], t));
             }
-
-            var p1 = PixelToFormCoord(straightenLineStartPixel.Value);
-            var p2 = PixelToFormCoord(straightenLineEndPixel.Value);
-
-            using var shadowPen = new Pen(System.Drawing.Color.FromArgb(160, System.Drawing.Color.Black), 4f);
-            using var linePen = new Pen(System.Drawing.Color.Yellow, 2f);
-            using var dotBrush = new System.Drawing.SolidBrush(System.Drawing.Color.Yellow);
-            using var shadowBrush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(160, System.Drawing.Color.Black));
-
-            g.DrawLine(shadowPen, p1, p2);
-            g.DrawLine(linePen, p1, p2);
-
             const int r = 5;
-            foreach (var pt in new[] { p1, p2 })
+            foreach (var point in points)
             {
-                g.FillEllipse(shadowBrush, pt.X - r - 1, pt.Y - r - 1, (r + 1) * 2, (r + 1) * 2);
-                g.FillEllipse(dotBrush, pt.X - r, pt.Y - r, r * 2, r * 2);
+                g.FillEllipse(shadowBrush, point.X - r - 1, point.Y - r - 1, (r + 1) * 2, (r + 1) * 2);
+                g.FillEllipse(dotBrush, point.X - r, point.Y - r, r * 2, r * 2);
             }
+
+            static PointF Interpolate(Point a, Point b, float t)
+                => new PointF(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t);
         }
 
         private void straightenApplyButton_Click(object sender, EventArgs e)

@@ -442,9 +442,9 @@ namespace screenzap
 
         internal bool TestIsStraightenToolActive => isStraightenToolActive;
 
-        internal Point? TestStraightenLineStart => straightenLineStartPixel;
+        internal Point[]? TestStraightenCorners => straightenCorners?.ToArray();
 
-        internal Point? TestStraightenLineEnd => straightenLineEndPixel;
+        internal bool TestStraightenApplyEnabled => straightenApplyButton.Enabled;
 
         internal bool TestStraightenButtonChecked => straightenToolStripButton?.Checked == true;
 
