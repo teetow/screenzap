@@ -14,7 +14,17 @@
 2. Press `Ctrl+T` or click **Crop** on the toolbar; the editor window should resize around the cropped content and the selection should clear.
 3. Press `Ctrl+Z` to restore the original image dimensions and selection, then `Ctrl+Shift+Z` to reapply the crop.
 
-## Perspective Straighten
+## Editor command layout
+
+1. Open the clipboard image editor. Confirm the first horizontal bar contains file actions and the second contains **Geometry**, **Cleanup**, and **Adjustments**.
+2. Open each operation group and execute Crop to Selection, Rotate 90° Right, and an adjustment. Confirm the actions work and their enabled states follow the current image/selection.
+3. Confirm the left rail shows tool names, grouped under Annotate, Protect, and Transform. Click **Perspective** and verify the four-corner tool activates; Ctrl+L still works.
+4. In a short standalone editor, confirm the rail's overflow menu keeps all tools reachable.
+5. Paste an image layer. Confirm **Merge Layer** appears in the layer controls; merge and undo to restore the editable layer.
+6. Confirm **Copy SVG** appears in the first bar, and **History** beside the thumbnails exposes Commit, Duplicate, Revert, and Delete. With no editable image, confirm image operations and export commands are disabled.
+7. Use the bottom controls to zoom, Fit, return to 100%, and toggle transparency. Confirm these actions do not create undo steps or mark the document edited.
+
+## Perspective
 
 1. Open an image of a skewed rectangular object, click **Straighten** or press `Ctrl+L`, and drag a rectangle around it. If a pixel selection already exists, it supplies the initial rectangle.
 2. Drag each yellow corner onto the object's corresponding corner. Confirm the outline and grid follow the handles, including while zoomed in.

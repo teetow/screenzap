@@ -13,8 +13,9 @@ namespace screenzap.Components
     internal sealed class ClipboardEditorHostForm : Form
     {
         private readonly Dictionary<EditorCommandId, IconToolStripButton> commandButtons = new();
-        private readonly Dictionary<EditorCommandId, ToolStripMenuItem> commandMenuItems = new();
+        private readonly Dictionary<EditorCommandId, List<ToolStripMenuItem>> commandMenuItems = new();
         private readonly List<IClipboardDocumentPresenter> presenters = new();
+        private readonly List<ToolStripDropDownItem> commandGroups = new();
         private readonly ToolStrip toolbar;
         private readonly MenuStrip menuBar;
         private ToolStripMenuItem? startOnLoginMenuItem;
@@ -314,26 +315,42 @@ namespace screenzap.Components
             toolbar.GripStyle = ToolStripGripStyle.Hidden;
             toolbar.ImageScalingSize = new Size(20, 20);
 
+            toolbar.AccessibleName = "File actions";
             AddCommandButton(EditorCommandId.Save);
             AddCommandButton(EditorCommandId.SaveAs);
             toolbar.Items.Add(new ToolStripSeparator());
             AddCommandButton(EditorCommandId.Copy);
+            var svgExport = new ToolStripDropDownButton("Copy SVG")
+            {
+                Name = "copySvgCommands", ToolTipText = "Copy image as SVG",
+                DisplayStyle = ToolStripItemDisplayStyle.Text
+            };
+            foreach (var command in new[] { EditorCommandId.CopySvgPoster, EditorCommandId.CopySvgPhoto, EditorCommandId.CopySvgBlackAndWhite })
+                svgExport.DropDownItems.Add(CreateCommandMenuItem(command));
+            toolbar.Items.Add(svgExport);
+            commandGroups.Add(svgExport);
             AddCommandButton(EditorCommandId.Reload);
             toolbar.Items.Add(reloadIndicatorLabel);
             toolbar.Items.Add(new ToolStripSeparator());
             AddCommandButton(EditorCommandId.Undo);
             AddCommandButton(EditorCommandId.Redo);
             toolbar.Items.Add(new ToolStripSeparator());
-            AddCommandButton(EditorCommandId.ApplyFloatingPaste);
-            toolbar.Items.Add(new ToolStripSeparator());
             AddCommandButton(EditorCommandId.Find);
-            toolbar.Items.Add(new ToolStripSeparator());
-            AddCommandButton(EditorCommandId.CommitEdits);
-            AddCommandButton(EditorCommandId.Duplicate);
-            AddCommandButton(EditorCommandId.Revert);
-            toolbar.Items.Add(new ToolStripSeparator());
-            AddCommandButton(EditorCommandId.Delete);
             toolbar.Items.Add(dirtyIndicatorLabel);
+
+            // History entry actions live with the thumbnails, separate from file actions.
+            var historyActions = new ToolStrip
+            {
+                Name = "historyActionsToolStrip", AccessibleName = "History actions",
+                Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, CanOverflow = false
+            };
+            var historyMenu = new ToolStripDropDownButton("History") { Name = "historyCommands" };
+            foreach (var command in new[] { EditorCommandId.CommitEdits, EditorCommandId.Duplicate, EditorCommandId.Revert, EditorCommandId.Delete })
+                historyMenu.DropDownItems.Add(CreateCommandMenuItem(command));
+            historyActions.Items.Add(historyMenu);
+            historyPanel.Controls.Add(historyActions);
+            historyActions.BringToFront();
+            commandGroups.Add(historyMenu);
 
             presenterHostPanel.Dock = DockStyle.Fill;
             presenterHostPanel.BackColor = SystemColors.ControlDarkDark;
@@ -542,6 +559,10 @@ namespace screenzap.Components
             file.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Save));
             file.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.SaveAs));
             file.DropDownItems.Add(new ToolStripSeparator());
+            file.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Copy));
+            file.DropDownItems.Add(CreateCommandMenuGroup("Copy SVG", EditorCommandId.CopySvgPoster,
+                EditorCommandId.CopySvgPhoto, EditorCommandId.CopySvgBlackAndWhite));
+            file.DropDownItems.Add(new ToolStripSeparator());
             file.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Reload));
             file.DropDownItems.Add(CreateHookMenuItem("Save Clipboard &Image", () => SaveClipboardImageRequested?.Invoke()));
             file.DropDownItems.Add(new ToolStripSeparator());
@@ -554,7 +575,6 @@ namespace screenzap.Components
             edit.DropDownItems.Add(new ToolStripSeparator());
             edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Copy));
             edit.DropDownItems.Add(new ToolStripSeparator());
-            edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ExpandCanvas));
             edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ApplyFloatingPaste));
             edit.DropDownItems.Add(new ToolStripSeparator());
             edit.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.Duplicate));
@@ -564,31 +584,23 @@ namespace screenzap.Components
             menuBar.Items.Add(edit);
 
             var view = new ToolStripMenuItem("&View");
+            view.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FitImageToView));
             view.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ToggleTransparencyGrid));
-            view.DropDownItems.Add(new ToolStripSeparator());
-            view.DropDownItems.Add(CreateHookMenuItem("&Transparency Checkerboard Colors...", () => EditCheckerboardColorsRequested?.Invoke()));
             menuBar.Items.Add(view);
 
             var tools = new ToolStripMenuItem("&Tools");
             tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.SelectMoveTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ArrowTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.RectangleTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.HighlighterTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.TextTool));
+            tools.DropDownItems.Add(CreateCommandMenuGroup("Annotate", EditorCommandId.ArrowTool,
+                EditorCommandId.RectangleTool, EditorCommandId.HighlighterTool, EditorCommandId.TextTool, EditorCommandId.EmojiTool));
+            tools.DropDownItems.Add(CreateCommandMenuGroup("Protect", EditorCommandId.CensorTool));
+            tools.DropDownItems.Add(CreateCommandMenuGroup("Transform Tools", EditorCommandId.FreeRotateTool, EditorCommandId.StraightenTool));
             tools.DropDownItems.Add(new ToolStripSeparator());
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.CropTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.RotateRight));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FlipHorizontal));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FlipVertical));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.StraightenTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.FreeRotateTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ResizeImage));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.DeJpeg));
-            tools.DropDownItems.Add(new ToolStripSeparator());
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.CensorTool));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ReplaceBackground));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.ColorCorrect));
-            tools.DropDownItems.Add(CreateCommandMenuItem(EditorCommandId.OptimizeText));
+            tools.DropDownItems.Add(CreateCommandMenuGroup("Geometry", EditorCommandId.CropTool,
+                EditorCommandId.ResizeImage, EditorCommandId.ExpandCanvas, EditorCommandId.RotateRight,
+                EditorCommandId.FlipHorizontal, EditorCommandId.FlipVertical));
+            tools.DropDownItems.Add(CreateCommandMenuGroup("Cleanup", EditorCommandId.ReplaceBackground));
+            tools.DropDownItems.Add(CreateCommandMenuGroup("Adjustments", EditorCommandId.ColorCorrect,
+                EditorCommandId.DeJpeg, EditorCommandId.OptimizeText));
             menuBar.Items.Add(tools);
 
             var settings = new ToolStripMenuItem("&Settings");
@@ -607,6 +619,8 @@ namespace screenzap.Components
                 startOnLoginMenuItem.Checked = GetStartOnLogin?.Invoke() ?? false;
                 startupNotificationMenuItem.Checked = GetStartupNotificationEnabled?.Invoke() ?? false;
             };
+            settings.DropDownItems.Add(new ToolStripSeparator());
+            settings.DropDownItems.Add(CreateHookMenuItem("&Transparency Checkerboard Colors...", () => EditCheckerboardColorsRequested?.Invoke()));
             menuBar.Items.Add(settings);
 
             var help = new ToolStripMenuItem("&Help");
@@ -633,8 +647,21 @@ namespace screenzap.Components
                 ExecuteCommand(commandId);
                 UpdateCommandStates();
             };
-            commandMenuItems[commandId] = item;
+            if (!commandMenuItems.TryGetValue(commandId, out var items))
+            {
+                items = new List<ToolStripMenuItem>();
+                commandMenuItems[commandId] = items;
+            }
+            items.Add(item);
             return item;
+        }
+
+        private ToolStripMenuItem CreateCommandMenuGroup(string label, params EditorCommandId[] commands)
+        {
+            var group = new ToolStripMenuItem(label);
+            foreach (var command in commands) group.DropDownItems.Add(CreateCommandMenuItem(command));
+            commandGroups.Add(group);
+            return group;
         }
 
         private static ToolStripMenuItem CreateHookMenuItem(string text, Action invoke)
@@ -671,15 +698,17 @@ namespace screenzap.Components
             var button = new IconToolStripButton
             {
                 Tag = descriptor.Id,
-                DisplayStyle = ToolStripItemDisplayStyle.Image,
+                Name = commandId + "Button",
+                Text = descriptor.Label,
+                AccessibleName = descriptor.Label,
+                DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
                 IconChar = descriptor.Icon,
                 IconColor = SystemColors.ControlText,
                 IconFont = IconFont.Auto,
                 IconSize = 18,
                 ToolTipText = EditorCommandCatalog.FormatTooltip(descriptor),
-                AutoSize = false,
-                Width = 32,
-                Height = 32,
+                AutoSize = true,
+                TextImageRelation = TextImageRelation.ImageBeforeText,
                 Margin = new Padding(1)
             };
 
@@ -754,8 +783,16 @@ namespace screenzap.Components
 
             foreach (var pair in commandMenuItems)
             {
-                pair.Value.Enabled = ComputeCommandEnabled(pair.Key, activeItem);
+                bool enabled = ComputeCommandEnabled(pair.Key, activeItem);
+                foreach (var item in pair.Value) item.Enabled = enabled;
             }
+            foreach (var group in commandGroups)
+            {
+                group.Enabled = group.DropDownItems.OfType<ToolStripMenuItem>().Any(item => item.Enabled);
+            }
+            // Find belongs to the text editor; image documents have their canvas tools.
+            if (commandButtons.TryGetValue(EditorCommandId.Find, out var findButton))
+                findButton.Visible = activePresenter?.CanExecute(EditorCommandId.Find) == true;
 
             dirtyIndicatorLabel.Visible = activeItem?.IsDirty == true;
         }

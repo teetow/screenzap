@@ -37,7 +37,10 @@ namespace screenzap.lib
         /// </summary>
         private static string GetVTracerPath()
         {
-            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "vtracer.exe");
+            var adjacent = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "vtracer.exe");
+            return File.Exists(adjacent)
+                ? adjacent
+                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "res", "vtracer.exe");
         }
 
         /// <summary>

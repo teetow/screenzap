@@ -37,7 +37,12 @@ namespace screenzap.Components.Shared
         ReplaceBackground,
         ColorCorrect,
         OptimizeText,
-        DeJpeg
+        DeJpeg,
+        EmojiTool,
+        FitImageToView,
+        CopySvgPoster,
+        CopySvgPhoto,
+        CopySvgBlackAndWhite
     }
 
     internal sealed class EditorCommandDescriptor

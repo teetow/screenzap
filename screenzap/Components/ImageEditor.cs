@@ -109,7 +109,7 @@ namespace screenzap
         {
             get
             {
-                int height = mainToolStrip?.Height ?? 0;
+                int height = (mainToolStrip?.Height ?? 0) + (documentToolStrip?.Visible == true ? documentToolStrip.Height : 0);
                 if (censorToolStrip != null && censorToolStrip.Visible)
                 {
                     height += censorToolStrip.Height;
@@ -238,6 +238,7 @@ namespace screenzap
             pictureBox1.MouseDoubleClick += pictureBox1_MouseDoubleClick;
             InitializeHistoryImageDrop();
             InitializeEmojiTool();
+            InitializeEditorCommandLayout();
 
             ClearSelection();
 
@@ -334,7 +335,7 @@ namespace screenzap
                 ConfigureIconButton(rotateToolStripButton, IconChar.ArrowRotateRight);
                 ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
                 ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
-                ConfigureIconButton(straightenToolStripButton, IconChar.Rotate);
+                ConfigureIconButton(straightenToolStripButton, IconChar.DrawPolygon);
                 ConfigureIconButton(freeRotateToolStripButton, IconChar.ArrowsSpin);
                 ConfigureIconButton(moveToolStripButton, IconChar.ArrowPointer);
                 ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
@@ -404,16 +405,18 @@ namespace screenzap
 
         private void ConfigureToolRailButtons()
         {
-            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, censorToolStripButton, straightenToolStripButton, freeRotateToolStripButton })
+            foreach (var button in new[] { moveToolStripButton, arrowToolStripButton, rectangleToolStripButton, highlighterToolStripButton, textToolStripButton, emojiToolStripButton, censorToolStripButton, straightenToolStripButton, freeRotateToolStripButton })
             {
                 if (button == null)
                 {
                     continue;
                 }
 
-                button.DisplayStyle = ToolStripItemDisplayStyle.Image;
+                button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+                button.TextAlign = ContentAlignment.MiddleLeft;
+                button.TextImageRelation = TextImageRelation.ImageBeforeText;
                 button.AutoSize = false;
-                button.Size = new Size(32, 32);
+                button.Size = new Size(124, 30);
                 button.Margin = new Padding(2);
                 button.Padding = Padding.Empty;
                 button.ImageScaling = ToolStripItemImageScaling.None;
@@ -422,7 +425,7 @@ namespace screenzap
             if (toolsToolStrip != null)
             {
                 toolsToolStrip.AutoSize = false;
-                toolsToolStrip.Width = 40;
+                toolsToolStrip.Width = 132;
             }
 
             UpdateMoveToolButton();
@@ -1809,6 +1812,7 @@ namespace screenzap
             UpdateDrawingToolButtons();
             UpdateTextToolButtons();
             UpdateTraceButtonState();
+            UpdateEditorCommandLayoutState();
         }
 
         private void UpdateWindowTitle()
@@ -2637,6 +2641,7 @@ namespace screenzap
         private void ToggleAlphaView()
         {
             pictureBox1.AlphaViewEnabled = !pictureBox1.AlphaViewEnabled;
+            UpdateEditorCommandLayoutState();
         }
 
         private void ImageEditor_KeyUp(object sender, KeyEventArgs e)
@@ -3453,6 +3458,10 @@ namespace screenzap
                 EditorCommandId.Undo => undoStack.CanUndo,
                 EditorCommandId.Redo => undoStack.CanRedo,
                 EditorCommandId.Find => false,
+                EditorCommandId.EmojiTool => HasEditableImage,
+                EditorCommandId.FitImageToView => HasEditableImage,
+                EditorCommandId.CopySvgPoster or EditorCommandId.CopySvgPhoto or EditorCommandId.CopySvgBlackAndWhite
+                    => HasEditableImage && traceToolStripDropDown.Enabled,
                 EditorCommandId.ApplyFloatingPaste => HasSelectedLayer,
                 EditorCommandId.ToggleTransparencyGrid => HasEditableImage,
                 EditorCommandId.SelectMoveTool => HasEditableImage,
@@ -3460,7 +3469,7 @@ namespace screenzap
                 EditorCommandId.RectangleTool => HasEditableImage,
                 EditorCommandId.HighlighterTool => HasEditableImage,
                 EditorCommandId.TextTool => HasEditableImage,
-                EditorCommandId.CropTool => HasEditableImage,
+                EditorCommandId.CropTool => cropToolStripButton.Enabled,
                 EditorCommandId.RotateRight => HasEditableImage,
                 EditorCommandId.FlipHorizontal => HasEditableImage,
                 EditorCommandId.FlipVertical => HasEditableImage,
@@ -3469,7 +3478,7 @@ namespace screenzap
                 EditorCommandId.ResizeImage => HasEditableImage,
                 EditorCommandId.DeJpeg => HasEditableImage,
                 EditorCommandId.CensorTool => HasEditableImage,
-                EditorCommandId.ReplaceBackground => HasEditableImage,
+                EditorCommandId.ReplaceBackground => replaceToolStripButton.Enabled,
                 EditorCommandId.ColorCorrect => HasEditableImage,
                 EditorCommandId.OptimizeText => HasEditableImage,
                 _ => false
@@ -3515,6 +3524,25 @@ namespace screenzap
                         UpdateCommandUI();
                         return true;
                     }
+                case EditorCommandId.EmojiTool:
+                    if (!HasEditableImage) return false;
+                    ToggleEmojiFlyout();
+                    return true;
+                case EditorCommandId.FitImageToView:
+                    if (!HasEditableImage) return false;
+                    FitImageToCanvas();
+                    return true;
+                case EditorCommandId.CopySvgPoster:
+                case EditorCommandId.CopySvgPhoto:
+                case EditorCommandId.CopySvgBlackAndWhite:
+                    if (!HasEditableImage || !traceToolStripDropDown.Enabled) return false;
+                    _ = TraceImageToSvgAsync(commandId switch
+                    {
+                        EditorCommandId.CopySvgPhoto => lib.ImageTracer.TracingPreset.Photo,
+                        EditorCommandId.CopySvgBlackAndWhite => lib.ImageTracer.TracingPreset.BlackAndWhite,
+                        _ => lib.ImageTracer.TracingPreset.Poster
+                    });
+                    return true;
                 case EditorCommandId.ApplyFloatingPaste:
                     return ApplyFloatingPaste();
                 case EditorCommandId.ToggleTransparencyGrid:
@@ -3747,6 +3775,7 @@ namespace screenzap
             ToggleHostItemVisibility(saveAsToolStripButton);
             ToggleHostItemVisibility(copyClipboardToolStripButton);
             ToggleHostItemVisibility(reloadToolStripButton);
+            if (documentToolStrip != null) documentToolStrip.Visible = !isHosted;
 
             if (reloadNotificationLabel != null && isHosted)
             {

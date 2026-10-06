@@ -1226,6 +1226,13 @@ namespace screenzap
             layerOptionsToolStrip.Items.Add(layerAngleTextBox);
             layerOptionsToolStrip.Items.Add(new ToolStripSeparator());
             layerOptionsToolStrip.Items.Add(aspectHost);
+            var mergeButton = new ToolStripButton("Merge Layer")
+            {
+                Name = "mergeLayerButton",
+                ToolTipText = "Merge this layer into the image pixels (Enter)"
+            };
+            mergeButton.Click += (_, _) => ApplyFloatingPaste();
+            layerOptionsToolStrip.Items.Add(mergeButton);
             layerOptionsToolStrip.Items.Add(resetButton);
 
             Controls.Add(layerOptionsToolStrip);

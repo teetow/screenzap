@@ -29,6 +29,9 @@ namespace Screenzap.ViewportTests
 
                 using var editor = EditorWithImage();
                 var presenter = (IClipboardDocumentPresenter)editor;
+                Assert.False(presenter.CanExecute(EditorCommandId.CropTool));
+                editor.TestFireMouseDownAtImagePixel(new Point(10, 10), System.Windows.Forms.MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(50, 40), System.Windows.Forms.MouseButtons.Left);
                 Assert.True(presenter.CanExecute(EditorCommandId.CropTool));
                 Assert.True(presenter.CanExecute(EditorCommandId.CensorTool));
                 Assert.True(presenter.CanExecute(EditorCommandId.ColorCorrect));

@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 using screenzap.lib;
 
@@ -31,6 +32,7 @@ namespace screenzap.Testing
                 CaptureMultiCommitCycleFlow(outputDir);
                 CaptureAnnotationToolFlow(outputDir);
                 CaptureLayerRotationFlow(outputDir);
+                CaptureCommandLayoutFlow(outputDir);
             }
             catch (Exception ex)
             {
@@ -40,6 +42,43 @@ namespace screenzap.Testing
 
             Logger.Log($"UI capture session complete. Output: {outputDir}");
             return 0;
+        }
+
+        private static void CaptureCommandLayoutFlow(string outputDir)
+        {
+            using var kit = new UiTestKit(new Size(1100, 700), withHost: true, visible: true);
+            kit.LoadCanvas(640, 400, Color.LightYellow);
+            // WinForms DrawToBitmap can omit ToolStrips when drawing the full nested form.
+            // Capture the visible test window to verify the actual sibling stacking instead.
+            kit.Host!.SuppressActivation = false;
+            kit.Host.TopMost = true;
+            kit.Host.BringToFront();
+            kit.Host.Activate();
+            kit.Host.Refresh();
+            kit.PumpUi();
+            System.Threading.Thread.Sleep(100);
+            using (var screenshot = new Bitmap(kit.Host.Width, kit.Host.Height))
+            {
+                using var graphics = Graphics.FromImage(screenshot);
+                graphics.CopyFromScreen(kit.Host.Location, Point.Empty, screenshot.Size);
+                screenshot.Save(Path.Combine(outputDir, "layout-01-editor.png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
+            foreach (var name in new[] { "mainToolStrip", "toolsToolStrip", "statusStrip" })
+                CaptureControl(kit.Editor.Controls.Find(name, true)[0], "layout-" + name);
+            var fileBar = kit.Host!.Controls.OfType<ToolStrip>().First(s => s.AccessibleName == "File actions");
+            CaptureControl(fileBar, "layout-file-actions");
+            var geometry = (ToolStripDropDownButton)((ToolStrip)kit.Editor.Controls.Find("mainToolStrip", true)[0]).Items["geometryCommands"]!;
+            geometry.ShowDropDown();
+            kit.PumpUi();
+            CaptureControl(geometry.DropDown, "layout-geometry-menu");
+            geometry.HideDropDown();
+
+            void CaptureControl(Control control, string name)
+            {
+                using var bitmap = new Bitmap(control.Width, control.Height);
+                control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                bitmap.Save(Path.Combine(outputDir, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
         }
 
         private static void CaptureSlice1And2Flow(string outputDir)

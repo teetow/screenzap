@@ -638,7 +638,7 @@
             this.rotateToolStripButton.Enabled = false;
             this.rotateToolStripButton.Name = "rotateToolStripButton";
             this.rotateToolStripButton.Size = new System.Drawing.Size(56, 23);
-            this.rotateToolStripButton.Text = "Rotate";
+            this.rotateToolStripButton.Text = "Rotate 90° Right";
             this.rotateToolStripButton.ToolTipText = "Rotate 90\u00B0 clockwise";
             this.rotateToolStripButton.Click += new System.EventHandler(this.rotateToolStripButton_Click);
             // 
@@ -668,7 +668,7 @@
             this.straightenToolStripButton.Enabled = false;
             this.straightenToolStripButton.Name = "straightenToolStripButton";
             this.straightenToolStripButton.Size = new System.Drawing.Size(75, 23);
-            this.straightenToolStripButton.Text = "Straighten";
+            this.straightenToolStripButton.Text = "Perspective";
             this.straightenToolStripButton.ToolTipText = "Adjust four corners to crop and correct perspective (Ctrl+L)";
             this.straightenToolStripButton.Click += new System.EventHandler(this.straightenToolStripButton_Click);
             //
@@ -835,7 +835,7 @@
             this.traceToolStripDropDown.Enabled = false;
             this.traceToolStripDropDown.Name = "traceToolStripDropDown";
             this.traceToolStripDropDown.Size = new System.Drawing.Size(73, 23);
-            this.traceToolStripDropDown.Text = "Trace";
+            this.traceToolStripDropDown.Text = "Copy SVG";
             this.traceToolStripDropDown.ToolTipText = "Trace bitmap to SVG and copy to clipboard";
             // 
             // tracePosterMenuItem
