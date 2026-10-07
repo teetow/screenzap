@@ -46,8 +46,15 @@ namespace screenzap.Testing
 
         private static void CaptureCommandLayoutFlow(string outputDir)
         {
-            using var kit = new UiTestKit(new Size(1100, 700), withHost: true, visible: true);
+            using var kit = new UiTestKit(new Size(900, 600), withHost: true, visible: true);
             kit.LoadCanvas(640, 400, Color.LightYellow);
+            var historyHeader = kit.Host!.Controls.Find("historyActionsToolStrip", true)[0];
+            historyHeader.Parent!.Width = 72;
+            for (int i = 0; i < 40; i++)
+            {
+                using var thumbnail = MakeBitmap(80, 80, i % 2 == 0 ? Color.SteelBlue : Color.Goldenrod);
+                kit.Host.HistoryStore.AddObservedImage(thumbnail);
+            }
             // WinForms DrawToBitmap can omit ToolStrips when drawing the full nested form.
             // Capture the visible test window to verify the actual sibling stacking instead.
             kit.Host!.SuppressActivation = false;
@@ -67,11 +74,15 @@ namespace screenzap.Testing
                 CaptureControl(kit.Editor.Controls.Find(name, true)[0], "layout-" + name);
             var fileBar = kit.Host!.Controls.OfType<ToolStrip>().First(s => s.AccessibleName == "File actions");
             CaptureControl(fileBar, "layout-file-actions");
-            var geometry = (ToolStripDropDownButton)((ToolStrip)kit.Editor.Controls.Find("mainToolStrip", true)[0]).Items["geometryCommands"]!;
-            geometry.ShowDropDown();
+            kit.Drag(new Point(20, 20), new Point(300, 200));
+            var tools = kit.Host.MainMenuStrip!.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == "&Tools");
+            tools.ShowDropDown();
+            var cleanup = tools.DropDownItems.OfType<ToolStripMenuItem>().Single(item => item.Text == "Cleanup");
+            cleanup.ShowDropDown();
             kit.PumpUi();
-            CaptureControl(geometry.DropDown, "layout-geometry-menu");
-            geometry.HideDropDown();
+            CaptureControl(cleanup.DropDown, "layout-cleanup-menu");
+            cleanup.HideDropDown();
+            tools.HideDropDown();
 
             void CaptureControl(Control control, string name)
             {

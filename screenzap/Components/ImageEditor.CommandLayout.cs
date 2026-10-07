@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
 using FontAwesome.Sharp;
 
@@ -9,9 +8,6 @@ namespace screenzap
     public partial class ImageEditor
     {
         private ToolStrip? documentToolStrip;
-        private ToolStripDropDownButton? geometryCommands;
-        private ToolStripDropDownButton? cleanupCommands;
-        private ToolStripDropDownButton? adjustmentCommands;
         private ToolStripButton? transparencyViewButton;
         private ToolStripButton? fitViewButton;
         private ToolStripButton? actualSizeViewButton;
@@ -47,25 +43,25 @@ namespace screenzap
 
                 mainToolStrip.AccessibleName = "Image operations";
                 mainToolStrip.CanOverflow = true;
-                geometryCommands = CreateOperationGroup("Geometry", "Image dimensions and orientation",
-                    cropToolStripButton, resizeImageToolStripButton!, expandCanvasToolStripButton,
+                // Keep operations one click away, grouped with separators. Labels are set
+                // before inserting so toolbar/overflow measurement sees their final widths.
+                cropToolStripButton.Text = "Crop";
+                resizeImageToolStripButton!.Text = "Resize";
+                rotateToolStripButton.Text = "90°";
+                expandCanvasToolStripButton.Text = "Canvas +8";
+                replaceToolStripButton.Text = "Replace BG";
+                colorCorrectToolStripButton!.Text = "Color";
+                deJpegButton!.Text = "De-JPEG";
+                optimizeTextToolStripButton.Text = "Optimize Text";
+                AddOperationSection(cropToolStripButton, resizeImageToolStripButton, expandCanvasToolStripButton,
                     rotateToolStripButton, flipHorizontalToolStripButton, flipVerticalToolStripButton);
-                cleanupCommands = CreateOperationGroup("Cleanup", "Remove content from the selected region",
-                    replaceToolStripButton);
-                adjustmentCommands = CreateOperationGroup("Adjustments", "Image color and clarity",
-                    colorCorrectToolStripButton!, deJpegButton!, optimizeTextToolStripButton);
-                mainToolStrip.Items.AddRange(new ToolStripItem[]
-                {
-                    geometryCommands, new ToolStripSeparator(), cleanupCommands,
-                    new ToolStripSeparator(), adjustmentCommands
-                });
+                mainToolStrip.Items.Add(new ToolStripSeparator());
+                AddOperationSection(replaceToolStripButton);
+                mainToolStrip.Items.Add(new ToolStripSeparator());
+                AddOperationSection(colorCorrectToolStripButton, deJpegButton, optimizeTextToolStripButton);
+                flipHorizontalToolStripButton.DisplayStyle = ToolStripItemDisplayStyle.Image;
+                flipVerticalToolStripButton.DisplayStyle = ToolStripItemDisplayStyle.Image;
 
-                cropToolStripButton.Text = "Crop to Selection";
-                rotateToolStripButton.Text = "Rotate 90° Right";
-                expandCanvasToolStripButton.Text = "Expand Canvas (8 px)";
-                replaceToolStripButton.Text = "Replace Background";
-                colorCorrectToolStripButton!.Text = "Color Correction…";
-                deJpegButton!.Text = "De-JPEG…";
                 straightenToolStripButton.Text = "Perspective";
                 straightenToolStripButton.IconChar = IconChar.DrawPolygon;
                 toolsToolStrip!.AccessibleName = "Canvas tools";
@@ -103,36 +99,21 @@ namespace screenzap
             }
         }
 
-        private ToolStripDropDownButton CreateOperationGroup(string label, string tooltip, params ToolStripItem[] commands)
+        private void AddOperationSection(params ToolStripItem[] commands)
         {
-            var group = new ToolStripDropDownButton(label)
-            {
-                Name = label.ToLowerInvariant() + "Commands",
-                ToolTipText = tooltip,
-                DisplayStyle = ToolStripItemDisplayStyle.Text,
-                AutoToolTip = false
-            };
             foreach (var command in commands)
             {
                 command.Owner?.Items.Remove(command);
                 command.AutoSize = true;
                 command.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
-                group.DropDownItems.Add(command);
+                mainToolStrip.Items.Add(command);
             }
-            return group;
         }
 
         private void AddRailSection(string label, params ToolStripItem[] buttons)
         {
-            toolsToolStrip!.Items.Add(new ToolStripSeparator());
-            toolsToolStrip.Items.Add(new ToolStripLabel(label)
-            {
-                ForeColor = SystemColors.GrayText,
-                TextAlign = ContentAlignment.MiddleLeft,
-                AutoSize = false,
-                Size = new Size(122, 20),
-                Overflow = ToolStripItemOverflow.AsNeeded
-            });
+            // Separators retain the categories without widening the icon rail.
+            toolsToolStrip!.Items.Add(new ToolStripSeparator { AccessibleName = label });
             toolsToolStrip.Items.AddRange(buttons);
         }
 
@@ -171,10 +152,6 @@ namespace screenzap
         private void UpdateEditorCommandLayoutState()
         {
             if (colorCorrectToolStripButton != null) colorCorrectToolStripButton.Enabled = HasEditableImage;
-            foreach (var group in new[] { geometryCommands, cleanupCommands, adjustmentCommands })
-            {
-                if (group != null) group.Enabled = group.DropDownItems.Cast<ToolStripItem>().Any(item => item.Enabled);
-            }
             foreach (var button in new[] { zoomOutViewButton, zoomInViewButton, fitViewButton, actualSizeViewButton, transparencyViewButton })
             {
                 if (button != null) button.Enabled = HasEditableImage;

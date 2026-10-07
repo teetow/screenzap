@@ -59,7 +59,8 @@ namespace screenzap.Components
                 AutoScroll = true,
                 BackColor = Color.Transparent,
                 Margin = Padding.Empty,
-                Padding = new Padding(4, 4, 17, 4)
+                // CalculateThumbnailMaxWidth already reserves the vertical scrollbar.
+                Padding = new Padding(4, 4, 0, 4)
             };
             EnableDoubleBuffer(flow);
             Controls.Add(flow);
@@ -734,6 +735,10 @@ namespace screenzap.Components
                 this.maxThumbWidth = Math.Max(1, maxThumbWidth);
                 this.maxThumbHeight = Math.Max(1, maxThumbHeight);
 
+                // Newly observed items may already have a thumbnail sized for a wider pane.
+                // Resize loaded previews before measuring/painting; keep off-screen lazy items lazy.
+                if (item.Thumbnail != null && item.Thumbnail.Size != item.GetThumbnailDisplaySize(this.maxThumbWidth, this.maxThumbHeight))
+                    item.RebuildThumbnail(this.maxThumbWidth, this.maxThumbHeight);
                 var thumb = item.Thumbnail;
                 int buttonWidth = this.maxThumbWidth + ChromePadding;
                 int contentHeight = thumb?.Height ?? item.GetThumbnailDisplaySize(this.maxThumbWidth, this.maxThumbHeight).Height;

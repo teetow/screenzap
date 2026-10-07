@@ -254,6 +254,17 @@ namespace screenzap.Components.Shared
             CenterImage();
         }
 
+        /// <summary>Restores an existing view after replacing the bitmap with the same document.</summary>
+        public void RestoreView(decimal zoom, PointF pan, bool showAlpha)
+        {
+            ZoomLevel = zoom;
+            panOffset = pan;
+            panReferenceClientSize = ClientSize;
+            ClampPan();
+            AlphaViewEnabled = showAlpha;
+            Invalidate();
+        }
+
         public void CenterImage([CallerMemberName] string? caller = null)
         {
             var imageSize = GetImagePixelSize();

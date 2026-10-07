@@ -336,13 +336,13 @@ namespace screenzap
                 ConfigureIconButton(replaceToolStripButton, IconChar.Eraser);
                 ConfigureIconButton(optimizeTextToolStripButton, IconChar.Magic);
                 ConfigureIconButton(straightenToolStripButton, IconChar.DrawPolygon);
-                ConfigureIconButton(freeRotateToolStripButton, IconChar.ArrowsSpin);
+                ConfigureIconButton(freeRotateToolStripButton, IconChar.Rotate);
                 ConfigureIconButton(moveToolStripButton, IconChar.ArrowPointer);
                 ConfigureIconButton(arrowToolStripButton, IconChar.ArrowRightLong);
                 ConfigureIconButton(rectangleToolStripButton, IconChar.VectorSquare);
                 ConfigureIconButton(highlighterToolStripButton, IconChar.Highlighter);
                 ConfigureIconButton(textToolStripButton, IconChar.Font);
-                ConfigureIconButton(censorToolStripButton, IconChar.UserSecret);
+                ConfigureIconButton(censorToolStripButton, IconChar.EyeSlash);
                 ConfigureIconButton(copyClipboardToolStripButton, IconChar.Copy);
                 ConfigureIconButton(reloadToolStripButton, IconChar.Rotate);
                 ConfigureIconButton(selectAllToolStripButton, IconChar.ObjectGroup);
@@ -412,11 +412,13 @@ namespace screenzap
                     continue;
                 }
 
-                button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+                button.DisplayStyle = ToolStripItemDisplayStyle.Image;
+                button.AccessibleName = button.Text;
+                button.AutoToolTip = true;
                 button.TextAlign = ContentAlignment.MiddleLeft;
                 button.TextImageRelation = TextImageRelation.ImageBeforeText;
                 button.AutoSize = false;
-                button.Size = new Size(124, 30);
+                button.Size = new Size(32, 32);
                 button.Margin = new Padding(2);
                 button.Padding = Padding.Empty;
                 button.ImageScaling = ToolStripItemImageScaling.None;
@@ -425,7 +427,7 @@ namespace screenzap
             if (toolsToolStrip != null)
             {
                 toolsToolStrip.AutoSize = false;
-                toolsToolStrip.Width = 132;
+                toolsToolStrip.Width = 40;
             }
 
             UpdateMoveToolButton();
@@ -698,7 +700,9 @@ namespace screenzap
             LoadImage(imgData, false);
         }
 
-        internal void LoadImage(Image? imgData, bool treatAsPlaceholder)
+        internal void LoadImage(Image? imgData, bool treatAsPlaceholder) => LoadImage(imgData, treatAsPlaceholder, preserveView: false);
+
+        private void LoadImage(Image? imgData, bool treatAsPlaceholder, bool preserveView)
         {
             if (imgData == null)
                 return;
@@ -706,6 +710,8 @@ namespace screenzap
             LogViewportDebug($"=== LoadImage START: imgData.Size={imgData.Size}, treatAsPlaceholder={treatAsPlaceholder} ===");
             LogViewportDebug($"LoadImage: current pictureBox1.ClientSize={pictureBox1.ClientSize}, panOffset={pictureBox1.Metrics.PanOffset}");
 
+            var previousView = pictureBox1.Metrics;
+            bool previousAlphaView = pictureBox1.AlphaViewEnabled;
             CloseEmojiUi();
             deJpegRevision++;
             isPlaceholderImage = treatAsPlaceholder;
@@ -779,6 +785,12 @@ namespace screenzap
             LogViewportDebug($"LoadImage: After HandleResize, panOffset={pictureBox1.Metrics.PanOffset}");
             LogViewportDebug($"LoadImage: === END ===" );
 
+            if (preserveView)
+            {
+                pictureBox1.RestoreView(previousView.ZoomLevel, previousView.PanOffset, previousAlphaView);
+                _zoomlevel = pictureBox1.ZoomLevel;
+            }
+
             undoStack.Clear();
             hasUnsavedChanges = false;
             ClearClipboardNotification();
@@ -787,7 +799,7 @@ namespace screenzap
             UpdateWindowTitle();
             UpdateStatusBar();
 
-            if (Visible)
+            if (Visible && !preserveView)
             {
                 // Re-center after layout settles to handle any deferred resize events
                 BeginInvoke(new Action(() =>
@@ -3623,10 +3635,12 @@ namespace screenzap
             return item?.Kind == ClipboardItemKind.Image;
         }
 
-        void IClipboardDocumentPresenter.LoadHistoryItem(ClipboardHistoryItem item)
+        void IClipboardDocumentPresenter.LoadHistoryItem(ClipboardHistoryItem item) => LoadHistoryItem(item);
+
+        private void LoadHistoryItem(ClipboardHistoryItem item, bool preserveView = false)
         {
             if (item?.CurrentImage == null) return;
-            LoadImage(item.CurrentImage);
+            LoadImage(item.CurrentImage, false, preserveView);
             // LoadImage clears the undo stack, annotations, and layers. Restore the stashed state.
             undoStack.RestoreState(item.UndoSnapshot);
             ApplyOverlay(item.Overlay);
@@ -3634,6 +3648,8 @@ namespace screenzap
             UpdateCommandUI();
             pictureBox1?.Invalidate();
         }
+
+        internal void LoadCommittedHistoryItem(ClipboardHistoryItem item) => LoadHistoryItem(item, preserveView: true);
 
         void IClipboardDocumentPresenter.CaptureLiveStateInto(ClipboardHistoryItem item) =>
             CaptureLiveStateInto(item);

@@ -180,8 +180,8 @@ public class EmojiToolTests
             owner.Show();
             editor.Show();
             var button = (ToolStripButton)typeof(ImageEditor).GetField("emojiToolStripButton", Private)!.GetValue(editor)!;
-            Assert.Equal(ToolStripItemDisplayStyle.ImageAndText, button.DisplayStyle);
-            Assert.Equal(new Size(124, 30), button.Size);
+            Assert.Equal(ToolStripItemDisplayStyle.Image, button.DisplayStyle);
+            Assert.Equal(new Size(32, 32), button.Size);
             Assert.Equal("textToolStripButton", button.Owner!.Items[button.Owner.Items.IndexOf(button) - 1].Name);
             button.PerformClick();
             var flyout = (Form)typeof(ImageEditor).GetField("emojiFlyout", Private)!.GetValue(editor)!;

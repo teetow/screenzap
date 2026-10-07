@@ -316,6 +316,8 @@ namespace screenzap.Components
             toolbar.ImageScalingSize = new Size(20, 20);
 
             toolbar.AccessibleName = "File actions";
+            AddCommandButton(EditorCommandId.CommitEdits);
+            toolbar.Items.Add(new ToolStripSeparator());
             AddCommandButton(EditorCommandId.Save);
             AddCommandButton(EditorCommandId.SaveAs);
             toolbar.Items.Add(new ToolStripSeparator());
@@ -344,13 +346,13 @@ namespace screenzap.Components
                 Name = "historyActionsToolStrip", AccessibleName = "History actions",
                 Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden, CanOverflow = false
             };
-            var historyMenu = new ToolStripDropDownButton("History") { Name = "historyCommands" };
-            foreach (var command in new[] { EditorCommandId.CommitEdits, EditorCommandId.Duplicate, EditorCommandId.Revert, EditorCommandId.Delete })
-                historyMenu.DropDownItems.Add(CreateCommandMenuItem(command));
-            historyActions.Items.Add(historyMenu);
+            historyActions.Padding = Padding.Empty;
+            foreach (var command in new[] { EditorCommandId.Duplicate, EditorCommandId.Revert, EditorCommandId.Delete })
+                AddCommandButton(command, historyActions, compact: true);
             historyPanel.Controls.Add(historyActions);
-            historyActions.BringToFront();
-            commandGroups.Add(historyMenu);
+            // Dock the fixed header before the Fill list so thumbnails and its scrollbar
+            // begin below the buttons, rather than being covered by them.
+            historyActions.SendToBack();
 
             presenterHostPanel.Dock = DockStyle.Fill;
             presenterHostPanel.BackColor = SystemColors.ControlDarkDark;
@@ -688,7 +690,7 @@ namespace screenzap.Components
                 MessageBoxIcon.Information);
         }
 
-        private void AddCommandButton(EditorCommandId commandId)
+        private void AddCommandButton(EditorCommandId commandId, ToolStrip? destination = null, bool compact = false)
         {
             if (!EditorCommandCatalog.All.TryGetValue(commandId, out var descriptor))
             {
@@ -701,19 +703,20 @@ namespace screenzap.Components
                 Name = commandId + "Button",
                 Text = descriptor.Label,
                 AccessibleName = descriptor.Label,
-                DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
+                DisplayStyle = compact ? ToolStripItemDisplayStyle.Image : ToolStripItemDisplayStyle.ImageAndText,
                 IconChar = descriptor.Icon,
                 IconColor = SystemColors.ControlText,
                 IconFont = IconFont.Auto,
-                IconSize = 18,
+                IconSize = compact ? 16 : 18,
                 ToolTipText = EditorCommandCatalog.FormatTooltip(descriptor),
-                AutoSize = true,
+                AutoSize = !compact,
+                Size = new Size(24, 28),
                 TextImageRelation = TextImageRelation.ImageBeforeText,
-                Margin = new Padding(1)
+                Margin = compact ? Padding.Empty : new Padding(1)
             };
 
             button.Click += OnCommandButtonClick;
-            toolbar.Items.Add(button);
+            (destination ?? toolbar).Items.Add(button);
             commandButtons[descriptor.Id] = button;
         }
 
@@ -860,7 +863,10 @@ namespace screenzap.Components
 
             // Reload cleaned state into presenter. UndoSnapshot is restored here so undo continues
             // working after commit (per design: push to clipboard but keep undo/revert available).
-            activePresenter?.LoadHistoryItem(item);
+            if (activePresenter is screenzap.ImageEditor imageEditor)
+                imageEditor.LoadCommittedHistoryItem(item);
+            else
+                activePresenter?.LoadHistoryItem(item);
             UpdateCommandStates();
             UpdateStatusText("Edits committed to clipboard.");
             return true;
