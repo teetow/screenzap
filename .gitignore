@@ -22,3 +22,6 @@ docs/image-improvement-handoff.md
 
 # Agent session scratch (transcripts, handoff summaries)
 claude_*.md
+
+# Local mockups and development scratch
+/local/
