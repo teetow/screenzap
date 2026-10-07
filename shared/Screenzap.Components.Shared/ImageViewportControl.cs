@@ -442,6 +442,8 @@ namespace screenzap.Components.Shared
                 (int)Math.Round((point.Y - panOffset.Y) / (double)zoomLevel));
         }
 
+        public void Render(Graphics graphics) => OnPaint(new PaintEventArgs(graphics, ClientRectangle));
+
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(BackColor);

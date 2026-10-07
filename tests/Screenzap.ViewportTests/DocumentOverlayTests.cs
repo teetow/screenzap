@@ -39,7 +39,7 @@ namespace Screenzap.ViewportTests
                         Start = new Point(3, 4),
                         End = new Point(30, 20),
                         LineThickness = 2.5f,
-                        ArrowSize = 9f,
+                        ArrowSize = .3m,
                     },
                 },
                 Texts =
@@ -115,6 +115,7 @@ namespace Screenzap.ViewportTests
                         // Every kind, or the serializer has been taught about a subset again.
                         var shape = Assert.Single(overlay!.Shapes);
                         Assert.Equal(AnnotationType.Arrow, shape.Type);
+                        Assert.Equal(.3m, shape.ArrowSize);
                         Assert.Equal(new Point(3, 4), shape.Start);
                         Assert.Equal(new Point(30, 20), shape.End);
 

@@ -223,7 +223,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void ArmedTool_ClickEmptyCanvas_KeepsToolArmed_DrawsNothing()
+        public void ArrowTool_ClickEmptyCanvas_DropsTool_DrawsNothing()
         {
             StaTest.Run(() =>
             {
@@ -233,7 +233,7 @@ namespace Screenzap.ViewportTests
                 ClickAtImagePixel(editor, new Point(100, 10));
 
                 Assert.Equal(0, editor.TestAnnotationShapeCount);
-                Assert.Equal(screenzap.DrawingTool.Arrow, editor.TestActiveDrawingTool);
+                Assert.Equal(screenzap.DrawingTool.None, editor.TestActiveDrawingTool);
                 Assert.Equal(0, editor.TestSelectedShapeCount);
             });
         }

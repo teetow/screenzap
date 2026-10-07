@@ -137,7 +137,7 @@ namespace screenzap
             button.Click += (_, _) =>
             {
                 action();
-                pictureBox1.Focus();
+                RequestCanvasFocus();
             };
             statusStrip.Items.Add(button);
             return button;

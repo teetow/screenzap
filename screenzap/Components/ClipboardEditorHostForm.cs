@@ -55,6 +55,8 @@ namespace screenzap.Components
         internal Func<string?, Task<bool>>? TryDeleteFromSystemHistoryAsync { get; set; }
         internal Func<Task>? RefreshSystemHistoryAsync { get; set; }
         internal Func<Image, bool>? ClipboardImageWriterForDiagnostics { get; set; }
+        internal Action? ExternalActivateRequested { get; set; }
+        internal bool UsesExternalWindow => ExternalActivateRequested != null;
         internal ClipboardHistoryStore HistoryStore => historyStore;
 
         /// <summary>Run the debounced save now, as the timer would.</summary>
@@ -69,6 +71,8 @@ namespace screenzap.Components
         internal Action<bool>? SetStartOnLogin { get; set; }
         internal Func<bool>? GetStartupNotificationEnabled { get; set; }
         internal Action<bool>? SetStartupNotificationEnabled { get; set; }
+        internal Func<Keys>? GetCaptureShortcut { get; set; }
+        internal Func<Keys, bool>? TrySetCaptureShortcut { get; set; }
         internal Action? EditCaptureShortcutRequested { get; set; }
         internal Action? SetCaptureFolderRequested { get; set; }
         internal Action? EditCheckerboardColorsRequested { get; set; }
@@ -202,6 +206,7 @@ namespace screenzap.Components
         /// </summary>
         internal void WarmForFirstShow()
         {
+            if (UsesExternalWindow) return;
             if (IsDisposed || Visible)
             {
                 return;
@@ -254,7 +259,7 @@ namespace screenzap.Components
                 parent.Controls.Remove(view);
             }
 
-            view.Dock = DockStyle.Fill;
+            view.Dock = UsesExternalWindow ? DockStyle.None : DockStyle.Fill;
             view.Visible = false;
         }
 
@@ -286,7 +291,7 @@ namespace screenzap.Components
 
         internal bool CanExecuteHostCommand(EditorCommandId commandId)
         {
-            return activePresenter?.CanExecute(commandId) == true;
+            return ComputeCommandEnabled(commandId, historyStore.ActiveItem);
         }
 
         protected override void Dispose(bool disposing)
@@ -1201,6 +1206,7 @@ namespace screenzap.Components
         /// </summary>
         public void FitToContent()
         {
+            if (UsesExternalWindow) return;
             var presenter = activePresenter;
             if (presenter == null) return;
 
@@ -1344,6 +1350,7 @@ namespace screenzap.Components
         /// </summary>
         internal void ShowAndActivate()
         {
+            if (ExternalActivateRequested != null) { ExternalActivateRequested(); return; }
             if (WindowState == FormWindowState.Minimized)
             {
                 WindowState = FormWindowState.Normal;
@@ -1418,7 +1425,7 @@ namespace screenzap.Components
                 }
 
                 presenterHostPanel.Controls.Clear();
-                view.Dock = DockStyle.Fill;
+                view.Dock = UsesExternalWindow ? DockStyle.None : DockStyle.Fill;
                 presenterHostPanel.Controls.Add(view);
             }
 
@@ -1433,6 +1440,7 @@ namespace screenzap.Components
 
         private void FocusActivePresenter()
         {
+            if (UsesExternalWindow) return;
             if (activePresenter?.View is Control control)
             {
                 control.Focus();

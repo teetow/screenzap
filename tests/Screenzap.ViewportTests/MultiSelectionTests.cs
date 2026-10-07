@@ -396,7 +396,7 @@ namespace Screenzap.ViewportTests
 
                 editor.TestSetAnnotationArrowSize(2f);
 
-                Assert.Equal(2f, arrow.ArrowSize);
+                Assert.Equal(2m, arrow.ArrowSize);
                 // Rect's ArrowSize field is unused by rendering but should be untouched.
                 Assert.Equal(rectArrowSizeBefore, rect.ArrowSize);
             });

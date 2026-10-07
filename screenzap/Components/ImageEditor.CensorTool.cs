@@ -151,7 +151,7 @@ namespace screenzap
                     using var selectionBitmap = CaptureRegion(detectionZone);
                     if (selectionBitmap == null)
                     {
-                        MessageBox.Show(this, "Failed to capture the selected region.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        NotifySurface("Failed to capture the selected region.", "Censor Tool", MessageBoxIcon.Error);
                         censorRegions.Clear();
                         ReleaseCensorPreviewBuffer();
                         UpdateCensorToolbarState();
@@ -180,7 +180,7 @@ namespace screenzap
 
                     if (refinedBounds.Width <= 0 || refinedBounds.Height <= 0)
                     {
-                        MessageBox.Show(this, "No text regions were detected inside the selection.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        NotifySurface("No text regions were detected inside the selection.", "Censor Tool", MessageBoxIcon.Information);
                         censorRegions.Clear();
                         ReleaseCensorPreviewBuffer();
                         UpdateCensorToolbarState();
@@ -196,7 +196,7 @@ namespace screenzap
                     translated = ClampToImage(translated);
                     if (translated.Width <= 0 || translated.Height <= 0)
                     {
-                        MessageBox.Show(this, "No text regions were detected inside the selection.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        NotifySurface("No text regions were detected inside the selection.", "Censor Tool", MessageBoxIcon.Information);
                         censorRegions.Clear();
                         ReleaseCensorPreviewBuffer();
                         UpdateCensorToolbarState();
@@ -213,7 +213,7 @@ namespace screenzap
                         var detected = TextRegionDetector.FindTextRegionsDetailed(detectionSource);
                         if (detected.Count == 0)
                         {
-                            MessageBox.Show(this, "No text regions were detected.", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            NotifySurface("No text regions were detected.", "Censor Tool", MessageBoxIcon.Information);
                             censorRegions.Clear();
                             ReleaseCensorPreviewBuffer();
                             UpdateCensorToolbarState();
@@ -233,7 +233,7 @@ namespace screenzap
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Failed to detect text regions.\n{ex.Message}", "Censor Tool", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                NotifySurface($"Failed to detect text regions.\n{ex.Message}", "Censor Tool", MessageBoxIcon.Error);
                 censorRegions.Clear();
                 ReleaseCensorPreviewBuffer();
                 UpdateCensorToolbarState();

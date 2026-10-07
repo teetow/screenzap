@@ -129,7 +129,7 @@ namespace screenzap
         private void moveToolStripButton_Click(object? sender, EventArgs e)
         {
             SetActiveTool(ActiveTool.None);
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         private void UpdateMoveToolButton()

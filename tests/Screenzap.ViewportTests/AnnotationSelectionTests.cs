@@ -388,7 +388,7 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void HeadNone_RemovesArrowHead_ButKeepsLine()
+        public void ZeroHeadScale_NarrowsTheHead_ButKeepsLine()
         {
             StaTest.Run(() =>
             {
@@ -404,16 +404,16 @@ namespace Screenzap.ViewportTests
 
                 editor.TestSetAnnotationArrowSize(0f);
 
-                Assert.Equal(0f, editor.TestSelectedAnnotation!.ArrowSize);
+                Assert.Equal(0m, editor.TestSelectedAnnotation!.ArrowSize);
                 Assert.Equal(0, editor.TestArrowSizeComboBoxSelectedIndex);
 
                 using var lineComposite = editor.BuildCompositeImageForTests();
                 int lineInk = CountNonWhitePixels(lineComposite, new Rectangle(48, 30, 27, 21));
 
-                Assert.True(lineInk > 0, "the line should remain visible when its head is None");
+                Assert.True(lineInk > 0, "the line should remain visible at zero head scale");
                 Assert.True(
                     lineInk < headedInk,
-                    $"expected None to remove arrow-head pixels, but headed={headedInk} and none={lineInk}");
+                    $"expected zero to narrow the arrow head, but headed={headedInk} and none={lineInk}");
             });
         }
 

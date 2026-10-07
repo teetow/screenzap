@@ -37,17 +37,17 @@ internal sealed class OnnxDeJpegFilter : IDeJpegFilter
         var catalog = ExecutionProviderCatalog.GetDefault();
         if (catalog != null)
         {
-            progress?.Report("Preparing acceleration… First use may download Windows ML components.");
+            progress?.Report("Preparing acceleration…");
             try
             {
-                await catalog.EnsureAndRegisterCertifiedAsync().AsTask(cancellation).ConfigureAwait(false);
+                // Discover installed providers only. Cleanup must never launch a component installer.
+                await catalog.RegisterCertifiedAsync().AsTask(cancellation).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                // An offline Store must not prevent use of bundled GPU/CPU providers.
-                Logger.Log($"Windows ML provider download unavailable: {ex.Message}");
-                await catalog.RegisterCertifiedAsync().AsTask(cancellation).ConfigureAwait(false);
+                // Installed acceleration is optional; the bundled CPU provider remains available.
+                Logger.Log($"Windows ML acceleration unavailable; using the bundled CPU provider: {ex.Message}");
             }
         }
         cancellation.ThrowIfCancellationRequested();

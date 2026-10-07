@@ -241,7 +241,7 @@ namespace screenzap
             if (AddFloatingImageLayer(image, imagePixel))
             {
                 e.Effect = DragDropEffects.Copy;
-                pictureBox1.Focus();
+                RequestCanvasFocus();
             }
         }
 
@@ -1256,14 +1256,14 @@ namespace screenzap
                 if (e.KeyCode == Keys.Enter)
                 {
                     commit();
-                    pictureBox1?.Focus();
+                    RequestCanvasFocus();
                     e.SuppressKeyPress = true;
                     e.Handled = true;
                 }
                 else if (e.KeyCode == Keys.Escape)
                 {
                     UpdateLayerToolbarState();
-                    pictureBox1?.Focus();
+                    RequestCanvasFocus();
                     e.SuppressKeyPress = true;
                     e.Handled = true;
                 }
@@ -1303,14 +1303,14 @@ namespace screenzap
                 else
                     CommitLayerAngleText();
 
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
                 e.SuppressKeyPress = true;
                 e.Handled = true;
             }
             else if (focusedTextBox != null && e.KeyCode == Keys.Escape)
             {
                 UpdateLayerToolbarState();
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
                 e.SuppressKeyPress = true;
                 e.Handled = true;
             }

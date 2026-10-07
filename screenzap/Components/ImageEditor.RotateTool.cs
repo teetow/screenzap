@@ -263,19 +263,19 @@ namespace screenzap
         private void freeRotateToolStripButton_Click(object sender, EventArgs e)
         {
             ActivateFreeRotateTool();
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         private void rotateApplyButton_Click(object sender, EventArgs e)
         {
             DeactivateFreeRotateTool(true);
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         private void rotateCancelButton_Click(object sender, EventArgs e)
         {
             DeactivateFreeRotateTool(false);
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         internal bool TestIsFreeRotateToolActive => isFreeRotateToolActive;

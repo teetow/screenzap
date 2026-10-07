@@ -63,7 +63,7 @@ namespace screenzap
             if (dialog.ShowDialog(this) == DialogResult.OK
                 && ExecuteResizeImage(dialog.TargetSize, dialog.SelectedInterpolationMode))
             {
-                pictureBox1.Focus();
+                RequestCanvasFocus();
             }
         }
 

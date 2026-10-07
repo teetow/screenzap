@@ -49,7 +49,7 @@ jobs:
       - name: Publish
         env:
           DOTNET_PROCESSOR_COUNT: '4'
-        run: dotnet publish screenzap/Screenzap.csproj -c Release -m:2 -p:UseSharedCompilation=false -o ${{ github.workspace }}\publish\Screenzap
+        run: dotnet publish screenzap/Screenzap.csproj -c Release -nr:false -m:1 -p:UseSharedCompilation=false -o ${{ github.workspace }}\publish\Screenzap
 
       - name: Package app, runtime and model
         run: Compress-Archive -Path publish/Screenzap/* -DestinationPath publish/Screenzap.zip

@@ -37,12 +37,20 @@ namespace screenzap
                 return;
             }
 
-            mutex = new Mutex(true, mutexId);
+            bool smoke = Array.Exists(args, arg => arg == "--winui-smoke");
+            mutex = new Mutex(false, mutexId);
 
-            if (mutex.WaitOne(TimeSpan.Zero, true))
+            if (smoke || mutex.WaitOne(TimeSpan.Zero, true))
             {
                 ConfigureApplication();
-                Application.Run(new Screenzap());
+                WinRT.ComWrappersSupport.InitializeComWrappers();
+                Microsoft.UI.Xaml.Application.Start(parameters =>
+                {
+                    SynchronizationContext.SetSynchronizationContext(
+                        new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(
+                            Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()));
+                    _ = new WinUI.ScreenzapApplication();
+                });
             }
             else
             {
@@ -103,6 +111,9 @@ namespace screenzap
 
             applicationConfigured = true;
             SetProcessDPIAware();
+            // The XAML dispatcher replaces Application.Run; initialize OLE explicitly for
+            // the shared clipboard service and native desktop drag/drop targets.
+            _ = Application.OleRequired();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);

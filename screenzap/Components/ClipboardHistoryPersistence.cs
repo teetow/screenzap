@@ -689,7 +689,7 @@ namespace screenzap.Components
             public int EndX { get; set; }
             public int EndY { get; set; }
             public float LineThickness { get; set; }
-            public float ArrowSize { get; set; }
+            public decimal ArrowSize { get; set; }
             public bool Selected { get; set; }
         }
 

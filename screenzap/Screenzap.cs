@@ -501,6 +501,25 @@ namespace screenzap
             }
         }
 
+        private bool TrySetNativeCaptureShortcut(Keys keys)
+        {
+            var proposed = new KeyCombo(keys);
+            if (proposed.Key == Keys.None || proposed.Key is Keys.ControlKey or Keys.ShiftKey or Keys.Menu or Keys.LWin or Keys.RWin) return false;
+            if (proposed.Equals(rectCaptureCombo)) return true;
+            try
+            {
+                using var validation = new KeyboardHook();
+                validation.RegisterHotKey(proposed.getModifierKeys(), proposed.Key);
+            }
+            catch (Exception ex) { Logger.Log($"Capture shortcut unavailable: {ex.Message}"); return false; }
+            rectCaptureCombo = proposed;
+            RegisterRectCaptureHotkeys();
+            updateTooltips(rectCaptureCombo);
+            Properties.Settings.Default.currentCombo = rectCaptureCombo.ToString();
+            Properties.Settings.Default.Save();
+            return true;
+        }
+
         private static bool GetStartupNotificationEnabled() => Properties.Settings.Default.showBalloon;
 
         private static void SetStartupNotificationEnabled(bool enabled)
@@ -649,6 +668,7 @@ namespace screenzap
                 var imagePresenter = EnsureImageEditor();
                 clipboardEditorHost = new ClipboardEditorHostForm(imagePresenter);
                 clipboardEditorHost.FormClosed += OnClipboardHostClosed;
+                EditorHostCreated?.Invoke(clipboardEditorHost, imagePresenter);
                 WireHostAppMenuHooks(clipboardEditorHost);
                 InitializeSystemClipboardHistoryForHost(clipboardEditorHost);
             }
@@ -666,6 +686,8 @@ namespace screenzap
             host.SetStartOnLogin = SetStartOnLogin;
             host.GetStartupNotificationEnabled = GetStartupNotificationEnabled;
             host.SetStartupNotificationEnabled = SetStartupNotificationEnabled;
+            host.GetCaptureShortcut = () => rectCaptureCombo.Key | rectCaptureCombo.Modifiers;
+            host.TrySetCaptureShortcut = TrySetNativeCaptureShortcut;
             host.EditCaptureShortcutRequested = () => setKeyboardShortcutToolStripMenuItem_Click(this, EventArgs.Empty);
             host.SetCaptureFolderRequested = () => setFolderToolStripMenuItem_Click(this, EventArgs.Empty);
             host.EditCheckerboardColorsRequested = () => checkerboardColorsToolStripMenuItem_Click(this, EventArgs.Empty);
@@ -722,6 +744,11 @@ namespace screenzap
             imageEditor = null;
             ScheduleClipboardEditorWarmup();
         }
+
+        internal Action<ClipboardEditorHostForm, ImageEditor>? EditorHostCreated { get; set; }
+        internal ClipboardEditorHostForm EditorHost => EnsureClipboardHost();
+        internal void OpenEditor() => ShowClipboardEditorForCurrentData();
+        internal void StartBackgroundServices() { _ = Handle; OnLoad(EventArgs.Empty); }
 
         private ImageEditor EnsureImageEditor()
         {

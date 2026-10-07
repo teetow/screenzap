@@ -385,7 +385,7 @@ namespace screenzap
             button.Click += (_, _) =>
             {
                 onClick();
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
             };
 
             layersPanelToolTip.SetToolTip(button, toolTip);
@@ -452,6 +452,7 @@ namespace screenzap
 
         private void PositionLayersPanel()
         {
+            if (externalSurface) return;
             if (layersPanel == null || !layersPanelIsShown)
             {
                 return;
@@ -471,7 +472,7 @@ namespace screenzap
             // canvas, which is what you want when a paste is floating over something you still
             // need to fix.
             SelectImageLayer(layer == null ? -1 : imageLayers.IndexOf(layer));
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         private void ToggleLayerMuteFromPanel(ImageLayer layer)

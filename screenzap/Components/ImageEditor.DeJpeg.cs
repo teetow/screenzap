@@ -45,8 +45,10 @@ public partial class ImageEditor
         var shapesBefore = CloneAnnotations();
         var textsBefore = CloneTextAnnotations();
         var layersBefore = CloneLayers();
+        var view=pictureBox1.Metrics;
         pictureBox1.Image.Dispose();
         pictureBox1.Image = new Bitmap(after);
+        pictureBox1.RestoreView(view.ZoomLevel,view.PanOffset,pictureBox1.AlphaViewEnabled);
         PushUndoStep(Rectangle.Empty, before, after, Selection, Selection, replacesImage: true,
             shapesBefore: shapesBefore, shapesAfter: CloneAnnotations(),
             textsBefore: textsBefore, textsAfter: CloneTextAnnotations(),

@@ -1453,6 +1453,7 @@ namespace screenzap
                 SetHoveredTextAnnotation(hit);
                 if (hit != null)
                 {
+                    SetHoveredAnnotation(null);
                     Cursor = Cursors.IBeam;
                     return true;
                 }
@@ -1555,7 +1556,7 @@ namespace screenzap
             }
 
             textToolbarInputMode = false;
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
             activeTextAnnotation = selectedTextAnnotation;
             EnterTextEditMode(activeTextAnnotation, moveCaretToEnd: false);
         }
@@ -2126,7 +2127,7 @@ namespace screenzap
                 textToolbarInputMode = false;
             }
 
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
             if (resumeEditing)
             {
                 ResumeSelectedTextEditing();

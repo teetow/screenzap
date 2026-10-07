@@ -78,7 +78,7 @@ namespace screenzap
             isStraightenDragging = false;
             straightenDragCorner = -1;
             straightenCorners = null;
-            pictureBox1.Capture = false;
+            if (!externalSurface) pictureBox1.Capture = false;
             Cursor = Cursors.Default;
 
             if (straightenToolStripButton != null)
@@ -180,7 +180,7 @@ namespace screenzap
                 SetStraightenRectangle(straightenDragOrigin, straightenDragOrigin);
             }
             isStraightenDragging = true;
-            pictureBox1.Capture = true;
+            if (!externalSurface) pictureBox1.Capture = true;
             UpdateStraightenToolbarState();
             pictureBox1.Invalidate();
         }
@@ -206,7 +206,7 @@ namespace screenzap
             UpdateStraightenDrag(clientPoint);
             isStraightenDragging = false;
             straightenDragCorner = -1;
-            pictureBox1.Capture = false;
+            if (!externalSurface) pictureBox1.Capture = false;
             UpdateStraightenToolbarState();
         }
 
@@ -374,13 +374,13 @@ namespace screenzap
         private void straightenApplyButton_Click(object sender, EventArgs e)
         {
             DeactivateStraightenTool(true);
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         private void straightenCancelButton_Click(object sender, EventArgs e)
         {
             DeactivateStraightenTool(false);
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
     }
 }

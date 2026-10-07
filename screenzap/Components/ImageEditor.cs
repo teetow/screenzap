@@ -826,7 +826,7 @@ namespace screenzap
             }
 
             Focus();
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         internal void AdoptWindowGeometry(Form? source)
@@ -1026,6 +1026,7 @@ namespace screenzap
 
         private void PositionOverlayToolStrips()
         {
+            if (externalSurface) return;
             int leftInset = (toolsToolStrip?.Visible == true ? toolsToolStrip.Width : 0) + 6;
             int topInset = (mainToolStrip?.Bottom ?? 0) + 4;
 
@@ -1136,6 +1137,25 @@ namespace screenzap
             var bounds = GetImageBounds();
             var intersection = Rectangle.Intersect(bounds, region);
             return intersection;
+        }
+
+        private bool ExecuteClearPixels()
+        {
+            if (!HasEditableImage || pictureBox1.Image == null) return false;
+            var region = Selection.IsEmpty ? GetImageBounds() : ClampToImage(Selection);
+            if (region.Width <= 0 || region.Height <= 0) return false;
+            var before = CaptureRegion(region);
+            if (before == null) return false;
+            var after = new Bitmap(region.Width, region.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(pictureBox1.Image))
+            {
+                graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                graphics.FillRectangle(Brushes.Transparent, region);
+            }
+            PushUndoStep(region, before, after, Selection, Selection);
+            pictureBox1.Invalidate();
+            UpdateCommandUI();
+            return true;
         }
 
         private bool ExecuteReplaceWithBackground()
@@ -2020,7 +2040,7 @@ namespace screenzap
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Failed to save image.\n{ex.Message}", "Save failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                NotifySurface($"Failed to save image.\n{ex.Message}", "Save failed", MessageBoxIcon.Error);
                 return false;
             }
         }
@@ -2096,7 +2116,9 @@ namespace screenzap
             return false;
         }
 
-        internal bool ExecuteSaveAsForDiagnostics(string targetPath)
+        internal bool ExecuteSaveAsForDiagnostics(string targetPath) => SaveImageAs(targetPath);
+
+        private bool SaveImageAs(string targetPath)
         {
             if (!HasEditableImage || string.IsNullOrWhiteSpace(targetPath))
             {
@@ -2484,6 +2506,13 @@ namespace screenzap
                 return;
             }
 
+            if (e.KeyCode == Keys.Delete && e.Modifiers == Keys.None && ExecuteClearPixels())
+            {
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                return;
+            }
+
             if (e.KeyCode == Keys.Space)
             {
                 if (isDrawingAnnotation && workingAnnotation != null)
@@ -2499,7 +2528,7 @@ namespace screenzap
                     isMovingSelection = true;
                     if (pictureBox1 != null)
                     {
-                        var cursorInViewport = pictureBox1.PointToClient(Cursor.Position);
+                        var cursorInViewport = CurrentPointerInViewport();
                         MoveInPixel = FormCoordToPixel(cursorInViewport);
                     }
                     else
@@ -2718,7 +2747,7 @@ namespace screenzap
         {
             if (ExecuteExpandCanvas())
             {
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
             }
         }
 
@@ -3005,7 +3034,7 @@ namespace screenzap
         {
             if (ExecuteOptimizeForText())
             {
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
             }
         }
 
@@ -3015,13 +3044,13 @@ namespace screenzap
             if (isStraightenToolActive)
             {
                 DeactivateStraightenTool(false);
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
                 return;
             }
 
             if (ExecuteStraighten())
             {
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
             }
         }
 
@@ -3031,13 +3060,13 @@ namespace screenzap
             if (isCensorToolActive)
             {
                 DeactivateCensorTool(false);
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
                 return;
             }
 
             if (ActivateCensorTool())
             {
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
             }
         }
 
@@ -3102,7 +3131,7 @@ namespace screenzap
             {
                 expectedInternalClipboardSignature = null;
                 suppressClipboardAutoReloadUntilUtc = null;
-                MessageBox.Show(this, $"{failurePrefix}\n{ex.Message}", "Clipboard Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                NotifySurface($"{failurePrefix}\n{ex.Message}", "Clipboard Error", MessageBoxIcon.Error);
                 return false;
             }
         }
@@ -3125,7 +3154,7 @@ namespace screenzap
             }
             catch (ExternalException ex)
             {
-                MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                NotifySurface($"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxIcon.Error);
                 return true;
             }
 
@@ -3243,7 +3272,7 @@ namespace screenzap
 
             if (showEmptyClipboardMessage)
             {
-                MessageBox.Show(this, "Clipboard does not contain image data to reload.", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                NotifySurface("Clipboard does not contain image data to reload.", WindowTitleBase, MessageBoxIcon.Information);
             }
         }
 
@@ -3291,7 +3320,7 @@ namespace screenzap
                 }
                 catch (ExternalException ex)
                 {
-                    MessageBox.Show(this, $"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    NotifySurface($"Failed to access the clipboard.\n{ex.Message}", WindowTitleBase, MessageBoxIcon.Error);
                     return true;
                 }
             }
@@ -3315,7 +3344,7 @@ namespace screenzap
         {
             if (CopyImageToClipboard())
             {
-                pictureBox1?.Focus();
+                RequestCanvasFocus();
             }
         }
 
@@ -3567,7 +3596,7 @@ namespace screenzap
                 case EditorCommandId.SelectMoveTool:
                     if (!HasEditableImage) return false;
                     SetActiveTool(ActiveTool.None);
-                    pictureBox1?.Focus();
+                    RequestCanvasFocus();
                     return true;
                 case EditorCommandId.ArrowTool:
                     if (!HasEditableImage) return false;
@@ -3622,7 +3651,7 @@ namespace screenzap
         void IClipboardDocumentPresenter.OnActivated()
         {
             HandleResize();
-            pictureBox1?.Focus();
+            RequestCanvasFocus();
         }
 
         void IClipboardDocumentPresenter.OnDeactivated()

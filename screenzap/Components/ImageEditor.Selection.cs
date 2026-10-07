@@ -715,7 +715,7 @@ namespace screenzap
             // The viewport is not a tab stop, so clicking it does not reliably take focus from
             // sibling controls such as the history thumbnails. Make the user's click authoritative
             // so editor shortcuts are routed back to this ImageEditor.
-            pictureBox1.Focus();
+            RequestCanvasFocus();
 
             // The mouse takes the selection over from any open keyboard move/resize gesture;
             // close it here so its presses commit as their own undo step rather than folding
@@ -764,6 +764,14 @@ namespace screenzap
             }
 
             var cursorPixel = FormCoordToPixel(e.Location);
+
+            if (e.Button == MouseButtons.Left && HitTestAnnotationHandle(e.Location) != AnnotationHandle.None
+                && HandleAnnotationMouseDown(cursorPixel, e.Location))
+            {
+                pictureBox1.Invalidate();
+                base.OnMouseDown(e);
+                return;
+            }
 
             if (e.Button == MouseButtons.Left && HandleTextToolMouseDown(cursorPixel, e.Location))
             {
@@ -883,6 +891,17 @@ namespace screenzap
             }
 
             var cursorPixel = FormCoordToPixel(e.Location);
+            if (e.Button == MouseButtons.None)
+            {
+                var handle = HitTestAnnotationHandle(e.Location);
+                SetHoveredAnnotationHandle(handle);
+                if (handle != AnnotationHandle.None && HandleAnnotationMouseMove(cursorPixel, e.Location, e.Button))
+                {
+                    base.OnMouseMove(e);
+                    return;
+                }
+            }
+
             if (HandleTextToolMouseMove(cursorPixel, e.Location, e.Button))
             {
                 base.OnMouseMove(e);

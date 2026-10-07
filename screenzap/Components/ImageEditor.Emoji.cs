@@ -88,7 +88,7 @@ public partial class ImageEditor
         if (e.Data?.GetData(EmojiFlyout.DragFormat) is not string emoji) return;
         e.Effect = AddEmojiAtClientPoint(emoji, pictureBox1.PointToClient(new Point(e.X, e.Y)))
             ? DragDropEffects.Copy : DragDropEffects.None;
-        pictureBox1.Focus();
+        RequestCanvasFocus();
     }
 
     internal bool AddEmojiAtClientPoint(string emoji, Point clientPoint)
@@ -162,7 +162,7 @@ public partial class ImageEditor
         {
             if (e.KeyCode != Keys.Escape) return;
             EndEmojiPicker();
-            pictureBox1.Focus();
+            RequestCanvasFocus();
             e.SuppressKeyPress = true;
         };
         return input;

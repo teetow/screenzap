@@ -6,7 +6,7 @@ Screenzap is a screenshot tool for Windows with similar behavior to the MacOS sc
 
 ## Installation
 
-Just put Screenzap.exe where you want it. Run it. nbd.
+Extract the complete release folder and run `Screenzap.exe`. Keep its runtime libraries, resource files and `Models` folder beside the executable.
 
 For a stable per-user install path on Windows, prefer publishing to `%LOCALAPPDATA%\Programs\Screenzap` and pointing shortcuts there. Build outputs under `bin\Debug` and `bin\Release` are for development and should not be used as long-lived shortcut targets.
 
@@ -14,9 +14,9 @@ For a stable per-user install path on Windows, prefer publishing to `%LOCALAPPDA
 
 Press the configured shortcut (default is `ctrl-alt-shift-4`), drag to select a screen region, and take your screenshot. It will go on the clipboard.
 
-Double-click the tray icon (or choose **Sanitize Clipboard** from the menu) to open the clipboard editor. Screenzap now automatically picks the right surface: image captures launch the annotated image editor, while text-only clips launch a minimalist VSCode-style text editor with monospace rendering, multi-cursor editing, and regex find/replace. Both editors expose Save, Save As…, Save to Clipboard, and a **Reload** action. When the clipboard changes while an editor is open, the Reload button lights up—click it (or press `Ctrl+R`) to pull in the latest clipboard contents (and automatically swap surfaces if the clipboard type changed) without reopening the window.
+Double-click the tray icon (or choose **Sanitize Clipboard**) to open the WinUI image editor. Draw and select with the left tool rail, adjust the current tool or selection in the right inspector, and revisit clipboard images in the bottom history strip. Image operations are available directly above the canvas; document actions include Save, Copy, Undo, Redo and **Commit** (`Ctrl+Enter`). Commit accepts edits into the clipboard while retaining zoom, pan and undo.
 
-The text editor theme (fonts, caret, and the new C-like syntax colors) is driven by `%LOCALAPPDATA%\Screenzap\text-editor-theme.json`. Edit and save that file while the editor is open to live-reload the palette. Available color keys include `background`, `foreground`, `caret`, `selection`, `keyword`, `type`, `string`, `comment`, `number`, `operator`, and `preprocessor`.
+History images and emoji can be dragged onto the canvas. Resize, perspective correction, free rotation, OCR censoring, background replacement, color correction, text optimization and De-JPEG use the existing editing algorithms. The View controls below the history provide zoom, Fit, 100% and transparency.
 
 ### Modifier keys
 
@@ -33,9 +33,11 @@ The text editor theme (fonts, caret, and the new C-like syntax colors) is driven
 
 ## Development
 
-Screenzap is built as a 64-bit (`x64`) Windows application. Before rebuilding, make sure any running `Screenzap.exe` process is closed so the linker can overwrite the executable. Use the .NET CLI directly (for example `dotnet build screenzap/screenzap.csproj`) rather than VS Code tasks so you see any build warnings or errors in real time and so the debugger can attach to the x64 process successfully.
+Screenzap is built as a 64-bit (`x64`) Windows application. Before rebuilding, make sure any running `Screenzap.exe` process is closed so the linker can overwrite the executable. Use the .NET CLI directly (for example `dotnet build screenzap/Screenzap.csproj -nr:false -m:1 -p:UseSharedCompilation=false`) rather than VS Code tasks so you see any build warnings or errors in real time and so the debugger can attach to the x64 process successfully.
 
-For a stable local install while developing, use `dotnet publish screenzap/screenzap.csproj -c Release -o %LOCALAPPDATA%\Programs\Screenzap` and launch that published copy. This keeps shortcuts and autorun targets stable even when the framework moniker or build layout changes.
+For a stable local install while developing, use `dotnet publish screenzap/Screenzap.csproj -c Release -nr:false -m:1 -p:UseSharedCompilation=false -o %LOCALAPPDATA%\Programs\Screenzap` and launch that published copy. This keeps shortcuts and autorun targets stable even when the framework moniker or build layout changes.
+
+See [the WinUI editor architecture and verification guide](docs/winui-editor.md) for the native UI, retained document backend, publishing requirements and isolated UI smoke mode. Approved design mockups are kept locally in gitignored `local/mockups/`.
 
 ### Text detection prerequisites
 
