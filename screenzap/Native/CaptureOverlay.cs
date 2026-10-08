@@ -1,4 +1,3 @@
-using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using screenzap.Components;
 
@@ -6,8 +5,7 @@ namespace screenzap.Native;
 
 internal sealed class CaptureOverlay : NativeWindow
 {
-    private readonly Bitmap background;
-    private readonly Bitmap buffer;
+    private readonly CaptureOverlayRenderer renderer;
     private readonly Rectangle bounds;
     private readonly CaptureSelection selection;
     private readonly TaskCompletionSource<Rectangle> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -18,9 +16,9 @@ internal sealed class CaptureOverlay : NativeWindow
         : base("Screenzap Capture", bounds, extendedStyle: 0x08 | 0x80)
     {
         this.bounds = bounds;
-        this.background = background;
         selection = new CaptureSelection(background.Size);
-        buffer = new Bitmap(background.Width, background.Height, PixelFormat.Format32bppArgb);
+        try { renderer = new CaptureOverlayRenderer(background); }
+        catch { base.Dispose(); throw; }
     }
 
     internal Task<Rectangle> SelectAsync()
@@ -40,9 +38,10 @@ internal sealed class CaptureOverlay : NativeWindow
             case 0x14: return 1; // The full buffered frame covers the background.
             case 0x20: SetCursor(LoadCursor(0, 32515)); return 1;
             case 0x201:
+                var previous = selection.Area;
                 selection.Begin(MousePoint(lParam));
                 SetCapture(Handle);
-                InvalidateRect(Handle, 0, false);
+                InvalidateSelection(previous);
                 return 0;
             case 0x200:
                 Move(MousePoint(lParam));
@@ -83,8 +82,16 @@ internal sealed class CaptureOverlay : NativeWindow
     private void Move(Point point)
     {
         if (!selection.IsDragging || completed) return;
+        var previous = selection.Area;
         selection.Move(point, Down(0x20), Down(0x12), Down(0x10), Down(0x11));
-        InvalidateRect(Handle, 0, false);
+        InvalidateSelection(previous);
+    }
+    private void InvalidateSelection(Rectangle previous)
+    {
+        if (previous == selection.Area) return;
+        nint damage = renderer.CreateDamageRegion(previous, selection.Area);
+        try { InvalidateRgn(Handle, damage, false); }
+        finally { CaptureOverlayRenderer.DeleteObject(damage); }
     }
     private static bool Down(int key) => (GetKeyState(key) & 0x8000) != 0;
     private static Point MousePoint(nint parameter) => new(unchecked((short)(long)parameter), unchecked((short)((long)parameter >> 16)));
@@ -101,41 +108,25 @@ internal sealed class CaptureOverlay : NativeWindow
 
     private void Paint()
     {
+        nint dirty = CaptureOverlayRenderer.CreateRectRgn(0, 0, 0, 0);
+        GetUpdateRgn(Handle, dirty, false);
         nint dc = BeginPaint(Handle, out var paint);
         try
         {
-            using (var graphics = Graphics.FromImage(buffer))
-            {
-                graphics.DrawImageUnscaled(background, Point.Empty);
-                var area = selection.Area;
-                using var dim = new SolidBrush(Color.FromArgb(120, Color.Black));
-                using var region = new Region(new Rectangle(Point.Empty, background.Size));
-                if (area.Width > 0 && area.Height > 0) region.Exclude(area);
-                graphics.FillRegion(dim, region);
-                if (area.Width > 0 && area.Height > 0)
-                {
-                    using var border = new Pen(Color.DeepSkyBlue, 2f);
-                    graphics.DrawRectangle(border, area.Left - 1, area.Top - 1, area.Width + 2, area.Height + 2);
-                    var font = SystemFonts.CaptionFont ?? SystemFonts.DefaultFont;
-                    string caption = $"{area.Width} x {area.Height}";
-                    var text = graphics.MeasureString(caption, font);
-                    float x = Math.Clamp(area.Right - text.Width, 0, Math.Max(0, background.Width - text.Width));
-                    float y = area.Bottom + 4;
-                    if (y + text.Height > background.Height) y = Math.Max(0, area.Top - text.Height - 4);
-                    graphics.DrawString(caption, font, Brushes.White, x, y);
-                }
-            }
-            using var target = Graphics.FromHdc(dc);
-            target.DrawImageUnscaled(buffer, Point.Empty);
+            renderer.Paint(dc, Rectangle.FromLTRB(paint.Left, paint.Top, paint.Right, paint.Bottom), dirty, selection.Area);
         }
-        finally { EndPaint(Handle, ref paint); }
+        finally
+        {
+            EndPaint(Handle, ref paint);
+            CaptureOverlayRenderer.DeleteObject(dirty);
+        }
     }
 
     public override void Dispose()
     {
         if (!completed && Handle != 0) Complete(Rectangle.Empty);
         base.Dispose();
-        buffer.Dispose();
+        renderer.Dispose();
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -147,7 +138,8 @@ internal sealed class CaptureOverlay : NativeWindow
     }
     [DllImport("user32.dll")] private static extern nint BeginPaint(nint window, out PaintData paint);
     [DllImport("user32.dll")] private static extern bool EndPaint(nint window, ref PaintData paint);
-    [DllImport("user32.dll")] private static extern bool InvalidateRect(nint window, nint rectangle, bool erase);
+    [DllImport("user32.dll")] private static extern bool InvalidateRgn(nint window, nint region, bool erase);
+    [DllImport("user32.dll")] private static extern int GetUpdateRgn(nint window, nint region, bool erase);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);

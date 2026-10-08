@@ -1,5 +1,7 @@
 param(
-    [string]$LogPath = (Join-Path $PSScriptRoot '..\local\regressions.log')
+    [string]$LogPath = (Join-Path $PSScriptRoot '..\local\regressions.log'),
+    [string]$Filter,
+    [switch]$Detailed
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -73,6 +75,11 @@ public static class RegressionDesktop {
 }
 '@
 $command = 'cmd.exe /d /s /c ""{0}" test "{1}" -nr:false -m:1 -p:UseSharedCompilation=false > "{2}" 2>&1"' -f $dotnet, $project, $LogPath
+if ($Filter) {
+    if ($Filter -match '["&<>|]') { throw 'Unsupported characters in test filter.' }
+    $command = $command.Replace(' > ', (' --filter "{0}" > ' -f $Filter))
+}
+if ($Detailed) { $command = $command.Replace(' > ', ' --logger "console;verbosity=detailed" > ') }
 $result = [RegressionDesktop]::Run($command, $repo)
 Get-Content $LogPath | Select-Object -Last 20
 exit $result

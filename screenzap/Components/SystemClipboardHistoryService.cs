@@ -628,17 +628,18 @@ namespace screenzap.Components
                 if (!maybe.HasValue) continue;
                 var (sysId, timestamp, built) = maybe.Value;
 
-                // Only honor suppression for a decode-skipped ("already known, nothing changed")
-                // entry. Windows appears to report a single stable id for "whatever is currently on
-                // the clipboard" rather than minting a fresh id per content snapshot - so once that
-                // id gets suppressed (e.g. after a commit/set-active write moves an item off of it),
-                // it would otherwise silently and permanently blackhole every later, unrelated copy
-                // that happens to still be reported under the same id. When we've freshly decoded
-                // real bytes this cycle (built != null), the content demonstrably isn't the stale
-                // snapshot the suppression was guarding against, so let it through.
+                // An id alone cannot suppress freshly decoded content: Windows may reuse it
+                // for an unrelated image. But decoding the old image again does not make it
+                // new; keep export leftovers suppressed when both the id and content match.
                 if (built == null && store.ContainsSuppressedSystemHistoryId(sysId))
                 {
                     Logger.Log($"ApplySnapshot: {sysId} dropped (suppressed id, no fresh content this cycle)");
+                    continue;
+                }
+
+                if (built != null && store.Items.Any(item => item.MatchesSuppressedSystemImage(built)))
+                {
+                    built.Dispose();
                     continue;
                 }
 

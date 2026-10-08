@@ -22,8 +22,10 @@ compatibility UI harness have been deleted.
 There are no Windows Forms controls or forms in the application assembly. The tray icon
 and context menu use Shell_NotifyIcon and native Windows menus. The screenshot selector
 uses a buffered Win32 window at the frozen monitor's physical-pixel bounds; its selection
-model preserves Shift/square, Alt/centre, Space/pan and Ctrl/16px-grid gestures. Cancellation,
-focus loss and capture loss close the selector without writing an image. Selection is async
+model preserves Shift/square, Alt/centre, Space/pan and Ctrl/16px-grid gestures. The selector
+caches the frozen and dimmed screen in native GDI surfaces. Drag paints copy only changed strips,
+selection borders and dimension labels; they do not alpha-blend or convert a full-screen bitmap.
+Cancellation, focus loss and capture loss close the selector without writing an image. Selection is async
 on the XAML message loop rather than using a modal WinForms loop.
 
 GDI+, System.Drawing and Windows Forms remain dependencies for clipboard data, keyboard
@@ -112,6 +114,16 @@ switches the user's desktop. Output defaults to ignored `local/regressions.log`.
 Actual-window tests
 must exercise native menus, pointer capture, typing, dialogs, history and resizing; a
 successful compile cannot validate those interactions.
+
+`powershell -NoProfile -File tools/measure-capture-performance.ps1` benchmarks the capture
+selector on the same isolated desktop, without global pointer/keyboard input or switching
+desktops. It sends drag messages to the real HWND and reports preparation/first-paint time,
+median, p95 and maximum drag-paint time for 1080p, 1440p and 4K frozen surfaces. Timings include
+flushing GDI work; they measure CPU paint completion, not compositor presentation or end-to-end
+input latency. The visible part of each HWND is limited by the test desktop's resolution.
+Pass `-LogPath` to keep before/after runs; the default is ignored `local/capture-performance.log`.
+Regular regressions compare partial and full paints pixel-for-pixel, including coalesced moves,
+small selections and labels flipping above the selection near the screen edge.
 
 Foreground UI automation takes control of the desktop. Run the scripts below only when
 the user explicitly requests desktop automation. The default verification is the isolated

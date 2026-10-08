@@ -556,6 +556,14 @@ namespace screenzap.Components
                     && StoredImage.ContentEquals(current, other.current));
         }
 
+        internal bool MatchesSuppressedSystemImage(ClipboardHistoryItem incoming)
+        {
+            // A fresh decode can still be the old Windows entry left behind by an export.
+            // Match its content as well as its id so unrelated copies under a reused id survive.
+            return ContainsSuppressedSystemHistoryId(incoming.SystemHistoryId)
+                && (ContentMatches(incoming) || StoredImage.ContentEquals(original, incoming.committed));
+        }
+
         internal void SetDirtyFlagForRestore(bool isDirty)
         {
             IsDirty = isDirty;

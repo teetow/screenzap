@@ -55,6 +55,7 @@ namespace screenzap
         private bool isPlaceholderImage;
         private bool hasUnsavedChanges;
         private Guid committedDocumentRevision;
+        private ClipboardHistoryItem? synchronizedHistoryItem;
         internal bool DocumentIsDirty { get; private set; }
 
         /// <summary>Invoked when the editor's content is dirtied (e.g. by an edit, tool apply or undo push).</summary>
@@ -69,6 +70,7 @@ namespace screenzap
 
         private void NotifyDocumentContentChanged()
         {
+            synchronizedHistoryItem = null;
             try
             {
                 ContentEditedCallback?.Invoke();
@@ -202,6 +204,7 @@ namespace screenzap
         {
             if (imgData == null)
                 return;
+            synchronizedHistoryItem = null;
             LogViewportDebug($"=== LoadImage START: imgData.Size={imgData.Size}, treatAsPlaceholder={treatAsPlaceholder} ===");
             LogViewportDebug($"LoadImage: current viewport.ClientSize={viewport.ClientSize}, panOffset={viewport.Metrics.PanOffset}");
             var previousView = viewport.Metrics;
@@ -2165,6 +2168,7 @@ namespace screenzap
                 committedDocumentRevision = Guid.NewGuid();
             DocumentIsDirty = item.IsDirty;
             hasUnsavedChanges = item.IsDirty;
+            synchronizedHistoryItem = item;
             viewport?.Invalidate();
         }
 
@@ -2196,6 +2200,14 @@ namespace screenzap
             if (item == null)
                 return;
             using var perf = PerfTrace.Scope("ImageDocumentEditor.CaptureLiveStateInto", () => $"layers={imageLayers.Count} shapes={annotationShapes.Count} text={textAnnotations.Count}", slowMs: 80);
+            // Checkpoints can advance without changing pixels (e.g. a successful export).
+            // Browsing or stashing after a debounced capture must still transfer undo state,
+            // but need not PNG-encode the base or rebuild the overlay and preview again.
+            item.DocumentRevision = undoStack.CurrentRevision;
+            item.CommittedRevision = committedDocumentRevision;
+            item.SetDirtyFlagForRestore(DocumentIsDirty);
+            if (ReferenceEquals(synchronizedHistoryItem, item))
+                return;
             // Base image stays unflattened so annotations and layers remain editable after a
             // round-trip through the item.
             if (HasEditableImage && viewport?.Image is Bitmap baseImage)
@@ -2204,14 +2216,12 @@ namespace screenzap
             }
 
             item.Overlay = CloneOverlay();
-            item.DocumentRevision = undoStack.CurrentRevision;
-            item.CommittedRevision = committedDocumentRevision;
-            item.SetDirtyFlagForRestore(DocumentIsDirty);
             // Flattened preview for the thumbnail. Skip the full-res copy when there is nothing
             // to composite — the thumbnail falls back to CurrentImage, which is identical then.
             if (!HasEditableImage)
             {
                 item.SetPreviewComposite(null);
+                synchronizedHistoryItem = item;
                 return;
             }
 
@@ -2225,6 +2235,7 @@ namespace screenzap
             {
                 item.SetPreviewComposite(null);
             }
+            synchronizedHistoryItem = item;
         }
 
         void IClipboardDocumentPresenter.StashHistoryItemState(ClipboardHistoryItem item)

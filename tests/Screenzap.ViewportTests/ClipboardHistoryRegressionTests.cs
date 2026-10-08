@@ -456,6 +456,103 @@ namespace Screenzap.ViewportTests
             });
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void SystemHistoryRefresh_DoesNotReimportOldEntryAfterUseAsClipboard(bool edited)
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = new ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
+                using var image = CreateSolidBitmap(Color.SteelBlue);
+                var item = host.HistoryStore.AddObservedImage(image);
+                item.AssignSystemHistoryId("old-system-id");
+                Assert.True(host.ActivateHistoryItem(item));
+                if (edited)
+                    editor.SurfaceKey(Keys.Delete);
+                host.ClipboardImageWriterForDiagnostics = _ => true;
+                Assert.True(host.SetItemAsClipboard(item));
+
+                using var exported = (Bitmap)host.ActivePresenter!.GetCurrentContent()!;
+                Assert.Equal(edited, exported.GetPixel(0, 0) != image.GetPixel(0, 0));
+                var latest = ClipboardHistoryItem.FromImage(exported);
+                latest.AssignSystemHistoryId("new-system-id");
+                var stale = ClipboardHistoryItem.FromImage(image);
+                stale.AssignSystemHistoryId("old-system-id");
+                using var service = new SystemClipboardHistoryService(
+                    host.HistoryStore, action => action(), null,
+                    host.TryBindPendingCommittedSystemItem, host.IsInternalClipboardWriteWindow);
+
+                ApplySystemSnapshot(service, new()
+                {
+                    ("new-system-id", DateTimeOffset.UtcNow, latest),
+                    ("old-system-id", DateTimeOffset.UtcNow.AddMinutes(-1), stale)
+                });
+
+                Assert.Same(item, Assert.Single(host.HistoryStore.Items));
+                Assert.Equal("new-system-id", item.SystemHistoryId);
+            });
+        }
+
+        [Fact]
+        public void HistoryBrowsing_ReusesUnchangedImageAndThumbnailContent()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = new ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
+                using var image = CreateSolidBitmap(Color.SteelBlue);
+                var first = host.HistoryStore.AddObservedImage(image);
+                var second = host.HistoryStore.AddObservedImage(image);
+                var pixels = first.CurrentPngContent;
+                var thumbnail = first.ThumbnailSourcePngContent;
+
+                Assert.True(host.ActivateHistoryItem(first));
+                Assert.True(host.ActivateHistoryItem(second));
+                Assert.True(host.ActivateHistoryItem(first));
+
+                Assert.Same(pixels, first.CurrentPngContent);
+                Assert.Same(thumbnail, first.ThumbnailSourcePngContent);
+            });
+        }
+
+        [Fact]
+        public void HistoryBrowsing_AfterCapturedEdit_ReusesContentAndRestoresUndoRedo()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = new ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
+                using var image = EditorFixture.Canvas(100, 80, Color.DarkBlue);
+                var first = host.HistoryStore.AddObservedImage(image);
+                var second = host.HistoryStore.AddObservedImage(image);
+                Assert.True(host.ActivateHistoryItem(first));
+                editor.ResizeSurface(new Size(400, 300));
+                EditorFixture.PinModifiers(editor);
+                editor.TestToggleRectTool();
+                editor.TestFireMouseDownAtImagePixel(new Point(10, 10), MouseButtons.Left);
+                editor.TestFireMouseMoveAtImagePixel(new Point(70, 50), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(70, 50), MouseButtons.Left);
+                editor.TestDeactivateDrawingTool();
+                host.TriggerPersistedHistorySaveForTests();
+                var pixels = first.CurrentPngContent;
+                var thumbnail = first.ThumbnailSourcePngContent;
+
+                Assert.True(host.ActivateHistoryItem(second));
+                Assert.Same(pixels, first.CurrentPngContent);
+                Assert.Same(thumbnail, first.ThumbnailSourcePngContent);
+                Assert.True(host.ActivateHistoryItem(first));
+                Assert.Equal(1, editor.TestAnnotationShapeCount);
+                Assert.True(host.ExecuteHostCommand(EditorCommandId.Undo));
+                Assert.Equal(0, editor.TestAnnotationShapeCount);
+                Assert.True(host.ActivateHistoryItem(second));
+                Assert.True(host.ActivateHistoryItem(first));
+                Assert.True(host.ExecuteHostCommand(EditorCommandId.Redo));
+                Assert.Equal(1, editor.TestAnnotationShapeCount);
+            });
+        }
+
         [Fact]
         public void SystemHistoryRefresh_ReplacesFreshContentWhenNewestSlotReusesKnownId()
         {
