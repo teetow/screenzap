@@ -9,7 +9,7 @@ namespace Screenzap.ViewportTests;
 
 public class ArrowRenderingTests
 {
-    private static ImageEditor Arrow(float size, bool diagonal = false)
+    private static ImageDocumentEditor Arrow(float size, bool diagonal = false)
     {
         var editor = EditorFixture.WithCanvas(520, 320);
         ((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.ArrowTool);
@@ -69,7 +69,7 @@ public class ArrowRenderingTests
         {
             using var editor = Arrow(scale);
             editor.TestSelectedAnnotation!.Selected = false;
-            editor.AttachExternalSurface();
+
             editor.ResizeSurface(new Size(1040, 640));
             editor.SurfaceSetZoom(1);
             using var normal = new Bitmap(1040, 640);

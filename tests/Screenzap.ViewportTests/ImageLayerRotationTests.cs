@@ -11,7 +11,7 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class ImageLayerRotationTests
     {
-        private static screenzap.ImageEditor MakeEditorWithLayer(int layerW = 40, int layerH = 20)
+        private static screenzap.ImageDocumentEditor MakeEditorWithLayer(int layerW = 40, int layerH = 20)
         {
             var editor = EditorFixture.WithCanvas(120, 80);
 

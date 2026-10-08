@@ -12,8 +12,8 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class ConstraintAndLayerKeyboardTests
     {
-        private static screenzap.ImageEditor NewEditor(int width = 200, int height = 160)
-            => EditorFixture.WithCanvas(width, height, createControl: true);
+        private static screenzap.ImageDocumentEditor NewEditor(int width = 200, int height = 160)
+            => EditorFixture.WithCanvas(width, height);
 
         // ── Shift snaps an arrow to 45° ─────────────────────────────────────────────
 
@@ -225,7 +225,7 @@ namespace Screenzap.ViewportTests
 
         // ── Arrow keys drive a selected image layer ─────────────────────────────────
 
-        private static screenzap.ImageEditor EditorWithSelectedLayer(out RectangleF frame)
+        private static screenzap.ImageDocumentEditor EditorWithSelectedLayer(out RectangleF frame)
         {
             var editor = NewEditor(120, 100);
             using (var pasted = EditorFixture.Canvas(20, 14, Color.Magenta))

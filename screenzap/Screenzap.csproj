@@ -4,7 +4,7 @@
     <PlatformTarget>x64</PlatformTarget>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
-    <!-- Compatibility document controls use the Windows Forms runtime, while WinUI owns XAML compilation. -->
+    <!-- Windows Forms supports tray/capture/clipboard interop; WinUI owns the editor and XAML compilation. -->
     <DefaultXamlRuntime>WinUI</DefaultXamlRuntime>
     <UseWinUI>true</UseWinUI>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
@@ -41,7 +41,6 @@
     <PackageReference Include="OpenCvSharp4.Extensions" Version="4.10.0.20241108" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
     <PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
-    <PackageReference Include="FontAwesome.Sharp" Version="6.6.0" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
     <PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.14" />
     <PackageReference Include="OpenCvSharp4" Version="4.10.0.20241108" />
@@ -51,15 +50,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Update="Components\ImageEditor.Designer.cs">
-      <DependentUpon>ImageEditor.cs</DependentUpon>
-    </Compile>
-    <Compile Update="Components\TextEditor.Designer.cs">
-      <DependentUpon>TextEditor.cs</DependentUpon>
-    </Compile>
-    <Compile Update="Components\ShortcutEditor.Designer.cs">
-      <DependentUpon>ShortcutEditor.cs</DependentUpon>
-    </Compile>
     <Compile Update="Properties\Resources.Designer.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>
@@ -76,13 +66,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Update="Components\ImageEditor.resx">
-      <DependentUpon>ImageEditor.cs</DependentUpon>
-      <LogicalName>screenzap.ImageEditor.resources</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Components\ShortcutEditor.resx">
-      <DependentUpon>ShortcutEditor.cs</DependentUpon>
-    </EmbeddedResource>
     <EmbeddedResource Update="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>

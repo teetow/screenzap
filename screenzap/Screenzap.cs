@@ -1,4 +1,4 @@
-﻿using screenzap.Components;
+using screenzap.Components;
 using screenzap.lib;
 using System;
 using System.Collections.Generic;
@@ -24,8 +24,8 @@ namespace screenzap
         private KeyCombo rectCaptureCombo;
         private KeyCombo seqCaptureCombo;
         private bool isCapturing;
-        private ImageEditor? imageEditor;
-        private ClipboardEditorHostForm? clipboardEditorHost;
+        private ImageDocumentEditor? imageEditor;
+        private ClipboardDocumentHost? clipboardEditorHost;
         private System.Windows.Forms.Timer? clipboardEditorWarmupTimer;
         private bool isShuttingDown;
         private DateTime lastErrorNotificationUtc;
@@ -478,28 +478,6 @@ namespace screenzap
             notifyIcon1.BalloonTipClicked += handler;
         }
 
-        private void setKeyboardShortcutToolStripMenuItem_Click(object? sender, EventArgs e)
-        {
-            ShortcutEditor shortcutEditor = new ShortcutEditor(rectCaptureCombo);
-            var rslt = shortcutEditor.ShowDialog();
-            if (rslt == DialogResult.OK)
-            {
-                rectCaptureCombo = shortcutEditor.currentCombo;
-                try
-                {
-                    RegisterRectCaptureHotkeys();
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(ex.Message);
-                    return;
-                }
-
-                updateTooltips(rectCaptureCombo);
-                Properties.Settings.Default.currentCombo = rectCaptureCombo.ToString();
-                Properties.Settings.Default.Save();
-            }
-        }
 
         private bool TrySetNativeCaptureShortcut(Keys keys)
         {
@@ -528,34 +506,7 @@ namespace screenzap
             Properties.Settings.Default.Save();
         }
 
-        private void setFolderToolStripMenuItem_Click(object? sender, EventArgs e)
-        {
-            using var dialog = new FolderBrowserDialog();
-            if (dialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.captureFolder = dialog.SelectedPath;
-                Properties.Settings.Default.Save();
-            }
-        }
 
-        private void checkerboardColorsToolStripMenuItem_Click(object? sender, EventArgs e)
-        {
-            using var dialog = new CheckerboardColorsDialog(
-                Color.FromArgb(Properties.Settings.Default.checkerboardLightColorArgb),
-                Color.FromArgb(Properties.Settings.Default.checkerboardDarkColorArgb));
-
-            if (dialog.ShowDialog() != DialogResult.OK)
-            {
-                return;
-            }
-
-            Properties.Settings.Default.checkerboardLightColorArgb = dialog.LightColor.ToArgb();
-            Properties.Settings.Default.checkerboardDarkColorArgb = dialog.DarkColor.ToArgb();
-            Properties.Settings.Default.Save();
-
-            // Apply live to an already-open editor.
-            imageEditor?.ApplyCheckerboardColorsFromSettings();
-        }
 
         private void notifyIcon1_DoubleClick(object? sender, EventArgs e)
         {
@@ -566,7 +517,7 @@ namespace screenzap
         {
             using var perf = PerfTrace.Scope(
                 "Screenzap.ShowClipboardEditor",
-                () => $"items={clipboardEditorHost?.HistoryStore.Items.Count ?? 0} warmed={clipboardEditorHost?.IsHandleCreated == true}",
+                () => $"items={clipboardEditorHost?.HistoryStore.Items.Count ?? 0} warmed={clipboardEditorHost != null}",
                 slowMs: 50,
                 summaryEvery: 1);
 
@@ -596,20 +547,12 @@ namespace screenzap
             var top = host.HistoryStore.TopItem;
             if (top == null)
             {
-                // Fallback to legacy path for unusual clipboard types.
-                IDataObject? dataObject = null;
-                try { dataObject = Clipboard.GetDataObject(); } catch { }
-                if (dataObject == null || !host.TryShowClipboardData(dataObject))
-                {
-                    notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain image data.", ToolTipIcon.Info);
-                    return;
-                }
-                host.ShowAndActivate();
+                notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain image data.", ToolTipIcon.Info);
                 return;
             }
 
             host.ActivatePreferredHistoryItem();
-            host.FitToContent();
+
             host.ShowAndActivate();
         }
 
@@ -653,7 +596,7 @@ namespace screenzap
             try
             {
                 var host = EnsureClipboardHost();
-                host.WarmForFirstShow();
+
             }
             catch (Exception ex)
             {
@@ -661,13 +604,13 @@ namespace screenzap
             }
         }
 
-        private ClipboardEditorHostForm EnsureClipboardHost()
+        private ClipboardDocumentHost EnsureClipboardHost()
         {
             if (clipboardEditorHost == null || clipboardEditorHost.IsDisposed)
             {
                 var imagePresenter = EnsureImageEditor();
-                clipboardEditorHost = new ClipboardEditorHostForm(imagePresenter);
-                clipboardEditorHost.FormClosed += OnClipboardHostClosed;
+                clipboardEditorHost = new ClipboardDocumentHost(imagePresenter);
+
                 EditorHostCreated?.Invoke(clipboardEditorHost, imagePresenter);
                 WireHostAppMenuHooks(clipboardEditorHost);
                 InitializeSystemClipboardHistoryForHost(clipboardEditorHost);
@@ -680,7 +623,7 @@ namespace screenzap
         /// Wires the editor window's menu bar (Settings/File items) to the tray host's app-level
         /// actions. These moved off the tray context menu when it was slimmed to essentials.
         /// </summary>
-        private void WireHostAppMenuHooks(ClipboardEditorHostForm host)
+        private void WireHostAppMenuHooks(ClipboardDocumentHost host)
         {
             host.GetStartOnLogin = GetStartOnLogin;
             host.SetStartOnLogin = SetStartOnLogin;
@@ -688,22 +631,19 @@ namespace screenzap
             host.SetStartupNotificationEnabled = SetStartupNotificationEnabled;
             host.GetCaptureShortcut = () => rectCaptureCombo.Key | rectCaptureCombo.Modifiers;
             host.TrySetCaptureShortcut = TrySetNativeCaptureShortcut;
-            host.EditCaptureShortcutRequested = () => setKeyboardShortcutToolStripMenuItem_Click(this, EventArgs.Empty);
-            host.SetCaptureFolderRequested = () => setFolderToolStripMenuItem_Click(this, EventArgs.Empty);
-            host.EditCheckerboardColorsRequested = () => checkerboardColorsToolStripMenuItem_Click(this, EventArgs.Empty);
             host.SaveClipboardImageRequested = () => saveClipboardToolStripMenuItem_Click(this, EventArgs.Empty);
         }
 
         private SystemClipboardHistoryService? systemHistoryService;
 
-        private void InitializeSystemClipboardHistoryForHost(ClipboardEditorHostForm host)
+        private void InitializeSystemClipboardHistoryForHost(ClipboardDocumentHost host)
         {
             try
             {
                 systemHistoryService?.Dispose();
                 systemHistoryService = new SystemClipboardHistoryService(
                     host.HistoryStore,
-                    host,
+                    this,
                     onItemObserved: host.OnObservedClipboardItem,
                     tryBindPendingCommittedItem: host.TryBindPendingCommittedSystemItem,
                     isInternalWriteWindow: host.IsInternalClipboardWriteWindow);
@@ -730,31 +670,18 @@ namespace screenzap
             }
         }
 
-        private void OnClipboardHostClosed(object? sender, FormClosedEventArgs e)
-        {
-            if (sender is ClipboardEditorHostForm host)
-            {
-                host.FormClosed -= OnClipboardHostClosed;
-            }
 
-            systemHistoryService?.Dispose();
-            systemHistoryService = null;
 
-            clipboardEditorHost = null;
-            imageEditor = null;
-            ScheduleClipboardEditorWarmup();
-        }
-
-        internal Action<ClipboardEditorHostForm, ImageEditor>? EditorHostCreated { get; set; }
-        internal ClipboardEditorHostForm EditorHost => EnsureClipboardHost();
+        internal Action<ClipboardDocumentHost, ImageDocumentEditor>? EditorHostCreated { get; set; }
+        internal ClipboardDocumentHost EditorHost => EnsureClipboardHost();
         internal void OpenEditor() => ShowClipboardEditorForCurrentData();
         internal void StartBackgroundServices() { _ = Handle; OnLoad(EventArgs.Empty); }
 
-        private ImageEditor EnsureImageEditor()
+        private ImageDocumentEditor EnsureImageEditor()
         {
             if (imageEditor == null || imageEditor.IsDisposed)
             {
-                imageEditor = new ImageEditor();
+                imageEditor = new ImageDocumentEditor();
             }
 
             return imageEditor;

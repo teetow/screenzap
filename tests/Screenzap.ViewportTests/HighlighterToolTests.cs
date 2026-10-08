@@ -12,7 +12,7 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class HighlighterToolTests
     {
-        private static screenzap.ImageEditor PrepareEditor() => EditorFixture.WithCanvas(200, 120);
+        private static screenzap.ImageDocumentEditor PrepareEditor() => EditorFixture.WithCanvas(200, 120);
 
         // A roughly-horizontal scribble with sub-pixel jitter the decimator should remove.
         private static List<Point> SampleStroke()
@@ -58,7 +58,7 @@ namespace Screenzap.ViewportTests
             for (int x = 0; x <= 100; x += 5)
                 points.Add(new Point(x, 50));
 
-            var simplified = screenzap.ImageEditor.SimplifyPolyline(points, 1.5);
+            var simplified = screenzap.ImageDocumentEditor.SimplifyPolyline(points, 1.5);
 
             Assert.Equal(2, simplified.Count);
             Assert.Equal(new Point(0, 50), simplified[0]);
@@ -75,7 +75,7 @@ namespace Screenzap.ViewportTests
                 new Point(50, 75), new Point(50, 100)
             };
 
-            var simplified = screenzap.ImageEditor.SimplifyPolyline(points, 1.5);
+            var simplified = screenzap.ImageDocumentEditor.SimplifyPolyline(points, 1.5);
 
             Assert.Contains(new Point(50, 50), simplified);
             Assert.Equal(new Point(0, 50), simplified[0]);
@@ -90,7 +90,7 @@ namespace Screenzap.ViewportTests
                 new Point(0, 0), new Point(10, 0), new Point(20, 30), new Point(30, 0), new Point(40, 0)
             };
 
-            var smoothed = screenzap.ImageEditor.SmoothPolyline(points, 3);
+            var smoothed = screenzap.ImageDocumentEditor.SmoothPolyline(points, 3);
 
             Assert.Equal(points[0], smoothed[0]);
             Assert.Equal(points[^1], smoothed[^1]);
@@ -277,7 +277,7 @@ namespace Screenzap.ViewportTests
                 editor.TestSetHighlighterOpacityPercent(70);
 
                 Assert.InRange(editor.TestSelectedAnnotation!.Opacity, 0.699f, 0.701f);
-                Assert.Equal("70%", editor.TestHighlighterOpacityValueLabelText);
+                Assert.Equal(70, editor.TestHighlighterOpacityPercent);
 
                 editor.TestFireKeyDown(Keys.Control | Keys.Z);
 
@@ -348,64 +348,8 @@ namespace Screenzap.ViewportTests
             });
         }
 
-        [Fact]
-        public void HighlighterThicknessCombo_ShowsBlank_WhenSelectionIsMixed()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditor();
-                editor.TestToggleHighlighterTool();
 
-                // Two strokes at the default thickness (12), in separate bands.
-                editor.TestDrawHighlighterStroke(SampleStroke());
-                editor.TestDrawHighlighterStroke(new List<Point>
-                {
-                    new Point(20, 90), new Point(60, 90), new Point(100, 91), new Point(140, 90)
-                });
-                editor.TestDeactivateDrawingTool();
 
-                // Deselect, then select only the first stroke and bump it to 20 → the two
-                // strokes now disagree (20 vs 12).
-                editor.TestFireMouseDownAtImagePixel(new Point(180, 110), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(180, 110), MouseButtons.Left);
-                editor.TestFireMouseDownAtImagePixel(new Point(65, 40), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(65, 40), MouseButtons.Left);
-                editor.TestSetHighlighterThickness(20f);
 
-                // Add the second stroke to the selection → mixed thickness → blank combo.
-                editor.TestShiftClickAtImagePixel(new Point(65, 90));
-                Assert.Equal(2, editor.TestSelectedShapeCount);
-
-                Assert.Equal(-1, editor.TestHighlighterThicknessComboBoxSelectedIndex);
-            });
-        }
-
-        [Fact]
-        public void HighlighterOpacityValueLabel_ShowsMixed_WhenSelectionIsMixed()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditor();
-                editor.TestToggleHighlighterTool();
-
-                editor.TestDrawHighlighterStroke(SampleStroke());
-                editor.TestDrawHighlighterStroke(new List<Point>
-                {
-                    new Point(20, 90), new Point(60, 90), new Point(100, 91), new Point(140, 90)
-                });
-                editor.TestDeactivateDrawingTool();
-
-                editor.TestFireMouseDownAtImagePixel(new Point(180, 110), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(180, 110), MouseButtons.Left);
-                editor.TestFireMouseDownAtImagePixel(new Point(65, 40), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(65, 40), MouseButtons.Left);
-                editor.TestSetHighlighterOpacityPercent(70);
-
-                editor.TestShiftClickAtImagePixel(new Point(65, 90));
-
-                Assert.Equal(2, editor.TestSelectedShapeCount);
-                Assert.Equal("Mixed", editor.TestHighlighterOpacityValueLabelText);
-            });
-        }
     }
 }

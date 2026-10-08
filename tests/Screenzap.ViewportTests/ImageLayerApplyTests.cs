@@ -13,7 +13,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(40, 30);
                 editor.LoadImage(canvas);
 
@@ -83,7 +83,7 @@ namespace Screenzap.ViewportTests
         /// exactly as a real paste leaves it.
         /// </summary>
         private static void PasteBlockAt(
-            screenzap.ImageEditor editor,
+            screenzap.ImageDocumentEditor editor,
             Color color,
             int width,
             int height,

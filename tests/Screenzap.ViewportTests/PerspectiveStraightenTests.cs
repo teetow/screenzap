@@ -10,7 +10,7 @@ namespace Screenzap.ViewportTests
 {
     public class PerspectiveStraightenTests
     {
-        private static void Drag(screenzap.ImageEditor editor, Point start, Point end)
+        private static void Drag(screenzap.ImageDocumentEditor editor, Point start, Point end)
         {
             editor.TestFireMouseDownAtImagePixel(start, MouseButtons.Left);
             editor.TestFireMouseMoveAtImagePixel(end, MouseButtons.Left);

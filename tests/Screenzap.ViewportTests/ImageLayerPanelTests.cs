@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Linq;
 using screenzap.Components.Shared;
 using Xunit;
 
@@ -12,7 +13,7 @@ namespace Screenzap.ViewportTests
     public class ImageLayerPanelTests
     {
         private static void PasteBlockAt(
-            screenzap.ImageEditor editor,
+            screenzap.ImageDocumentEditor editor,
             Color color,
             int width,
             int height,
@@ -37,15 +38,15 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var editor = EditorFixture.WithCanvas(60, 40);
-                Assert.True(editor.LayersPanelAvailableForTests);
-                Assert.False(editor.LayersPanelShownForTests);
+
+                Assert.False((editor.SurfaceLayerCount > 0));
 
                 PasteBlockAt(editor, Color.Lime, 8, 8, 0f, 0f);
-                Assert.True(editor.LayersPanelShownForTests);
+                Assert.True((editor.SurfaceLayerCount > 0));
 
                 Assert.True(editor.ApplyFloatingPasteForTests());
                 Assert.Equal(0, editor.ImageLayerCountForTests);
-                Assert.False(editor.LayersPanelShownForTests);
+                Assert.False((editor.SurfaceLayerCount > 0));
             });
         }
 
@@ -61,8 +62,8 @@ namespace Screenzap.ViewportTests
                 // Newest paste is the top of the stack, so it heads the list.
                 Assert.Equal(
                     new[] { "Paste 2", "Paste 1", "Background" },
-                    editor.LayersPanelCaptionsForTests);
-                Assert.Equal(3, editor.LayersPanelRowCountForTests);
+                    Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
+                Assert.Equal(3, (editor.SurfaceLayerCount + 1));
             });
         }
 
@@ -77,11 +78,11 @@ namespace Screenzap.ViewportTests
                 PasteBlockAt(editor, Color.Lime, 8, 8, 0f, 0f);
                 Assert.Equal(0, editor.SelectedLayerIndexForTests);
 
-                editor.ClickLayerPanelRowForTests(-1);
+                editor.SurfaceSelectLayer(-1);
 
                 Assert.Equal(-1, editor.SelectedLayerIndexForTests);
                 Assert.Equal(1, editor.ImageLayerCountForTests);
-                Assert.True(editor.LayersPanelShownForTests);
+                Assert.True((editor.SurfaceLayerCount > 0));
             });
         }
 
@@ -98,9 +99,9 @@ namespace Screenzap.ViewportTests
                     Assert.Equal(Color.Lime.ToArgb(), lit.GetPixel(4, 4).ToArgb());
                 }
 
-                editor.ClickLayerPanelMuteForTests(0);
-                Assert.False(editor.IsImageLayerVisibleForTests(0));
-                Assert.True(editor.LayerPanelMuteShowsMutedForTests(0));
+                editor.SurfaceLayerAction(0, "Show");
+                Assert.False(Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray()[0].IsVisible);
+                Assert.True(!Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray()[0].IsVisible);
 
                 // Muting is content, not a view toggle: a save or copy loses it too.
                 using (var muted = editor.BuildCompositeImageForTests())
@@ -110,7 +111,7 @@ namespace Screenzap.ViewportTests
 
                 var presenter = (IClipboardDocumentPresenter)editor;
                 Assert.True(presenter.TryExecute(EditorCommandId.Undo));
-                Assert.True(editor.IsImageLayerVisibleForTests(0));
+                Assert.True(Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray()[0].IsVisible);
             });
         }
 
@@ -123,11 +124,11 @@ namespace Screenzap.ViewportTests
                 // canvas, so the row's check is disabled and the action is inert.
                 using var editor = EditorFixture.WithCanvas(60, 40);
                 PasteBlockAt(editor, Color.Lime, 8, 8, 0f, 0f);
-                editor.ClickLayerPanelMuteForTests(0);
+                editor.SurfaceLayerAction(0, "Show");
 
-                Assert.False(editor.LayerPanelCommitEnabledForTests(0));
+                Assert.False(Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray()[0].IsVisible);
 
-                editor.ClickLayerPanelCommitForTests(0);
+                editor.SurfaceLayerAction(0, "Merge");
                 Assert.Equal(1, editor.ImageLayerCountForTests);
                 Assert.False(editor.ApplyFloatingPasteForTests());
             });
@@ -143,10 +144,10 @@ namespace Screenzap.ViewportTests
                 PasteBlockAt(editor, Color.Magenta, 8, 8, 40f, 20f);
 
                 // Glue down the *lower* row, which is not the selected one.
-                editor.ClickLayerPanelCommitForTests(0);
+                editor.SurfaceLayerAction(0, "Merge");
 
                 Assert.Equal(1, editor.ImageLayerCountForTests);
-                Assert.Equal(new[] { "Paste 2", "Background" }, editor.LayersPanelCaptionsForTests);
+                Assert.Equal(new[] { "Paste 2", "Background" }, Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
 
                 using var baked = editor.CloneBaseBitmapForTests()!;
                 Assert.Equal(Color.Lime.ToArgb(), baked.GetPixel(4, 4).ToArgb());
@@ -163,17 +164,17 @@ namespace Screenzap.ViewportTests
                 PasteBlockAt(editor, Color.Lime, 8, 8, 0f, 0f);
                 PasteBlockAt(editor, Color.Magenta, 8, 8, 40f, 20f);
 
-                editor.ClickLayerPanelDeleteForTests(0);
+                editor.SurfaceLayerAction(0, "Delete");
 
                 Assert.Equal(1, editor.ImageLayerCountForTests);
-                Assert.Equal(new[] { "Paste 2", "Background" }, editor.LayersPanelCaptionsForTests);
+                Assert.Equal(new[] { "Paste 2", "Background" }, Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
 
                 var presenter = (IClipboardDocumentPresenter)editor;
                 Assert.True(presenter.TryExecute(EditorCommandId.Undo));
                 Assert.Equal(2, editor.ImageLayerCountForTests);
                 Assert.Equal(
                     new[] { "Paste 2", "Paste 1", "Background" },
-                    editor.LayersPanelCaptionsForTests);
+                    Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
             });
         }
 
@@ -189,14 +190,14 @@ namespace Screenzap.ViewportTests
 
                 Assert.Equal(
                     new[] { "Paste 3", "Paste 2", "Paste 1", "Background" },
-                    editor.LayersPanelCaptionsForTests);
+                    Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
 
                 // Drag the top row down into the gap just above Background.
-                Assert.True(editor.DragLayerRowToSlotForTests(2, 3));
+                Assert.True(editor.SurfaceMoveLayer(2, 3));
 
                 Assert.Equal(
                     new[] { "Paste 2", "Paste 1", "Paste 3", "Background" },
-                    editor.LayersPanelCaptionsForTests);
+                    Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
                 // The dragged row keeps the selection through the move.
                 Assert.Equal(0, editor.SelectedLayerIndexForTests);
 
@@ -204,7 +205,7 @@ namespace Screenzap.ViewportTests
                 Assert.True(presenter.TryExecute(EditorCommandId.Undo));
                 Assert.Equal(
                     new[] { "Paste 3", "Paste 2", "Paste 1", "Background" },
-                    editor.LayersPanelCaptionsForTests);
+                    Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
             });
         }
 
@@ -225,7 +226,7 @@ namespace Screenzap.ViewportTests
                 }
 
                 // Send the magenta row (currently top) to the bottom of the stack.
-                Assert.True(editor.DragLayerRowToSlotForTests(1, 2));
+                Assert.True(editor.SurfaceMoveLayer(1, 2));
 
                 using (var after = editor.BuildCompositeImageForTests())
                 {
@@ -245,11 +246,11 @@ namespace Screenzap.ViewportTests
                 PasteBlockAt(editor, Color.Lime, 8, 8, 0f, 0f);
                 PasteBlockAt(editor, Color.Magenta, 8, 8, 20f, 20f);
 
-                Assert.True(editor.DragLayerRowToSlotForTests(1, 99));
+                Assert.True(editor.SurfaceMoveLayer(1, 99));
 
                 Assert.Equal(
                     new[] { "Paste 1", "Paste 2", "Background" },
-                    editor.LayersPanelCaptionsForTests);
+                    Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
             });
         }
 
@@ -267,35 +268,17 @@ namespace Screenzap.ViewportTests
 
                 // Slot 0 is where the top row already is, as is slot 1 once its own removal
                 // is accounted for. Neither may push an undo step.
-                Assert.False(editor.DragLayerRowToSlotForTests(1, 0));
-                Assert.False(editor.DragLayerRowToSlotForTests(1, 1));
+                Assert.False(editor.SurfaceMoveLayer(1, 0));
+                Assert.False(editor.SurfaceMoveLayer(1, 1));
 
                 Assert.Equal(
                     new[] { "Paste 2", "Paste 1", "Background" },
-                    editor.LayersPanelCaptionsForTests);
+                    Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).ToArray().Reverse().Select(l => l.Name).Append("Background").ToArray());
                 Assert.Equal(couldUndoBefore, presenter.CanExecute(EditorCommandId.Undo));
             });
         }
 
-        [Fact]
-        public void Panel_DropSlot_IsTheNearestGapAndStopsAtBackground()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = EditorFixture.WithCanvas(60, 40);
-                PasteBlockAt(editor, Color.Lime, 8, 8, 0f, 0f);
-                PasteBlockAt(editor, Color.Magenta, 8, 8, 20f, 20f);
 
-                // Rows are 34px tall, so a gap is nearest from 17px either side of it.
-                Assert.Equal(0, editor.LayerRowDropSlotForTests(0));
-                Assert.Equal(0, editor.LayerRowDropSlotForTests(16));
-                Assert.Equal(1, editor.LayerRowDropSlotForTests(18));
-                Assert.Equal(1, editor.LayerRowDropSlotForTests(34));
-                Assert.Equal(2, editor.LayerRowDropSlotForTests(68));
-                // Past the Background row it clamps rather than running off the end.
-                Assert.Equal(2, editor.LayerRowDropSlotForTests(400));
-            });
-        }
 
         [Fact]
         public void Panel_MutedLayer_IsNotClickableOnCanvas()
@@ -306,8 +289,8 @@ namespace Screenzap.ViewportTests
                 // at whatever is behind it.
                 using var editor = EditorFixture.WithCanvas(60, 40);
                 PasteBlockAt(editor, Color.Lime, 20, 20, 0f, 0f);
-                editor.ClickLayerPanelMuteForTests(0);
-                editor.ClickLayerPanelRowForTests(-1);
+                editor.SurfaceLayerAction(0, "Show");
+                editor.SurfaceSelectLayer(-1);
 
                 Assert.False(editor.BeginLayerInteractionForTests(new Point(10, 10)));
             });

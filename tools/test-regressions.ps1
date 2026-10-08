@@ -8,8 +8,8 @@ $LogPath = [System.IO.Path]::GetFullPath($LogPath)
 $dotnet = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
 $project = Join-Path $repo 'tests\Screenzap.ViewportTests\Screenzap.ViewportTests.csproj'
 
-# WinForms regression fixtures need real window handles and layout, but should never
-# appear on the user's desktop. Their child processes inherit this separate desktop.
+# Document tests create no editor windows. Isolate platform interop fixtures and their
+# child processes on a separate desktop so they cannot interfere with the user.
 # No SwitchDesktop call is made; the interactive desktop remains active throughout.
 Add-Type @'
 using System;

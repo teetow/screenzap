@@ -13,7 +13,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(10, 10);
                 editor.LoadImage(canvas);
 
@@ -32,7 +32,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
 
                 editor.TestFireKeyDown(Keys.M);
 
@@ -45,7 +45,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var first = new Bitmap(10, 10);
                 editor.LoadImage(first);
                 editor.TestFireKeyDown(Keys.M);
@@ -63,7 +63,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var control = new ImageViewportControl
+                using var control = new ImageViewport
                 {
                     ClientSize = new Size(8, 8)
                 };
@@ -77,7 +77,7 @@ namespace Screenzap.ViewportTests
 
                 using (var alphaView = new Bitmap(8, 8))
                 {
-                    control.DrawToBitmap(alphaView, new Rectangle(0, 0, 8, 8));
+                    using (var graphics = Graphics.FromImage(alphaView)) control.Render(graphics);
 
                     // Masked pixel: fully covered by the checkerboard (light quadrant at this offset).
                     var maskedPixel = alphaView.GetPixel(1, 1);
@@ -94,7 +94,7 @@ namespace Screenzap.ViewportTests
 
                 using (var flatView = new Bitmap(8, 8))
                 {
-                    control.DrawToBitmap(flatView, new Rectangle(0, 0, 8, 8));
+                    using (var graphics = Graphics.FromImage(flatView)) control.Render(graphics);
 
                     // Flat mode reveals the raw RGB that alpha was hiding.
                     var revealedPixel = flatView.GetPixel(1, 1);
@@ -115,7 +115,7 @@ namespace Screenzap.ViewportTests
             {
                 // The checkerboard squares are 8px, so the viewport must be several squares wide to
                 // show both colors.
-                using var control = new ImageViewportControl
+                using var control = new ImageViewport
                 {
                     ClientSize = new Size(32, 32),
                     CheckerboardLightColor = Color.FromArgb(10, 20, 30),
@@ -130,7 +130,7 @@ namespace Screenzap.ViewportTests
                 control.ZoomLevel = 4m; // 8x8 image -> 32x32 dest, spanning multiple checker squares
 
                 using var render = new Bitmap(32, 32);
-                control.DrawToBitmap(render, new Rectangle(0, 0, 32, 32));
+                using (var graphics = Graphics.FromImage(render)) control.Render(graphics);
 
                 // Every rendered pixel under the transparent image must be one of the two custom
                 // checkerboard colors — never the old default greys.

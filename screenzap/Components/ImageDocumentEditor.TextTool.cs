@@ -35,7 +35,8 @@ namespace screenzap
         // start == end means no selection (caret only).
         public (int start, int end) GetSelectionRange()
         {
-            if (!SelectionAnchor.HasValue) return (CaretPosition, CaretPosition);
+            if (!SelectionAnchor.HasValue)
+                return (CaretPosition, CaretPosition);
             int a = Math.Min(CaretPosition, SelectionAnchor.Value);
             int b = Math.Max(CaretPosition, SelectionAnchor.Value);
             return (a, b);
@@ -79,11 +80,7 @@ namespace screenzap
             return new Rectangle(Position, new Size((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height)));
         }
 
-        internal bool ContentEquals(TextAnnotation other) =>
-            Id == other.Id && Position == other.Position && Text == other.Text
-            && FontFamily == other.FontFamily && FontSize == other.FontSize && FontStyle == other.FontStyle
-            && TextColor == other.TextColor && OutlineThickness == other.OutlineThickness && OutlineColor == other.OutlineColor;
-
+        internal bool ContentEquals(TextAnnotation other) => Id == other.Id && Position == other.Position && Text == other.Text && FontFamily == other.FontFamily && FontSize == other.FontSize && FontStyle == other.FontStyle && TextColor == other.TextColor && OutlineThickness == other.OutlineThickness && OutlineColor == other.OutlineColor;
         public bool IsValid()
         {
             return !string.IsNullOrWhiteSpace(Text);
@@ -93,7 +90,6 @@ namespace screenzap
     internal static class EmojiTextRenderer
     {
         private const string EmojiFontFamily = "Segoe UI Emoji";
-
         private readonly struct TextRun
         {
             public string Text { get; }
@@ -122,16 +118,7 @@ namespace screenzap
             return graphics.MeasureString(text, fallbackFont, PointF.Empty, StringFormat.GenericTypographic);
         }
 
-        public static void DrawText(
-            Graphics graphics,
-            string text,
-            PointF position,
-            Color color,
-            string baseFontFamily,
-            float fontSize,
-            FontStyle fontStyle,
-            float outlineThickness = 0f,
-            Color? outlineColor = null)
+        public static void DrawText(Graphics graphics, string text, PointF position, Color color, string baseFontFamily, float fontSize, FontStyle fontStyle, float outlineThickness = 0f, Color? outlineColor = null)
         {
             if (string.IsNullOrEmpty(text))
             {
@@ -152,7 +139,6 @@ namespace screenzap
             {
                 using var baseTypeface = CreateSkTypeface(baseFontFamily, fontStyle);
                 using var emojiTypeface = CreateSkTypeface(EmojiFontFamily, FontStyle.Regular);
-
                 if (baseTypeface == null && emojiTypeface == null)
                 {
                     size = SizeF.Empty;
@@ -161,12 +147,10 @@ namespace screenzap
 
                 float maxWidth = 0f;
                 float totalHeight = 0f;
-
                 foreach (var line in SplitLines(text))
                 {
                     float lineWidth = 0f;
                     float lineHeight = Math.Max(fontSize, 1f);
-
                     foreach (var run in BuildRuns(line))
                     {
                         using var paint = CreateSkPaint(run.UseEmojiFont ? emojiTypeface ?? baseTypeface! : baseTypeface ?? emojiTypeface!, fontSize, SKColors.White);
@@ -190,22 +174,12 @@ namespace screenzap
             }
         }
 
-        private static bool TryDrawWithSkia(
-            Graphics graphics,
-            string text,
-            PointF position,
-            Color color,
-            string baseFontFamily,
-            float fontSize,
-            FontStyle fontStyle,
-            float outlineThickness,
-            Color? outlineColor)
+        private static bool TryDrawWithSkia(Graphics graphics, string text, PointF position, Color color, string baseFontFamily, float fontSize, FontStyle fontStyle, float outlineThickness, Color? outlineColor)
         {
             try
             {
                 using var baseTypeface = CreateSkTypeface(baseFontFamily, fontStyle);
                 using var emojiTypeface = CreateSkTypeface(EmojiFontFamily, FontStyle.Regular);
-
                 if (baseTypeface == null && emojiTypeface == null)
                 {
                     return false;
@@ -219,24 +193,18 @@ namespace screenzap
                 int padding = Math.Max(1, (int)Math.Ceiling(outlineThickness) + 2);
                 int width = Math.Max(1, (int)Math.Ceiling(measuredSize.Width) + padding * 2);
                 int height = Math.Max(1, (int)Math.Ceiling(measuredSize.Height) + padding * 2);
-
                 using var bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
                 using (var canvas = new SKCanvas(bitmap))
                 {
                     canvas.Clear(SKColors.Transparent);
-
                     float y = padding;
                     var fillColor = new SKColor(color.R, color.G, color.B, color.A);
-                    var strokeColor = outlineColor.HasValue
-                        ? new SKColor(outlineColor.Value.R, outlineColor.Value.G, outlineColor.Value.B, outlineColor.Value.A)
-                        : fillColor;
-
+                    var strokeColor = outlineColor.HasValue ? new SKColor(outlineColor.Value.R, outlineColor.Value.G, outlineColor.Value.B, outlineColor.Value.A) : fillColor;
                     foreach (var line in SplitLines(text))
                     {
                         float x = padding;
                         float lineHeight = Math.Max(fontSize, 1f);
                         float baseline = y + fontSize;
-
                         foreach (var run in BuildRuns(line))
                         {
                             var typeface = run.UseEmojiFont ? emojiTypeface ?? baseTypeface! : baseTypeface ?? emojiTypeface!;
@@ -245,12 +213,10 @@ namespace screenzap
                             var runHeight = Math.Max(1f, metrics.Descent - metrics.Ascent + metrics.Leading);
                             lineHeight = Math.Max(lineHeight, runHeight);
                             baseline = y - metrics.Ascent;
-
                             if (outlineThickness > 0f && !run.UseEmojiFont)
                             {
                                 using var strokePaint = CreateSkStrokePaint(typeface, fontSize, strokeColor, outlineThickness * 2f);
                                 canvas.DrawText(run.Text, x, baseline, strokePaint);
-
                                 if (fontStyle.HasFlag(FontStyle.Underline))
                                 {
                                     float underlineY = baseline + Math.Max(1f, fontSize * 0.08f);
@@ -259,7 +225,6 @@ namespace screenzap
                             }
 
                             canvas.DrawText(run.Text, x, baseline, fillPaint);
-
                             if (fontStyle.HasFlag(FontStyle.Underline) && !run.UseEmojiFont)
                             {
                                 float underlineY = baseline + Math.Max(1f, fontSize * 0.08f);
@@ -311,7 +276,6 @@ namespace screenzap
 
             var current = new StringBuilder();
             bool? currentEmoji = null;
-
             foreach (var element in EnumerateTextElements(line))
             {
                 bool isEmoji = IsEmojiTextElement(element);
@@ -336,7 +300,7 @@ namespace screenzap
             var enumerator = StringInfo.GetTextElementEnumerator(text);
             while (enumerator.MoveNext())
             {
-                if (enumerator.GetTextElement() is string element)
+                if (enumerator.GetTextElement()is string element)
                 {
                     yield return element;
                 }
@@ -357,20 +321,7 @@ namespace screenzap
                     return true;
                 }
 
-                if ((rune.Value >= 0x1F000 && rune.Value <= 0x1FAFF) ||
-                    (rune.Value >= 0x2600 && rune.Value <= 0x27BF) ||
-                    rune.Value is 0x00A9 or 0x00AE or 0x203C or 0x2049 or 0x2122 or 0x2139
-                        or 0x24C2 or 0x2B50 or 0x2B55 or 0x3030 or 0x303D or 0x3297 or 0x3299 ||
-                    (rune.Value >= 0x2194 && rune.Value <= 0x2199) ||
-                    (rune.Value >= 0x21A9 && rune.Value <= 0x21AA) ||
-                    (rune.Value >= 0x231A && rune.Value <= 0x231B) ||
-                    rune.Value is 0x2328 or 0x23CF or 0x23F0 or 0x23F3 ||
-                    (rune.Value >= 0x23E9 && rune.Value <= 0x23FA) ||
-                    rune.Value is 0x25AA or 0x25AB or 0x25B6 or 0x25C0 ||
-                    (rune.Value >= 0x25FB && rune.Value <= 0x25FE) ||
-                    (rune.Value >= 0x2934 && rune.Value <= 0x2935) ||
-                    (rune.Value >= 0x2B05 && rune.Value <= 0x2B07) ||
-                    (rune.Value >= 0x2B1B && rune.Value <= 0x2B1C))
+                if ((rune.Value >= 0x1F000 && rune.Value <= 0x1FAFF) || (rune.Value >= 0x2600 && rune.Value <= 0x27BF) || rune.Value is 0x00A9 or 0x00AE or 0x203C or 0x2049 or 0x2122 or 0x2139 or 0x24C2 or 0x2B50 or 0x2B55 or 0x3030 or 0x303D or 0x3297 or 0x3299 || (rune.Value >= 0x2194 && rune.Value <= 0x2199) || (rune.Value >= 0x21A9 && rune.Value <= 0x21AA) || (rune.Value >= 0x231A && rune.Value <= 0x231B) || rune.Value is 0x2328 or 0x23CF or 0x23F0 or 0x23F3 || (rune.Value >= 0x23E9 && rune.Value <= 0x23FA) || rune.Value is 0x25AA or 0x25AB or 0x25B6 or 0x25C0 || (rune.Value >= 0x25FB && rune.Value <= 0x25FE) || (rune.Value >= 0x2934 && rune.Value <= 0x2935) || (rune.Value >= 0x2B05 && rune.Value <= 0x2B07) || (rune.Value >= 0x2B1B && rune.Value <= 0x2B1C))
                 {
                     return true;
                 }
@@ -394,13 +345,42 @@ namespace screenzap
             string result = familyName.Trim();
             string[] suffixes =
             {
-                " Extra Black", " ExtraBlack", " Ultra Black", " UltraBlack", " Black", " Heavy", " Fat",
-                " Extra Bold", " ExtraBold", " Ultra Bold", " UltraBold", " Semi Bold", " SemiBold", " Demi Bold", " DemiBold",
-                " Extra Light", " ExtraLight", " Ultra Light", " UltraLight", " Semi Light", " SemiLight", " Demi Light", " DemiLight",
-                " Thin", " Hairline", " Light", " Medium", " Regular", " Normal", " Book", " Text", " Roman",
-                " Italic", " Oblique", " Slanted"
+                " Extra Black",
+                " ExtraBlack",
+                " Ultra Black",
+                " UltraBlack",
+                " Black",
+                " Heavy",
+                " Fat",
+                " Extra Bold",
+                " ExtraBold",
+                " Ultra Bold",
+                " UltraBold",
+                " Semi Bold",
+                " SemiBold",
+                " Demi Bold",
+                " DemiBold",
+                " Extra Light",
+                " ExtraLight",
+                " Ultra Light",
+                " UltraLight",
+                " Semi Light",
+                " SemiLight",
+                " Demi Light",
+                " DemiLight",
+                " Thin",
+                " Hairline",
+                " Light",
+                " Medium",
+                " Regular",
+                " Normal",
+                " Book",
+                " Text",
+                " Roman",
+                " Italic",
+                " Oblique",
+                " Slanted"
             };
-
             bool removed;
             do
             {
@@ -420,14 +400,12 @@ namespace screenzap
                 }
             }
             while (removed);
-
             return result;
         }
 
         private static int DetermineRequestedFontWeight(string familyName, FontStyle style)
         {
             int weight = 400;
-
             if (FontNameContains(familyName, "Extra Black", "ExtraBlack", "Ultra Black", "UltraBlack", "Fat"))
             {
                 weight = 950;
@@ -481,19 +459,12 @@ namespace screenzap
 
         private static SKTypeface? CreateSkTypeface(string familyName, FontStyle style)
         {
-            string normalizedFamilyName = string.IsNullOrWhiteSpace(familyName)
-                ? SystemFonts.DefaultFont.FontFamily.Name
-                : familyName.Trim();
+            string normalizedFamilyName = string.IsNullOrWhiteSpace(familyName) ? SystemFonts.DefaultFont.FontFamily.Name : familyName.Trim();
             string baseFamilyName = StripVariantSuffixes(normalizedFamilyName);
             var weight = (SKFontStyleWeight)DetermineRequestedFontWeight(normalizedFamilyName, style);
             var slant = DetermineRequestedFontSlant(normalizedFamilyName, style);
             var fontStyle = new SKFontStyle(weight, SKFontStyleWidth.Normal, slant);
-
-            return SKTypeface.FromFamilyName(normalizedFamilyName, fontStyle)
-                ?? SKTypeface.FromFamilyName(normalizedFamilyName)
-                ?? (!string.Equals(baseFamilyName, normalizedFamilyName, StringComparison.OrdinalIgnoreCase)
-                    ? SKTypeface.FromFamilyName(baseFamilyName, fontStyle) ?? SKTypeface.FromFamilyName(baseFamilyName)
-                    : null);
+            return SKTypeface.FromFamilyName(normalizedFamilyName, fontStyle) ?? SKTypeface.FromFamilyName(normalizedFamilyName) ?? (!string.Equals(baseFamilyName, normalizedFamilyName, StringComparison.OrdinalIgnoreCase) ? SKTypeface.FromFamilyName(baseFamilyName, fontStyle) ?? SKTypeface.FromFamilyName(baseFamilyName) : null);
         }
 
         private static SKPaint CreateSkPaint(SKTypeface typeface, float fontSize, SKColor color)
@@ -529,19 +500,9 @@ namespace screenzap
             };
         }
 
-        private static void DrawTextWithGdiPath(
-            Graphics graphics,
-            string text,
-            PointF position,
-            Color fillColor,
-            string familyName,
-            float fontSize,
-            FontStyle fontStyle,
-            float outlineThickness,
-            Color? outlineColor)
+        private static void DrawTextWithGdiPath(Graphics graphics, string text, PointF position, Color fillColor, string familyName, float fontSize, FontStyle fontStyle, float outlineThickness, Color? outlineColor)
         {
             using var fallbackFont = CreateGdiFont(familyName, fontSize, fontStyle);
-
             if (outlineThickness <= 0f)
             {
                 using var brush = new SolidBrush(fillColor);
@@ -552,14 +513,7 @@ namespace screenzap
             try
             {
                 using var path = new GraphicsPath();
-                path.AddString(
-                    text,
-                    fallbackFont.FontFamily,
-                    (int)fallbackFont.Style,
-                    fallbackFont.Size,
-                    position,
-                    StringFormat.GenericTypographic);
-
+                path.AddString(text, fallbackFont.FontFamily, (int)fallbackFont.Style, fallbackFont.Size, position, StringFormat.GenericTypographic);
                 using var outlinePen = new Pen(outlineColor ?? Color.Black, Math.Max(1f, outlineThickness * 2f))
                 {
                     LineJoin = LineJoin.Round
@@ -602,12 +556,7 @@ namespace screenzap
                 try
                 {
                     var family = new FontFamily(candidateFamily);
-                    var resolvedStyle = family.IsStyleAvailable(style)
-                        ? style
-                        : family.IsStyleAvailable(FontStyle.Regular)
-                            ? FontStyle.Regular
-                            : FontStyle.Bold;
-
+                    var resolvedStyle = family.IsStyleAvailable(style) ? style : family.IsStyleAvailable(FontStyle.Regular) ? FontStyle.Regular : FontStyle.Bold;
                     return new Font(family, size, resolvedStyle, GraphicsUnit.Pixel);
                 }
                 catch
@@ -633,10 +582,33 @@ namespace screenzap
         }
     }
 
-    public partial class ImageEditor
+    public partial class ImageDocumentEditor
     {
+        private string[] availableFontChoices = Array.Empty<string>();
+        private void EnsureFontChoicesLoaded()
+        {
+            if (fontVariantMap != null)
+                return;
+            fontVariantMap = BuildFontVariantMap();
+            var baseNames = new HashSet<string>(fontVariantMap.Keys, StringComparer.OrdinalIgnoreCase);
+            using var fonts = new InstalledFontCollection();
+            availableFontChoices = fonts.Families.Select(f => f.Name).Where(name => baseNames.Contains(name) || !IsVariantOfAnotherFont(name, baseNames)).ToArray();
+        }
+
+        private void RecallTextStyle(TextAnnotation annotation)
+        {
+            ResolveTextFont(annotation.FontFamily, out var family, out var variant, out _);
+            textToolFontFamily = family;
+            textToolFontVariant = variant;
+            textToolFontSize = annotation.FontSize;
+            textToolFontStyle = annotation.FontStyle;
+            textToolColor = annotation.TextColor;
+            textToolOutlineThickness = annotation.OutlineThickness;
+            textToolOutlineColor = annotation.OutlineColor;
+        }
+
         private readonly List<TextAnnotation> textAnnotations = new List<TextAnnotation>();
-        // isTextToolActive lives on ImageEditor.Tool.cs as a computed accessor.
+        // isTextToolActive lives on ImageDocumentEditor.Tool.cs as a computed accessor.
         private TextAnnotation? activeTextAnnotation;
         // Multi-selection: selectedTexts is the source of truth; selectedTextAnnotation
         // mirrors selectedTexts.LastOrDefault() for legacy single-target read sites.
@@ -648,23 +620,19 @@ namespace screenzap
         private List<TextAnnotation>? textAnnotationSnapshotBeforeEdit;
         private bool textAnnotationChangedDuringDrag;
         private bool textToolbarInputMode;
-
         // Text tool settings — initialised from persisted settings in InitializeTextToolbar
         private string textToolFontFamily = Properties.Settings.Default.textToolFontFamily;
-        private string? textToolFontVariant = string.IsNullOrEmpty(Properties.Settings.Default.textToolFontVariant)
-            ? null : Properties.Settings.Default.textToolFontVariant;
+        private string? textToolFontVariant = string.IsNullOrEmpty(Properties.Settings.Default.textToolFontVariant) ? null : Properties.Settings.Default.textToolFontVariant;
         private float textToolFontSize = Properties.Settings.Default.textToolFontSize;
         private FontStyle textToolFontStyle = (FontStyle)Properties.Settings.Default.textToolFontStyle;
         private Color textToolColor = Color.FromArgb(Properties.Settings.Default.textToolColorArgb);
         private float textToolOutlineThickness = Properties.Settings.Default.textToolOutlineThickness;
         private Color textToolOutlineColor = Color.FromArgb(Properties.Settings.Default.textToolOutlineColorArgb);
-
         // Font variant mapping: base name -> list of (display name, full font name)
         private Dictionary<string, List<(string DisplayName, string FullName)>>? fontVariantMap;
-        private bool isSyncingTextToolbarControls;
         internal bool FontChoicesLoadedForDiagnostics => fontVariantMap != null;
-        internal void LoadFontChoicesForDiagnostics() => EnsureFontChoicesLoaded();
 
+        internal void LoadFontChoicesForDiagnostics() => EnsureFontChoicesLoaded();
         private List<TextAnnotation> CloneTextAnnotations()
         {
             return textAnnotations.Select(t => t.Clone()).ToList();
@@ -672,6 +640,8 @@ namespace screenzap
 
         private void SelectTextAnnotation(TextAnnotation? target, bool add = false)
         {
+            if (target != null)
+                RecallTextStyle(target);
             if (target != null)
             {
                 DeselectImageLayerIfAny();
@@ -683,6 +653,7 @@ namespace screenzap
                 {
                     return;
                 }
+
                 if (selectedTexts.Contains(target))
                 {
                     selectedTexts.Remove(target);
@@ -714,9 +685,9 @@ namespace screenzap
             selectedTextAnnotation = selectedTexts.LastOrDefault();
             if (selectedTextAnnotation != null)
             {
-                SyncTextToolbarFromAnnotation(selectedTextAnnotation);
             }
-            pictureBox1?.Invalidate();
+
+            viewport?.Invalidate();
         }
 
         private void SyncSelectedTextAnnotation()
@@ -731,69 +702,15 @@ namespace screenzap
                     selectedTexts.Add(annotation);
                 }
             }
+
             selectedTextAnnotation = selectedTexts.LastOrDefault();
         }
 
-        private void SyncTextToolbarFromAnnotation(TextAnnotation annotation)
-        {
-            ResolveTextToolbarFont(annotation.FontFamily, out var baseFamily, out var variantFullName, out var variantDisplayName);
-
-            isSyncingTextToolbarControls = true;
-            try
-            {
-                textToolFontFamily = baseFamily;
-                textToolFontVariant = variantFullName;
-                textToolFontSize = annotation.FontSize;
-                textToolFontStyle = annotation.FontStyle;
-                textToolColor = annotation.TextColor;
-                textToolOutlineThickness = annotation.OutlineThickness;
-                textToolOutlineColor = annotation.OutlineColor;
-
-                if (fontComboBox != null)
-                {
-                    int fontIndex = fontComboBox.Items.IndexOf(baseFamily);
-                    if (fontIndex >= 0)
-                    {
-                        fontComboBox.SelectedIndex = fontIndex;
-                    }
-                    else
-                    {
-                        fontComboBox.Text = baseFamily;
-                    }
-                }
-
-                UpdateFontVariantDropdown();
-
-                if (fontVariantComboBox != null && !string.IsNullOrEmpty(variantDisplayName))
-                {
-                    int variantIndex = fontVariantComboBox.Items.IndexOf(variantDisplayName);
-                    if (variantIndex >= 0)
-                    {
-                        fontVariantComboBox.SelectedIndex = variantIndex;
-                    }
-                }
-
-                if (fontSizeComboBox != null)
-                {
-                    fontSizeComboBox.Text = annotation.FontSize.ToString("0.##", CultureInfo.InvariantCulture);
-                }
-
-                UpdateStyleButtonsFromFontStyle(annotation.FontStyle);
-                UpdateTextColorButtonAppearance();
-                SyncOutlineToolbarFromAnnotation(annotation);
-            }
-            finally
-            {
-                isSyncingTextToolbarControls = false;
-            }
-        }
-
-        private void ResolveTextToolbarFont(string fontFamily, out string baseFamily, out string? variantFullName, out string? variantDisplayName)
+        private void ResolveTextFont(string fontFamily, out string baseFamily, out string? variantFullName, out string? variantDisplayName)
         {
             baseFamily = fontFamily;
             variantFullName = null;
             variantDisplayName = null;
-
             if (string.IsNullOrWhiteSpace(fontFamily) || fontVariantMap == null)
             {
                 return;
@@ -812,24 +729,6 @@ namespace screenzap
             }
         }
 
-        private void UpdateTextToolButtons()
-        {
-            bool enable = HasEditableImage;
-            if (emojiToolStripButton != null) emojiToolStripButton.Enabled = enable;
-
-            if (!enable)
-            {
-                isTextToolActive = false;
-                CancelTextEditing();
-            }
-
-            if (textToolStripButton != null)
-            {
-                textToolStripButton.Enabled = enable;
-                textToolStripButton.Checked = enable && isTextToolActive;
-            }
-        }
-
         private void ToggleTextTool()
         {
             if (!HasEditableImage)
@@ -842,68 +741,12 @@ namespace screenzap
             {
                 activeDrawingTool = DrawingTool.None;
                 CancelAnnotationPreview();
-                UpdateDrawingToolButtons();
             }
 
             isTextToolActive = !isTextToolActive;
-
             if (!isTextToolActive)
             {
                 FinalizeActiveTextAnnotation();
-            }
-
-            UpdateTextToolButtons();
-            UpdateTextToolbarVisibility();
-        }
-
-        private void UpdateTextToolbarVisibility()
-        {
-            if (textToolSeparator != null)
-            {
-                textToolSeparator.Visible = isTextToolActive;
-            }
-            if (fontComboBox != null)
-            {
-                fontComboBox.Visible = isTextToolActive;
-            }
-            if (fontVariantComboBox != null)
-            {
-                // Only show variant dropdown if there are variants for current font
-                fontVariantComboBox.Visible = isTextToolActive && fontVariantComboBox.Items.Count > 1;
-            }
-            if (fontSizeComboBox != null)
-            {
-                fontSizeComboBox.Visible = isTextToolActive;
-            }
-            if (boldButton != null)
-            {
-                boldButton.Visible = isTextToolActive;
-            }
-            if (italicButton != null)
-            {
-                italicButton.Visible = isTextToolActive;
-            }
-            if (underlineButton != null)
-            {
-                underlineButton.Visible = isTextToolActive;
-            }
-            if (textColorButton != null)
-            {
-                textColorButton.Visible = isTextToolActive;
-            }
-            if (outlineColorButton != null)
-            {
-                outlineColorButton.Visible = isTextToolActive;
-            }
-            if (outlineThicknessComboBox != null)
-            {
-                outlineThicknessComboBox.Visible = isTextToolActive;
-            }
-
-            if (textOptionsToolStrip != null)
-            {
-                textOptionsToolStrip.Visible = isTextToolActive;
-                PositionOverlayToolStrips();
             }
         }
 
@@ -915,6 +758,7 @@ namespace screenzap
                 {
                     textAnnotations.Remove(activeTextAnnotation);
                 }
+
                 activeTextAnnotation.IsEditing = false;
             }
 
@@ -922,7 +766,7 @@ namespace screenzap
             isTextAnnotationDragging = false;
             textAnnotationSnapshotBeforeEdit = null;
             textAnnotationChangedDuringDrag = false;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         private void FinalizeActiveTextAnnotation()
@@ -941,7 +785,7 @@ namespace screenzap
             }
 
             activeTextAnnotation = null;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         private void DrawTextAnnotations(Graphics graphics, AnnotationSurface surface)
@@ -952,12 +796,10 @@ namespace screenzap
             }
 
             float scale = surface == AnnotationSurface.Screen ? (float)ZoomLevel : 1f;
-
             var previousTextRenderingHint = graphics.TextRenderingHint;
             var previousSmoothingMode = graphics.SmoothingMode;
             graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
-
             try
             {
                 foreach (var annotation in textAnnotations)
@@ -970,6 +812,7 @@ namespace screenzap
                         {
                             DrawTextAnnotationHoverHitbox(graphics, annotation);
                         }
+
                         if (annotation.Selected)
                         {
                             DrawTextAnnotationHandles(graphics, annotation);
@@ -987,29 +830,26 @@ namespace screenzap
         // Measure the width of text[0..charIndex] on a single line.
         private SizeF MeasureTextPrefix(Graphics graphics, string text, int charIndex, string fontFamily, float fontSize, FontStyle fontStyle)
         {
-            if (charIndex <= 0) return SizeF.Empty;
+            if (charIndex <= 0)
+                return SizeF.Empty;
             var prefix = text.Substring(0, charIndex);
             return EmojiTextRenderer.MeasureText(graphics, prefix, fontFamily, fontSize, fontStyle);
         }
 
         // For a flat (single-line) caret position, return (lineIndex, column) and the
         // pixel (x, lineTop) offset from the annotation origin.
-        private (float x, float y, float lineH) CaretPixelOffset(
-            Graphics graphics, string text, int caretPos,
-            string fontFamily, float fontSize, FontStyle fontStyle)
+        private (float x, float y, float lineH) CaretPixelOffset(Graphics graphics, string text, int caretPos, string fontFamily, float fontSize, FontStyle fontStyle)
         {
             // Normalize line endings
             var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
             int lineStart = 0;
             float lineTop = 0f;
             string[] lines = normalized.Split('\n');
-
             for (int li = 0; li < lines.Length; li++)
             {
                 string line = lines[li];
                 int lineEnd = lineStart + line.Length;
                 bool lastLine = li == lines.Length - 1;
-
                 // caretPos is inside this line or at its end
                 if (caretPos <= lineEnd || lastLine)
                 {
@@ -1027,6 +867,7 @@ namespace screenzap
                         var refSz = EmojiTextRenderer.MeasureText(graphics, "M", fontFamily, fontSize, fontStyle);
                         lineH = Math.Max(lineH, refSz.Height);
                     }
+
                     return (x, lineTop, lineH);
                 }
 
@@ -1043,41 +884,22 @@ namespace screenzap
         {
             var text = annotation.Text;
             bool isEmpty = string.IsNullOrEmpty(text);
-
             if (isEmpty && !annotation.IsEditing)
                 return;
-
             float fontSize = surface == AnnotationSurface.Screen ? annotation.FontSize * scale : annotation.FontSize;
-
-            PointF position = surface == AnnotationSurface.Screen
-                ? PixelToFormCoordF(annotation.Position)
-                : new PointF(annotation.Position.X, annotation.Position.Y);
-
+            PointF position = surface == AnnotationSurface.Screen ? ImageToViewportF(annotation.Position) : new PointF(annotation.Position.X, annotation.Position.Y);
             // ── draw text with outline ────────────────────────────────────────
             if (!isEmpty)
             {
-                float outlineThickness = surface == AnnotationSurface.Screen
-                    ? annotation.OutlineThickness * scale
-                    : annotation.OutlineThickness;
-
-                EmojiTextRenderer.DrawText(
-                    graphics,
-                    text,
-                    position,
-                    annotation.TextColor,
-                    annotation.FontFamily,
-                    fontSize,
-                    annotation.FontStyle,
-                    outlineThickness,
-                    annotation.OutlineColor);
+                float outlineThickness = surface == AnnotationSurface.Screen ? annotation.OutlineThickness * scale : annotation.OutlineThickness;
+                EmojiTextRenderer.DrawText(graphics, text, position, annotation.TextColor, annotation.FontFamily, fontSize, annotation.FontStyle, outlineThickness, annotation.OutlineColor);
             }
 
             // ── caret + selection (screen only, editing mode) ─────────────────
             if (annotation.IsEditing && surface == AnnotationSurface.Screen)
             {
                 annotation.ClampCaret();
-                var (selStart, selEnd) = annotation.GetSelectionRange();
-
+                var(selStart, selEnd) = annotation.GetSelectionRange();
                 // Draw selection highlight
                 if (selStart < selEnd)
                 {
@@ -1085,12 +907,9 @@ namespace screenzap
                 }
 
                 // Draw caret
-                var (cx, cy, ch) = CaretPixelOffset(graphics, annotation.Text,
-                    annotation.CaretPosition, annotation.FontFamily, fontSize, annotation.FontStyle);
+                var(cx, cy, ch) = CaretPixelOffset(graphics, annotation.Text, annotation.CaretPosition, annotation.FontFamily, fontSize, annotation.FontStyle);
                 using var caretPen = new Pen(annotation.TextColor, 2f);
-                graphics.DrawLine(caretPen,
-                    position.X + cx, position.Y + cy,
-                    position.X + cx, position.Y + cy + ch);
+                graphics.DrawLine(caretPen, position.X + cx, position.Y + cy, position.X + cx, position.Y + cy + ch);
             }
             else if (annotation.IsEditing && isEmpty)
             {
@@ -1101,50 +920,34 @@ namespace screenzap
             }
         }
 
-        private void DrawTextSelectionHighlight(
-            Graphics graphics, TextAnnotation annotation,
-            PointF origin, float fontSize, int selStart, int selEnd)
+        private void DrawTextSelectionHighlight(Graphics graphics, TextAnnotation annotation, PointF origin, float fontSize, int selStart, int selEnd)
         {
             // Handle multi-line selections by iterating line by line
             var normalized = annotation.Text.Replace("\r\n", "\n").Replace('\r', '\n');
             string[] lines = normalized.Split('\n');
             int lineCharStart = 0;
             float lineTop = 0f;
-
             using var hlBrush = new SolidBrush(Color.FromArgb(120, 51, 153, 255));
-
             foreach (var line in lines)
             {
                 int lineEnd = lineCharStart + line.Length;
-
                 int overlapStart = Math.Max(selStart, lineCharStart);
-                int overlapEnd   = Math.Min(selEnd,   lineEnd);
-
+                int overlapEnd = Math.Min(selEnd, lineEnd);
                 if (overlapStart < overlapEnd)
                 {
-                    float x0 = MeasureTextPrefix(graphics, line,
-                        overlapStart - lineCharStart, annotation.FontFamily, fontSize, annotation.FontStyle).Width;
-                    float x1 = MeasureTextPrefix(graphics, line,
-                        overlapEnd   - lineCharStart, annotation.FontFamily, fontSize, annotation.FontStyle).Width;
-
-                    float lineH = line.Length > 0
-                        ? EmojiTextRenderer.MeasureText(graphics, line, annotation.FontFamily, fontSize, annotation.FontStyle).Height
-                        : EmojiTextRenderer.MeasureText(graphics, "M", annotation.FontFamily, fontSize, annotation.FontStyle).Height;
+                    float x0 = MeasureTextPrefix(graphics, line, overlapStart - lineCharStart, annotation.FontFamily, fontSize, annotation.FontStyle).Width;
+                    float x1 = MeasureTextPrefix(graphics, line, overlapEnd - lineCharStart, annotation.FontFamily, fontSize, annotation.FontStyle).Width;
+                    float lineH = line.Length > 0 ? EmojiTextRenderer.MeasureText(graphics, line, annotation.FontFamily, fontSize, annotation.FontStyle).Height : EmojiTextRenderer.MeasureText(graphics, "M", annotation.FontFamily, fontSize, annotation.FontStyle).Height;
                     lineH = Math.Max(lineH, fontSize);
-
-                    graphics.FillRectangle(hlBrush,
-                        origin.X + x0, origin.Y + lineTop,
-                        Math.Max(1f, x1 - x0), lineH);
+                    graphics.FillRectangle(hlBrush, origin.X + x0, origin.Y + lineTop, Math.Max(1f, x1 - x0), lineH);
                 }
 
                 // advance: +1 for the \n character
-                float advanceH = line.Length > 0
-                    ? EmojiTextRenderer.MeasureText(graphics, line, annotation.FontFamily, fontSize, annotation.FontStyle).Height
-                    : EmojiTextRenderer.MeasureText(graphics, "M", annotation.FontFamily, fontSize, annotation.FontStyle).Height;
+                float advanceH = line.Length > 0 ? EmojiTextRenderer.MeasureText(graphics, line, annotation.FontFamily, fontSize, annotation.FontStyle).Height : EmojiTextRenderer.MeasureText(graphics, "M", annotation.FontFamily, fontSize, annotation.FontStyle).Height;
                 lineTop += Math.Max(fontSize, advanceH);
                 lineCharStart = lineEnd + 1;
-
-                if (lineCharStart > selEnd) break;
+                if (lineCharStart > selEnd)
+                    break;
             }
         }
 
@@ -1160,17 +963,14 @@ namespace screenzap
             using var tempGraphics = Graphics.FromImage(tempBitmap);
             var bounds = annotation.GetBounds(tempGraphics);
             bounds.Inflate(3, 2);
-            var screenBounds = PixelToFormCoord(bounds);
-
+            var screenBounds = ImageToViewport(bounds);
             if (annotation.IsEditing)
             {
                 using var glowBrush = new SolidBrush(Color.FromArgb(22, 255, 191, 0));
                 graphics.FillRectangle(glowBrush, screenBounds);
-
                 using var outerPen = new Pen(Color.FromArgb(230, 255, 170, 0), 2f);
                 outerPen.DashStyle = DashStyle.Solid;
                 graphics.DrawRectangle(outerPen, screenBounds);
-
                 var inner = Rectangle.Inflate(screenBounds, -2, -2);
                 if (inner.Width > 0 && inner.Height > 0)
                 {
@@ -1182,7 +982,6 @@ namespace screenzap
             {
                 using var fillBrush = new SolidBrush(Color.FromArgb(18, Color.Cyan));
                 graphics.FillRectangle(fillBrush, screenBounds);
-
                 using var pen = new Pen(Color.Cyan, 1.2f);
                 pen.DashStyle = DashStyle.Dash;
                 graphics.DrawRectangle(pen, screenBounds);
@@ -1190,7 +989,6 @@ namespace screenzap
 
             const int handleSize = 7;
             int half = handleSize / 2;
-
             var handleRect = new Rectangle(screenBounds.X - half, screenBounds.Y - half, handleSize, handleSize);
             using var handleBrush = new SolidBrush(annotation.IsEditing ? Color.Gold : Color.White);
             using var handlePen = new Pen(annotation.IsEditing ? Color.DarkOrange : Color.Black, 1f);
@@ -1203,16 +1001,12 @@ namespace screenzap
             using var tempBitmap = new Bitmap(1, 1);
             using var tempGraphics = Graphics.FromImage(tempBitmap);
             var bounds = annotation.GetBounds(tempGraphics);
-            
             // Add padding to make the hitbox more visible and easier to click
             const int padding = 4;
             bounds.Inflate(padding, padding);
-            
-            var screenBounds = PixelToFormCoord(bounds);
-
+            var screenBounds = ImageToViewport(bounds);
             using var fillBrush = new SolidBrush(Color.FromArgb(30, Color.Cyan));
             graphics.FillRectangle(fillBrush, screenBounds);
-            
             using var pen = new Pen(Color.FromArgb(128, Color.Cyan), 1f);
             pen.DashStyle = DashStyle.Dot;
             graphics.DrawRectangle(pen, screenBounds);
@@ -1222,12 +1016,11 @@ namespace screenzap
         {
             using var tempBitmap = new Bitmap(1, 1);
             using var tempGraphics = Graphics.FromImage(tempBitmap);
-
             for (int i = textAnnotations.Count - 1; i >= 0; i--)
             {
                 var annotation = textAnnotations[i];
                 var bounds = annotation.GetBounds(tempGraphics);
-                var screenBounds = PixelToFormCoord(bounds);
+                var screenBounds = ImageToViewport(bounds);
                 if (screenBounds.Contains(formPoint))
                 {
                     return annotation;
@@ -1252,14 +1045,11 @@ namespace screenzap
             }
 
             bool resumingFromToolbarInput = textToolbarInputMode && selectedTextAnnotation != null;
-
             // Check if clicking on existing text annotation (works even when tool isn't active)
             var hit = HitTestTextAnnotation(pixelPoint, formPoint);
-
             if (hit != null)
             {
                 bool addToSelection = IsMultiSelectModifierDown;
-
                 // Finalize previous annotation if different
                 if (activeTextAnnotation != null && activeTextAnnotation != hit)
                 {
@@ -1283,11 +1073,12 @@ namespace screenzap
                         {
                             SelectAnnotation(null);
                         }
+
                         SelectTextAnnotation(hit, add: false);
                     }
+
                     // else: plain click on already-selected text — preserve the multi-
                     // selection so a group drag works without collapsing.
-
                     // Don't arm a drag for shift-deselect (toggling off).
                     if (selectedTexts.Contains(hit))
                     {
@@ -1302,14 +1093,14 @@ namespace screenzap
                             annotationSnapshotBeforeEdit = CloneAnnotations();
                         }
                     }
-                    pictureBox1?.Invalidate();
+
+                    viewport?.Invalidate();
                     return true;
                 }
 
                 textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
                 SelectTextAnnotation(hit, add: addToSelection);
                 activeTextAnnotation = hit;
-
                 if (resumingFromToolbarInput)
                 {
                     ReturnFocusToCanvas(resumeEditing: true);
@@ -1323,7 +1114,8 @@ namespace screenzap
                     isTextAnnotationDragging = true;
                     textAnnotationChangedDuringDrag = false;
                 }
-                pictureBox1?.Invalidate();
+
+                viewport?.Invalidate();
                 return true;
             }
 
@@ -1341,7 +1133,6 @@ namespace screenzap
 
             // Finalize previous annotation
             FinalizeActiveTextAnnotation();
-
             // Create new text annotation — go straight to edit mode
             textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
             var clampedPoint = ClampPointToImage(pixelPoint);
@@ -1359,12 +1150,11 @@ namespace screenzap
                 IsEditing = true,
                 CaretPosition = 0
             };
-
             textAnnotations.Add(newAnnotation);
             SelectTextAnnotation(newAnnotation);
             activeTextAnnotation = newAnnotation;
             textAnnotationChangedDuringDrag = false;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
             return true;
         }
 
@@ -1395,8 +1185,6 @@ namespace screenzap
             if (!isTextToolActive)
             {
                 isTextToolActive = true;
-                UpdateTextToolButtons();
-                UpdateTextToolbarVisibility();
             }
 
             SelectTextAnnotation(hit);
@@ -1443,10 +1231,12 @@ namespace screenzap
                                 }
                             }
                         }
+
                         textDragOriginPixel = pixelPoint;
                         textAnnotationChangedDuringDrag = true;
-                        pictureBox1?.Invalidate();
+                        viewport?.Invalidate();
                     }
+
                     return true;
                 }
             }
@@ -1459,7 +1249,7 @@ namespace screenzap
                 if (hit != null)
                 {
                     SetHoveredAnnotation(null);
-                    Cursor = Cursors.IBeam;
+                    Cursor = EditorCursor.IBeam;
                     return true;
                 }
             }
@@ -1467,11 +1257,11 @@ namespace screenzap
             {
                 SetHoveredTextAnnotation(null);
             }
-            
+
             // Only set cross cursor when text tool is actively selected
             if (isTextToolActive && buttons == MouseButtons.None)
             {
-                Cursor = Cursors.Cross;
+                Cursor = EditorCursor.Cross;
             }
 
             return false;
@@ -1482,7 +1272,7 @@ namespace screenzap
             if (hoveredTextAnnotation != annotation)
             {
                 hoveredTextAnnotation = annotation;
-                pictureBox1?.Invalidate();
+                viewport?.Invalidate();
             }
         }
 
@@ -1525,6 +1315,7 @@ namespace screenzap
                     textAnnotationSnapshotBeforeEdit = null;
                     annotationSnapshotBeforeEdit = null;
                 }
+
                 return true;
             }
 
@@ -1532,12 +1323,10 @@ namespace screenzap
         }
 
         // ── caret helpers ─────────────────────────────────────────────────────
-
         private void EnterTextEditMode(TextAnnotation annotation, bool moveCaretToEnd = true)
         {
             if (textAnnotationSnapshotBeforeEdit == null)
                 textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
-
             annotation.IsEditing = true;
             if (moveCaretToEnd)
             {
@@ -1547,10 +1336,10 @@ namespace screenzap
             {
                 annotation.ClampCaret();
             }
+
             annotation.SelectionAnchor = null;
-            SyncTextToolbarFromAnnotation(annotation);
             textAnnotationChangedDuringDrag = false;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         private void ResumeSelectedTextEditing()
@@ -1566,25 +1355,13 @@ namespace screenzap
             EnterTextEditMode(activeTextAnnotation, moveCaretToEnd: false);
         }
 
-        private void SyncOutlineToolbarFromAnnotation(TextAnnotation annotation)
-        {
-            textToolOutlineThickness = annotation.OutlineThickness;
-            textToolOutlineColor = annotation.OutlineColor;
-            UpdateOutlineColorButtonAppearance();
-            if (outlineThicknessComboBox != null)
-            {
-                var target = annotation.OutlineThickness <= 0f ? "None" : ((int)annotation.OutlineThickness).ToString();
-                int idx = outlineThicknessComboBox.Items.IndexOf(target);
-                if (idx >= 0) outlineThicknessComboBox.SelectedIndex = idx;
-            }
-        }
-
         // Returns the caret index at the left edge of grapheme cluster that contains charIndex.
         // We treat text as a flat string and navigate by StringInfo elements so surrogate pairs
         // and combining characters move as one unit.
         private static int PrevGrapheme(string text, int pos)
         {
-            if (pos <= 0) return 0;
+            if (pos <= 0)
+                return 0;
             var info = new System.Globalization.StringInfo(text);
             int len = info.LengthInTextElements;
             // find which element starts at or before pos
@@ -1592,15 +1369,18 @@ namespace screenzap
             for (int i = 0; i < len; i++)
             {
                 int next = elem + System.Globalization.StringInfo.GetNextTextElement(text, elem).Length;
-                if (next >= pos) break;
+                if (next >= pos)
+                    break;
                 elem = next;
             }
+
             return elem;
         }
 
         private static int NextGrapheme(string text, int pos)
         {
-            if (pos >= text.Length) return text.Length;
+            if (pos >= text.Length)
+                return text.Length;
             return pos + System.Globalization.StringInfo.GetNextTextElement(text, pos).Length;
         }
 
@@ -1608,14 +1388,16 @@ namespace screenzap
         private static int MoveCaretLineStart(string text, int pos)
         {
             int lineStart = pos;
-            while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--;
+            while (lineStart > 0 && text[lineStart - 1] != '\n')
+                lineStart--;
             return lineStart;
         }
 
         private static int MoveCaretLineEnd(string text, int pos)
         {
             int lineEnd = pos;
-            while (lineEnd < text.Length && text[lineEnd] != '\n') lineEnd++;
+            while (lineEnd < text.Length && text[lineEnd] != '\n')
+                lineEnd++;
             return lineEnd;
         }
 
@@ -1624,21 +1406,24 @@ namespace screenzap
             newPos = Math.Clamp(newPos, 0, ta.Text.Length);
             if (extend)
             {
-                if (!ta.SelectionAnchor.HasValue) ta.SelectionAnchor = ta.CaretPosition;
+                if (!ta.SelectionAnchor.HasValue)
+                    ta.SelectionAnchor = ta.CaretPosition;
             }
             else
             {
                 ta.SelectionAnchor = null;
             }
+
             ta.CaretPosition = newPos;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         // Delete selected text (or nothing if no selection).  Returns true if anything deleted.
         private bool DeleteSelectedText(TextAnnotation ta)
         {
-            var (start, end) = ta.GetSelectionRange();
-            if (start == end) return false;
+            var(start, end) = ta.GetSelectionRange();
+            if (start == end)
+                return false;
             ta.Text = ta.Text.Remove(start, end - start);
             ta.CaretPosition = start;
             ta.SelectionAnchor = null;
@@ -1655,19 +1440,13 @@ namespace screenzap
             ta.CaretPosition += normalized.Length;
             ta.SelectionAnchor = null;
             textAnnotationChangedDuringDrag = true;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
-        private bool IsCanvasTextInputContext()
-        {
-            var focused = ActiveControl ?? FindFocusedControl();
-            return focused == null || focused == this || focused == pictureBox1 || focused == canvasPanel;
-        }
-
+        private bool IsCanvasTextInputContext() => true;
         private void SuspendTextEditingForUiFocus()
         {
             textToolbarInputMode = selectedTextAnnotation != null;
-
             if (activeTextAnnotation?.IsEditing != true)
             {
                 return;
@@ -1676,22 +1455,18 @@ namespace screenzap
             CommitTextAnnotationUndo();
             activeTextAnnotation.IsEditing = false;
             activeTextAnnotation.SelectionAnchor = null;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         // ── selection-mode (object selected, not editing) key handler ─────────
-
         private bool HandleTextToolKeyDown(KeyEventArgs e)
         {
             // Move-tool model: object-selection key handling (Enter/Delete/Escape on a selected
             // text) still works when the text tool isn't explicitly active. The tool only needs to
             // be active for active text-editing or for creating new annotations.
-            bool inObjectSelectionMode = !isTextToolActive && selectedTextAnnotation != null
-                && (activeTextAnnotation == null || !activeTextAnnotation.IsEditing);
-
+            bool inObjectSelectionMode = !isTextToolActive && selectedTextAnnotation != null && (activeTextAnnotation == null || !activeTextAnnotation.IsEditing);
             if (!isTextToolActive && !inObjectSelectionMode)
                 return false;
-
             if (!IsCanvasTextInputContext())
             {
                 SuspendTextEditingForUiFocus();
@@ -1703,11 +1478,9 @@ namespace screenzap
             {
                 if (selectedTextAnnotation == null)
                     return false;
-
                 // Escape deliberately not handled here: it falls through to the unified
-                // ladder in ImageEditor_KeyDown (deselect first, exit the tool on the
+                // ladder in HandleKeyDown (deselect first, exit the tool on the
                 // NEXT press — one level per Escape).
-
                 if (e.KeyCode == Keys.Delete)
                 {
                     var before = CloneTextAnnotations();
@@ -1717,7 +1490,7 @@ namespace screenzap
                     activeTextAnnotation = null;
                     var after = CloneTextAnnotations();
                     PushTextUndoStep(before, after);
-                    pictureBox1?.Invalidate();
+                    viewport?.Invalidate();
                     e.Handled = true;
                     return true;
                 }
@@ -1734,9 +1507,8 @@ namespace screenzap
                     if (!isTextToolActive)
                     {
                         isTextToolActive = true;
-                        UpdateTextToolButtons();
-                        UpdateTextToolbarVisibility();
                     }
+
                     SelectTextAnnotation(promoted);
                     activeTextAnnotation = promoted;
                     EnterTextEditMode(activeTextAnnotation);
@@ -1752,8 +1524,7 @@ namespace screenzap
             var ta = activeTextAnnotation;
             textAnnotationSnapshotBeforeEdit ??= CloneTextAnnotations();
             bool shift = e.Shift;
-            bool ctrl  = e.Control;
-
+            bool ctrl = e.Control;
             switch (e.KeyCode)
             {
                 // ── exit editing ──────────────────────────────────────────────
@@ -1770,11 +1541,12 @@ namespace screenzap
                     {
                         CommitTextAnnotationUndo();
                     }
+
                     ta.IsEditing = false;
                     ta.SelectionAnchor = null;
                     // Keep annotation selected (object-selection mode)
                     activeTextAnnotation = null;
-                    pictureBox1?.Invalidate();
+                    viewport?.Invalidate();
                     e.Handled = true;
                     return true;
                 }
@@ -1782,50 +1554,45 @@ namespace screenzap
                 // ── navigation ────────────────────────────────────────────────
                 case Keys.Left:
                 {
-                    int newPos = ctrl
-                        ? MovePrevWord(ta.Text, ta.CaretPosition)
-                        : (shift || ta.SelectionAnchor == null || ta.CaretPosition == ta.SelectionAnchor.Value)
-                            ? PrevGrapheme(ta.Text, ta.CaretPosition)
-                            : ta.GetSelectionRange().start;
+                    int newPos = ctrl ? MovePrevWord(ta.Text, ta.CaretPosition) : (shift || ta.SelectionAnchor == null || ta.CaretPosition == ta.SelectionAnchor.Value) ? PrevGrapheme(ta.Text, ta.CaretPosition) : ta.GetSelectionRange().start;
                     if (!shift && ta.SelectionAnchor.HasValue)
                         newPos = ta.GetSelectionRange().start;
                     MoveCaret(ta, newPos, shift);
-                    e.Handled = true; return true;
+                    e.Handled = true;
+                    return true;
                 }
+
                 case Keys.Right:
                 {
-                    int newPos = ctrl
-                        ? MoveNextWord(ta.Text, ta.CaretPosition)
-                        : (shift || ta.SelectionAnchor == null || ta.CaretPosition == ta.SelectionAnchor.Value)
-                            ? NextGrapheme(ta.Text, ta.CaretPosition)
-                            : ta.GetSelectionRange().end;
+                    int newPos = ctrl ? MoveNextWord(ta.Text, ta.CaretPosition) : (shift || ta.SelectionAnchor == null || ta.CaretPosition == ta.SelectionAnchor.Value) ? NextGrapheme(ta.Text, ta.CaretPosition) : ta.GetSelectionRange().end;
                     if (!shift && ta.SelectionAnchor.HasValue)
                         newPos = ta.GetSelectionRange().end;
                     MoveCaret(ta, newPos, shift);
-                    e.Handled = true; return true;
+                    e.Handled = true;
+                    return true;
                 }
+
                 // No vertical caret movement yet, but the text editor still has to CLAIM
                 // Up/Down while editing: unhandled they leak past ProcessCmdKey and become
                 // either focus navigation or a nudge of the very box being typed into.
                 case Keys.Up:
                 case Keys.Down:
-                    e.Handled = true; return true;
-
+                    e.Handled = true;
+                    return true;
                 case Keys.Home:
                     MoveCaret(ta, ctrl ? 0 : MoveCaretLineStart(ta.Text, ta.CaretPosition), shift);
-                    e.Handled = true; return true;
+                    e.Handled = true;
+                    return true;
                 case Keys.End:
                     MoveCaret(ta, ctrl ? ta.Text.Length : MoveCaretLineEnd(ta.Text, ta.CaretPosition), shift);
-                    e.Handled = true; return true;
-
+                    e.Handled = true;
+                    return true;
                 // ── deletion ──────────────────────────────────────────────────
                 case Keys.Back:
                 {
                     if (!DeleteSelectedText(ta))
                     {
-                        int prev = ctrl
-                            ? MovePrevWord(ta.Text, ta.CaretPosition)
-                            : PrevGrapheme(ta.Text, ta.CaretPosition);
+                        int prev = ctrl ? MovePrevWord(ta.Text, ta.CaretPosition) : PrevGrapheme(ta.Text, ta.CaretPosition);
                         if (prev < ta.CaretPosition)
                         {
                             ta.Text = ta.Text.Remove(prev, ta.CaretPosition - prev);
@@ -1834,16 +1601,17 @@ namespace screenzap
                             textAnnotationChangedDuringDrag = true;
                         }
                     }
-                    pictureBox1?.Invalidate();
-                    e.Handled = true; return true;
+
+                    viewport?.Invalidate();
+                    e.Handled = true;
+                    return true;
                 }
+
                 case Keys.Delete:
                 {
                     if (!DeleteSelectedText(ta))
                     {
-                        int next = ctrl
-                            ? MoveNextWord(ta.Text, ta.CaretPosition)
-                            : NextGrapheme(ta.Text, ta.CaretPosition);
+                        int next = ctrl ? MoveNextWord(ta.Text, ta.CaretPosition) : NextGrapheme(ta.Text, ta.CaretPosition);
                         if (next > ta.CaretPosition)
                         {
                             ta.Text = ta.Text.Remove(ta.CaretPosition, next - ta.CaretPosition);
@@ -1851,32 +1619,36 @@ namespace screenzap
                             textAnnotationChangedDuringDrag = true;
                         }
                     }
-                    pictureBox1?.Invalidate();
-                    e.Handled = true; return true;
+
+                    viewport?.Invalidate();
+                    e.Handled = true;
+                    return true;
                 }
 
                 // ── clipboard ─────────────────────────────────────────────────
                 case Keys.A when ctrl:
                     ta.SelectionAnchor = 0;
                     ta.CaretPosition = ta.Text.Length;
-                    pictureBox1?.Invalidate();
-                    e.Handled = true; return true;
-
+                    viewport?.Invalidate();
+                    e.Handled = true;
+                    return true;
                 case Keys.C when ctrl:
                 case Keys.X when ctrl:
                 {
-                    var (selStart, selEnd) = ta.GetSelectionRange();
+                    var(selStart, selEnd) = ta.GetSelectionRange();
                     if (selStart < selEnd)
                     {
                         Clipboard.SetText(ta.Text.Substring(selStart, selEnd - selStart));
                         if (e.KeyCode == Keys.X)
                         {
                             DeleteSelectedText(ta);
-                            pictureBox1?.Invalidate();
+                            viewport?.Invalidate();
                         }
                     }
+
                     e.SuppressKeyPress = true;
-                    e.Handled = true; return true;
+                    e.Handled = true;
+                    return true;
                 }
 
                 case Keys.V when ctrl:
@@ -1887,8 +1659,10 @@ namespace screenzap
                         if (!string.IsNullOrEmpty(pasted))
                             InsertTextAtCaret(ta, pasted);
                     }
+
                     e.SuppressKeyPress = true;
-                    e.Handled = true; return true;
+                    e.Handled = true;
+                    return true;
                 }
             }
 
@@ -1897,19 +1671,25 @@ namespace screenzap
 
         private static int MovePrevWord(string text, int pos)
         {
-            if (pos <= 0) return 0;
+            if (pos <= 0)
+                return 0;
             int p = pos - 1;
-            while (p > 0 && char.IsWhiteSpace(text[p])) p--;
-            while (p > 0 && !char.IsWhiteSpace(text[p - 1])) p--;
+            while (p > 0 && char.IsWhiteSpace(text[p]))
+                p--;
+            while (p > 0 && !char.IsWhiteSpace(text[p - 1]))
+                p--;
             return p;
         }
 
         private static int MoveNextWord(string text, int pos)
         {
-            if (pos >= text.Length) return text.Length;
+            if (pos >= text.Length)
+                return text.Length;
             int p = pos;
-            while (p < text.Length && !char.IsWhiteSpace(text[p])) p++;
-            while (p < text.Length && char.IsWhiteSpace(text[p])) p++;
+            while (p < text.Length && !char.IsWhiteSpace(text[p]))
+                p++;
+            while (p < text.Length && char.IsWhiteSpace(text[p]))
+                p++;
             return p;
         }
 
@@ -1917,7 +1697,6 @@ namespace screenzap
         {
             if (!isTextToolActive)
                 return false;
-
             if (!IsCanvasTextInputContext())
             {
                 SuspendTextEditingForUiFocus();
@@ -1926,21 +1705,19 @@ namespace screenzap
 
             if (activeTextAnnotation == null || !activeTextAnnotation.IsEditing)
                 return false;
-
             if (char.IsControl(e.KeyChar) && e.KeyChar != '\r' && e.KeyChar != '\n')
                 return false;
-
             textAnnotationSnapshotBeforeEdit ??= CloneTextAnnotations();
-
             // Shift+Enter → newline
             if (e.KeyChar == '\r' || e.KeyChar == '\n')
             {
-                if (Control.ModifierKeys.HasFlag(Keys.Shift))
+                if (ModifierKeys.HasFlag(Keys.Shift))
                 {
                     InsertTextAtCaret(activeTextAnnotation, "\n");
                     e.Handled = true;
                     return true;
                 }
+
                 return false; // plain Enter handled in KeyDown
             }
 
@@ -1957,8 +1734,7 @@ namespace screenzap
             }
 
             var afterState = CloneTextAnnotations();
-            if (textAnnotationSnapshotBeforeEdit.Count != afterState.Count
-                || !textAnnotationSnapshotBeforeEdit.Zip(afterState, (before, after) => before.ContentEquals(after)).All(equal => equal))
+            if (textAnnotationSnapshotBeforeEdit.Count != afterState.Count || !textAnnotationSnapshotBeforeEdit.Zip(afterState, (before, after) => before.ContentEquals(after)).All(equal => equal))
                 PushTextUndoStep(textAnnotationSnapshotBeforeEdit, afterState);
             textAnnotationSnapshotBeforeEdit = null;
         }
@@ -2001,12 +1777,10 @@ namespace screenzap
 
             var newBounds = new Rectangle(Point.Empty, newSize);
             var updated = new List<TextAnnotation>();
-
             foreach (var annotation in textAnnotations)
             {
                 var clone = annotation.Clone();
                 clone.Position = clone.Position.Subtract(cropOrigin);
-
                 // Keep if position is within new bounds
                 if (newBounds.Contains(clone.Position))
                 {
@@ -2019,386 +1793,26 @@ namespace screenzap
             SyncSelectedTextAnnotation();
         }
 
-        private void textToolStripButton_Click(object? sender, EventArgs e)
-        {
-            ToggleTextTool();
-        }
-
-        private void fontComboBox_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (isSyncingTextToolbarControls)
-            {
-                return;
-            }
-
-            if (fontComboBox?.SelectedItem is string fontName)
-            {
-                ApplyFontFamily(fontName);
-            }
-        }
-
-        private void fontComboBox_Leave(object? sender, EventArgs e)
-        {
-            // Validate free-typed text: accept only if it matches a known item
-            if (fontComboBox != null)
-            {
-                var typed = fontComboBox.Text;
-                int idx = fontComboBox.Items.IndexOf(typed);
-                if (idx >= 0)
-                {
-                    ApplyFontFamily(typed);
-                }
-                else
-                {
-                    // Revert to last valid family
-                    fontComboBox.Text = textToolFontFamily;
-                }
-            }
-            ReturnFocusToCanvas();
-        }
-
-        private void ApplyFontFamily(string fontName)
-        {
-            textToolFontFamily = fontName;
-            textToolFontVariant = null;
-            UpdateFontVariantDropdown();
-
-            var effectiveFont = GetEffectiveFontFamily();
-            if (activeTextAnnotation != null)
-            {
-                activeTextAnnotation.FontFamily = effectiveFont;
-                pictureBox1?.Invalidate();
-            }
-            SaveTextToolSettings();
-        }
-
-        private void fontVariantComboBox_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (isSyncingTextToolbarControls)
-            {
-                return;
-            }
-
-            if (fontVariantComboBox?.SelectedItem is string displayName && fontVariantMap != null)
-            {
-                if (fontVariantMap.TryGetValue(textToolFontFamily, out var variants))
-                {
-                    var match = variants.Find(v => v.DisplayName == displayName);
-                    if (!string.IsNullOrEmpty(match.FullName))
-                    {
-                        textToolFontVariant = match.FullName;
-                        if (activeTextAnnotation != null)
-                        {
-                            activeTextAnnotation.FontFamily = match.FullName;
-                            pictureBox1?.Invalidate();
-                        }
-                        SaveTextToolSettings();
-                    }
-                }
-            }
-        }
-
-        private void fontSizeComboBox_TextChanged(object? sender, EventArgs e)
-        {
-            if (isSyncingTextToolbarControls)
-            {
-                return;
-            }
-
-            if (fontSizeComboBox != null && float.TryParse(fontSizeComboBox.Text, out float size) && size > 0 && size <= 200)
-            {
-                textToolFontSize = size;
-                if (activeTextAnnotation != null)
-                {
-                    activeTextAnnotation.FontSize = size;
-                    pictureBox1?.Invalidate();
-                }
-                SaveTextToolSettings();
-            }
-        }
-
-        private void textColorButton_Click(object? sender, EventArgs e)
-        {
-            if (SharedColorDialog.ShowDialog(this, textToolColor, out Color selectedColor) == DialogResult.OK)
-            {
-                textToolColor = selectedColor;
-                UpdateTextColorButtonAppearance();
-                if (activeTextAnnotation != null)
-                {
-                    activeTextAnnotation.TextColor = textToolColor;
-                    pictureBox1?.Invalidate();
-                }
-                SaveTextToolSettings();
-            }
-        }
-
         private void ReturnFocusToCanvas(bool resumeEditing = false)
         {
             if (!resumeEditing)
-            {
                 textToolbarInputMode = false;
-            }
-
             RequestCanvasFocus();
             if (resumeEditing)
-            {
                 ResumeSelectedTextEditing();
-            }
-        }
-
-        private void HandleTextToolbarCommitKeyDown(KeyEventArgs e, Action? commitAction = null)
-        {
-            if (e.KeyCode == Keys.Enter)
-            {
-                commitAction?.Invoke();
-                ReturnFocusToCanvas(resumeEditing: true);
-                e.SuppressKeyPress = true;
-                e.Handled = true;
-                return;
-            }
-
-            if (e.KeyCode == Keys.Escape)
-            {
-                ReturnFocusToCanvas();
-                e.SuppressKeyPress = true;
-                e.Handled = true;
-            }
         }
 
         private void SaveTextToolSettings()
         {
             var s = Properties.Settings.Default;
-            s.textToolFontFamily        = textToolFontFamily;
-            s.textToolFontVariant       = textToolFontVariant ?? string.Empty;
-            s.textToolFontSize          = textToolFontSize;
-            s.textToolFontStyle         = (int)textToolFontStyle;
-            s.textToolColorArgb         = textToolColor.ToArgb();
-            s.textToolOutlineThickness  = textToolOutlineThickness;
-            s.textToolOutlineColorArgb  = textToolOutlineColor.ToArgb();
+            s.textToolFontFamily = textToolFontFamily;
+            s.textToolFontVariant = textToolFontVariant ?? string.Empty;
+            s.textToolFontSize = textToolFontSize;
+            s.textToolFontStyle = (int)textToolFontStyle;
+            s.textToolColorArgb = textToolColor.ToArgb();
+            s.textToolOutlineThickness = textToolOutlineThickness;
+            s.textToolOutlineColorArgb = textToolOutlineColor.ToArgb();
             s.Save();
-        }
-
-        private void UpdateTextColorButtonAppearance()
-        {
-            if (textColorButton != null)
-            {
-                textColorButton.BackColor = textToolColor;
-                textColorButton.ForeColor = GetContrastColor(textToolColor);
-            }
-        }
-
-        private void outlineColorButton_Click(object? sender, EventArgs e)
-        {
-            if (SharedColorDialog.ShowDialog(this, textToolOutlineColor, out Color selectedColor) == DialogResult.OK)
-            {
-                textToolOutlineColor = selectedColor;
-                UpdateOutlineColorButtonAppearance();
-                if (activeTextAnnotation != null)
-                {
-                    activeTextAnnotation.OutlineColor = textToolOutlineColor;
-                    pictureBox1?.Invalidate();
-                }
-                SaveTextToolSettings();
-            }
-        }
-
-        private void UpdateOutlineColorButtonAppearance()
-        {
-            if (outlineColorButton != null)
-            {
-                outlineColorButton.BackColor = textToolOutlineColor;
-                outlineColorButton.ForeColor = GetContrastColor(textToolOutlineColor);
-            }
-        }
-
-        private void outlineThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (isSyncingTextToolbarControls)
-            {
-                return;
-            }
-
-            if (outlineThicknessComboBox?.SelectedItem is string selected)
-            {
-                textToolOutlineThickness = selected == "None" ? 0f
-                    : float.TryParse(selected, out float t) ? t : 1f;
-
-                if (activeTextAnnotation != null)
-                {
-                    activeTextAnnotation.OutlineThickness = textToolOutlineThickness;
-                    pictureBox1?.Invalidate();
-                }
-                SaveTextToolSettings();
-            }
-        }
-
-        private void boldButton_CheckedChanged(object? sender, EventArgs e)
-        {
-            UpdateFontStyleFromButtons();
-        }
-
-        private void italicButton_CheckedChanged(object? sender, EventArgs e)
-        {
-            UpdateFontStyleFromButtons();
-        }
-
-        private void underlineButton_CheckedChanged(object? sender, EventArgs e)
-        {
-            UpdateFontStyleFromButtons();
-        }
-
-        private void UpdateFontStyleFromButtons()
-        {
-            if (isSyncingTextToolbarControls)
-            {
-                return;
-            }
-
-            FontStyle style = FontStyle.Regular;
-            if (boldButton?.Checked == true)
-            {
-                style |= FontStyle.Bold;
-            }
-            if (italicButton?.Checked == true)
-            {
-                style |= FontStyle.Italic;
-            }
-            if (underlineButton?.Checked == true)
-            {
-                style |= FontStyle.Underline;
-            }
-
-            textToolFontStyle = style;
-            if (activeTextAnnotation != null)
-            {
-                activeTextAnnotation.FontStyle = style;
-                pictureBox1?.Invalidate();
-            }
-            SaveTextToolSettings();
-        }
-
-        private void UpdateStyleButtonsFromFontStyle(FontStyle style)
-        {
-            if (boldButton != null)
-            {
-                boldButton.Checked = style.HasFlag(FontStyle.Bold);
-            }
-            if (italicButton != null)
-            {
-                italicButton.Checked = style.HasFlag(FontStyle.Italic);
-            }
-            if (underlineButton != null)
-            {
-                underlineButton.Checked = style.HasFlag(FontStyle.Underline);
-            }
-        }
-
-        private void InitializeTextToolbar()
-        {
-            if (fontComboBox != null)
-            {
-                // Enumerating and grouping every installed Windows font took most of editor startup
-                // on font-heavy systems. Display the persisted family immediately and build the
-                // catalog only when the user first interacts with the font picker.
-                fontComboBox.Text = textToolFontFamily;
-
-                // Wire Leave so free-typed names are validated and focus returns to canvas
-                var innerCombo = fontComboBox.Control as ComboBox;
-                if (innerCombo != null)
-                {
-                    innerCombo.Enter += (s, e) =>
-                    {
-                        SuspendTextEditingForUiFocus();
-                        EnsureFontChoicesLoaded();
-                    };
-                    innerCombo.DropDown += (s, e) => EnsureFontChoicesLoaded();
-                    innerCombo.Leave += (s, e) => fontComboBox_Leave(s, e);
-                    innerCombo.KeyDown += (s, e) => HandleTextToolbarCommitKeyDown(e, () => fontComboBox_Leave(s, EventArgs.Empty));
-                    innerCombo.AutoCompleteMode   = AutoCompleteMode.SuggestAppend;
-                    innerCombo.AutoCompleteSource = AutoCompleteSource.ListItems;
-                }
-            }
-
-            if (fontSizeComboBox != null)
-            {
-                fontSizeComboBox.Items.AddRange(new object[] { "8", "10", "12", "14", "16", "18", "20", "24", "28", "32", "36", "48", "72" });
-                fontSizeComboBox.Text = textToolFontSize.ToString();
-                var sizeInner = fontSizeComboBox.Control as ComboBox;
-                if (sizeInner != null)
-                {
-                    sizeInner.Enter += (s, e) => SuspendTextEditingForUiFocus();
-                    sizeInner.Leave += (s, e) => ReturnFocusToCanvas();
-                    sizeInner.KeyDown += (s, e) => HandleTextToolbarCommitKeyDown(e);
-                }
-            }
-
-            if (outlineThicknessComboBox != null)
-            {
-                outlineThicknessComboBox.Items.AddRange(new object[] { "None", "1", "2", "3", "4", "6", "8" });
-                // Select the item matching current default thickness
-                var defaultItem = textToolOutlineThickness <= 0f ? "None" : ((int)textToolOutlineThickness).ToString();
-                int idx = outlineThicknessComboBox.Items.IndexOf(defaultItem);
-                outlineThicknessComboBox.SelectedIndex = idx >= 0 ? idx : 0;
-                var thickInner = outlineThicknessComboBox.Control as ComboBox;
-                if (thickInner != null)
-                {
-                    thickInner.Enter += (s, e) => SuspendTextEditingForUiFocus();
-                    thickInner.Leave += (s, e) => ReturnFocusToCanvas();
-                    thickInner.KeyDown += (s, e) => HandleTextToolbarCommitKeyDown(e);
-                }
-            }
-
-            UpdateTextColorButtonAppearance();
-            UpdateOutlineColorButtonAppearance();
-        }
-
-        private void EnsureFontChoicesLoaded()
-        {
-            if (fontVariantMap != null)
-            {
-                return;
-            }
-
-            var effectiveFamily = GetEffectiveFontFamily();
-            fontVariantMap = BuildFontVariantMap();
-
-            if (fontComboBox != null)
-            {
-                var baseNames = new HashSet<string>(fontVariantMap.Keys, StringComparer.OrdinalIgnoreCase);
-                using var installedFonts = new InstalledFontCollection();
-
-                isSyncingTextToolbarControls = true;
-                try
-                {
-                    foreach (var family in installedFonts.Families)
-                    {
-                        if (baseNames.Contains(family.Name) || !IsVariantOfAnotherFont(family.Name, baseNames))
-                        {
-                            fontComboBox.Items.Add(family.Name);
-                        }
-                    }
-
-                    ResolveTextToolbarFont(effectiveFamily, out var baseFamily, out var variantFullName, out _);
-                    textToolFontFamily = baseFamily;
-                    textToolFontVariant = variantFullName;
-
-                    int defaultIndex = fontComboBox.Items.IndexOf(baseFamily);
-                    if (defaultIndex >= 0)
-                    {
-                        fontComboBox.SelectedIndex = defaultIndex;
-                    }
-                    else
-                    {
-                        fontComboBox.Text = baseFamily;
-                    }
-
-                    UpdateFontVariantDropdown();
-                }
-                finally
-                {
-                    isSyncingTextToolbarControls = false;
-                }
-            }
         }
 
         private Dictionary<string, List<(string DisplayName, string FullName)>> BuildFontVariantMap()
@@ -2406,34 +1820,65 @@ namespace screenzap
             var map = new Dictionary<string, List<(string DisplayName, string FullName)>>(StringComparer.OrdinalIgnoreCase);
             using var installedFonts = new InstalledFontCollection();
             var allFontNames = installedFonts.Families.Select(f => f.Name).ToList();
-
             // Common weight/style suffixes to detect variants
-            string[] variantSuffixes = {
-                " Thin", " Hairline", " ExtraLight", " Extra Light", " UltraLight", " Ultra Light",
-                " Light", " SemiLight", " Semi Light", " DemiLight", " Demi Light",
-                " Regular", " Normal", " Book", " Text", " Roman",
-                " Medium", " SemiBold", " Semi Bold", " DemiBold", " Demi Bold",
-                " Bold", " ExtraBold", " Extra Bold", " UltraBold", " Ultra Bold", " Heavy", " Black",
-                " ExtraBlack", " Extra Black", " UltraBlack", " Ultra Black", " Fat",
-                " Condensed", " Cond", " Narrow", " Compressed",
-                " Extended", " Expanded", " Wide",
-                " Italic", " Oblique", " Slanted"
+            string[] variantSuffixes =
+            {
+                " Thin",
+                " Hairline",
+                " ExtraLight",
+                " Extra Light",
+                " UltraLight",
+                " Ultra Light",
+                " Light",
+                " SemiLight",
+                " Semi Light",
+                " DemiLight",
+                " Demi Light",
+                " Regular",
+                " Normal",
+                " Book",
+                " Text",
+                " Roman",
+                " Medium",
+                " SemiBold",
+                " Semi Bold",
+                " DemiBold",
+                " Demi Bold",
+                " Bold",
+                " ExtraBold",
+                " Extra Bold",
+                " UltraBold",
+                " Ultra Bold",
+                " Heavy",
+                " Black",
+                " ExtraBlack",
+                " Extra Black",
+                " UltraBlack",
+                " Ultra Black",
+                " Fat",
+                " Condensed",
+                " Cond",
+                " Narrow",
+                " Compressed",
+                " Extended",
+                " Expanded",
+                " Wide",
+                " Italic",
+                " Oblique",
+                " Slanted"
             };
-
             foreach (var fontName in allFontNames)
             {
                 // Try to find the base name by removing known suffixes
                 string baseName = fontName;
                 string variantPart = "";
-
                 foreach (var suffix in variantSuffixes)
                 {
                     if (fontName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                     {
                         var potentialBase = fontName.Substring(0, fontName.Length - suffix.Length);
                         // Check if the base exists as a font or has other variants
-                        if (allFontNames.Any(f => f.Equals(potentialBase, StringComparison.OrdinalIgnoreCase)) ||
-                            allFontNames.Any(f => f.StartsWith(potentialBase + " ", StringComparison.OrdinalIgnoreCase) && f != fontName))
+                        if (allFontNames.Any(f => f.Equals(potentialBase, StringComparison.OrdinalIgnoreCase)) || allFontNames.Any(f => f.StartsWith(potentialBase + " ", StringComparison.OrdinalIgnoreCase) && f != fontName))
                         {
                             baseName = potentialBase;
                             variantPart = suffix.Trim();
@@ -2454,19 +1899,40 @@ namespace screenzap
             // Sort variants by typical weight order
             var weightOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             {
-                ["Thin"] = 100, ["Hairline"] = 100,
-                ["ExtraLight"] = 200, ["Extra Light"] = 200, ["UltraLight"] = 200, ["Ultra Light"] = 200,
+                ["Thin"] = 100,
+                ["Hairline"] = 100,
+                ["ExtraLight"] = 200,
+                ["Extra Light"] = 200,
+                ["UltraLight"] = 200,
+                ["Ultra Light"] = 200,
                 ["Light"] = 300,
-                ["SemiLight"] = 350, ["Semi Light"] = 350, ["DemiLight"] = 350, ["Demi Light"] = 350,
-                ["Regular"] = 400, ["Normal"] = 400, ["Book"] = 400, ["Text"] = 400, ["Roman"] = 400,
+                ["SemiLight"] = 350,
+                ["Semi Light"] = 350,
+                ["DemiLight"] = 350,
+                ["Demi Light"] = 350,
+                ["Regular"] = 400,
+                ["Normal"] = 400,
+                ["Book"] = 400,
+                ["Text"] = 400,
+                ["Roman"] = 400,
                 ["Medium"] = 500,
-                ["SemiBold"] = 600, ["Semi Bold"] = 600, ["DemiBold"] = 600, ["Demi Bold"] = 600,
+                ["SemiBold"] = 600,
+                ["Semi Bold"] = 600,
+                ["DemiBold"] = 600,
+                ["Demi Bold"] = 600,
                 ["Bold"] = 700,
-                ["ExtraBold"] = 800, ["Extra Bold"] = 800, ["UltraBold"] = 800, ["Ultra Bold"] = 800, ["Heavy"] = 800,
+                ["ExtraBold"] = 800,
+                ["Extra Bold"] = 800,
+                ["UltraBold"] = 800,
+                ["Ultra Bold"] = 800,
+                ["Heavy"] = 800,
                 ["Black"] = 900,
-                ["ExtraBlack"] = 950, ["Extra Black"] = 950, ["UltraBlack"] = 950, ["Ultra Black"] = 950, ["Fat"] = 950
+                ["ExtraBlack"] = 950,
+                ["Extra Black"] = 950,
+                ["UltraBlack"] = 950,
+                ["Ultra Black"] = 950,
+                ["Fat"] = 950
             };
-
             foreach (var kvp in map)
             {
                 kvp.Value.Sort((a, b) =>
@@ -2490,46 +1956,8 @@ namespace screenzap
                     return true;
                 }
             }
+
             return false;
-        }
-
-        private void UpdateFontVariantDropdown()
-        {
-            if (fontVariantComboBox == null || fontVariantMap == null)
-            {
-                return;
-            }
-
-            fontVariantComboBox.Items.Clear();
-
-            if (fontVariantMap.TryGetValue(textToolFontFamily, out var variants) && variants.Count > 1)
-            {
-                foreach (var (displayName, _) in variants)
-                {
-                    fontVariantComboBox.Items.Add(displayName);
-                }
-
-                // Select current variant or prefer Regular before falling back to the first variant
-                int index = variants.FindIndex(v => textToolFontVariant != null
-                    && v.FullName.Equals(textToolFontVariant, StringComparison.OrdinalIgnoreCase));
-                if (index < 0)
-                {
-                    index = variants.FindIndex(v => v.DisplayName.Equals("Regular", StringComparison.OrdinalIgnoreCase));
-                }
-                if (index < 0)
-                {
-                    index = 0;
-                }
-
-                fontVariantComboBox.SelectedIndex = index;
-                fontVariantComboBox.Visible = isTextToolActive;
-            }
-            else
-            {
-                // No variants, hide the dropdown
-                fontVariantComboBox.Visible = false;
-                textToolFontVariant = null;
-            }
         }
 
         private string GetEffectiveFontFamily()
@@ -2539,6 +1967,7 @@ namespace screenzap
             {
                 return textToolFontVariant;
             }
+
             return textToolFontFamily;
         }
     }
@@ -2556,7 +1985,7 @@ namespace screenzap
 
         public void Dispose()
         {
-            // No unmanaged resources
+        // No unmanaged resources
         }
     }
 }

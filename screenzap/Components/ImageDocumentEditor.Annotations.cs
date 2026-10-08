@@ -47,7 +47,6 @@ namespace screenzap
         public Color Color { get; set; } = Color.Red;
         public float Opacity { get; set; } = 0.40f;
         public bool Selected { get; set; }
-
         // Sampled freehand path. Non-null only for Highlighter shapes. Start/End are kept
         // synced to Points[0]/Points[^1] so the endpoint-based machinery (bounds fallback,
         // crop, clamp) keeps working without special-casing every call site.
@@ -82,6 +81,7 @@ namespace screenzap
                     maxX = Math.Max(maxX, p.X);
                     maxY = Math.Max(maxY, p.Y);
                 }
+
                 return Rectangle.FromLTRB(minX, minY, maxX, maxY);
             }
 
@@ -104,6 +104,7 @@ namespace screenzap
                     double dy = Points[i].Y - Points[i - 1].Y;
                     length += Math.Sqrt(dx * dx + dy * dy);
                 }
+
                 return length >= 4.0;
             }
 
@@ -117,7 +118,7 @@ namespace screenzap
         }
     }
 
-    public partial class ImageEditor
+    public partial class ImageDocumentEditor
     {
         private readonly List<AnnotationShape> annotationShapes = new List<AnnotationShape>();
         private bool isDrawingAnnotation;
@@ -154,11 +155,9 @@ namespace screenzap
         // ORIGINAL polyline (no per-move accumulation drift).
         private List<Point>? highlighterResizeOriginalPoints;
         private Rectangle highlighterResizeOriginalBounds;
-
         private const float DefaultHighlighterPeakOpacity = 0.40f;
         private const float DefaultHighlighterBodyOpacity = 0.26f;
         private const double HighlighterBodyLevel = DefaultHighlighterBodyOpacity / DefaultHighlighterPeakOpacity;
-
         // Annotation tool settings
         private float annotationLineThickness = 2f;
         private decimal annotationArrowSize = 1m;
@@ -168,7 +167,6 @@ namespace screenzap
         // arrow/rectangle red. Picking a color while the highlighter tool is active updates this one.
         private Color annotationHighlighterColor = Color.FromArgb(255, 238, 88);
         private float annotationHighlighterOpacity = DefaultHighlighterPeakOpacity;
-
         /// <summary>
         /// The tool default color the color picker reads/writes: the highlighter's own default when
         /// that tool is active, otherwise the shared arrow/rectangle default.
@@ -204,22 +202,10 @@ namespace screenzap
             return Math.Clamp(percent, 0, 100) / 100f;
         }
 
-        // Tests can't manipulate real keyboard state and Control.ModifierKeys is a static
-        // property tied to OS input. Set via TestSetShiftHeld to simulate Shift-during-click.
-        // Tri-state on purpose: null reads the real keyboard, false PINS the modifier off. A
-        // plain bool could only force Shift on, so a test asserting the no-Shift behaviour
-        // still read the user's actual keyboard and failed whenever they happened to be
-        // holding Shift while the suite ran.
+        // A null override reads the modifiers forwarded by the native input adapter.
+        // Tests can pin each modifier independently for deterministic gestures.
         private bool? isShiftHeld_TestOverride;
-        private bool IsMultiSelectModifierDown =>
-            isShiftHeld_TestOverride ?? ModifierKeys.HasFlag(Keys.Shift);
-
-        // True while UpdateAnnotationToolbarFromSelection is programmatically pushing
-        // values into the comboboxes so SelectedIndexChanged handlers don't write the
-        // displayed value back into the selection (would create no-op undo steps and,
-        // when the displayed value is a "Mixed" blank, would clobber the real per-shape
-        // values).
-        private bool isSyncingAnnotationToolbarControls;
+        private bool IsMultiSelectModifierDown => isShiftHeld_TestOverride ?? ModifierKeys.HasFlag(Keys.Shift);
 
         private List<AnnotationShape> CloneAnnotations()
         {
@@ -227,7 +213,7 @@ namespace screenzap
         }
 
         /// <summary>
-        /// Update the shape selection. When <paramref name="add"/> is false (the default,
+        /// Update the shape selection. When <paramref name = "add"/> is false (the default,
         /// matching legacy single-select behaviour), the selection is replaced with the
         /// target (or cleared when target is null). When add is true, the target is
         /// toggled into or out of the existing selection; passing null with add=true is
@@ -246,6 +232,7 @@ namespace screenzap
                 {
                     return;
                 }
+
                 if (selectedShapes.Contains(target))
                 {
                     selectedShapes.Remove(target);
@@ -267,9 +254,7 @@ namespace screenzap
             SetHoveredAnnotationHandle(AnnotationHandle.None);
             SyncSelectionFlagsFromList();
             selectedAnnotation = selectedShapes.LastOrDefault();
-            UpdateAnnotationToolbarFromSelection();
-            UpdateAnnotationToolbarVisibility();
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         private void SyncSelectionFlagsFromList()
@@ -292,111 +277,8 @@ namespace screenzap
                     selectedShapes.Add(annotation);
                 }
             }
+
             selectedAnnotation = selectedShapes.LastOrDefault();
-        }
-
-        private void UpdateDrawingToolButtons()
-        {
-            bool enable = HasEditableImage;
-
-            if (!enable)
-            {
-                activeDrawingTool = DrawingTool.None;
-                CancelAnnotationPreview();
-            }
-
-            if (arrowToolStripButton != null)
-            {
-                arrowToolStripButton.Enabled = enable;
-                arrowToolStripButton.Checked = enable && activeDrawingTool == DrawingTool.Arrow;
-            }
-
-            if (rectangleToolStripButton != null)
-            {
-                rectangleToolStripButton.Enabled = enable;
-                rectangleToolStripButton.Checked = enable && activeDrawingTool == DrawingTool.Rectangle;
-            }
-
-            if (highlighterToolStripButton != null)
-            {
-                highlighterToolStripButton.Enabled = enable;
-                highlighterToolStripButton.Checked = enable && activeDrawingTool == DrawingTool.Highlighter;
-            }
-
-            UpdateAnnotationToolbarVisibility();
-        }
-
-        private void UpdateAnnotationToolbarVisibility()
-        {
-            bool isAnnotationToolActive = activeDrawingTool != DrawingTool.None;
-            // Any selected shape (arrow or rect) keeps the options panel up. With multi-
-            // selection this is "are there any shapes in the selection?" — texts alone
-            // don't need the line-width / arrow controls visible.
-            bool hasShapeSelection = selectedShapes.Count > 0;
-            bool showPanel = isAnnotationToolActive || hasShapeSelection;
-            bool showArrowControls =
-                activeDrawingTool == DrawingTool.Arrow || AnyArrowInSelection();
-
-            // Highlighter has its own 8–24 thickness combo; the regular 1–10 line combo
-            // governs arrows/rects. Show whichever the current tool/selection calls for so
-            // both thickness controls don't crowd the strip for a pure-highlighter context.
-            bool showHighlighterControls =
-                activeDrawingTool == DrawingTool.Highlighter || AnyHighlighterInSelection();
-            bool nonHighlighterToolActive =
-                isAnnotationToolActive && activeDrawingTool != DrawingTool.Highlighter;
-            bool showLineControls =
-                showPanel && (nonHighlighterToolActive || AnyNonHighlighterShapeInSelection());
-
-            if (annotationToolSeparator != null)
-            {
-                annotationToolSeparator.Visible = showPanel;
-            }
-            if (lineThicknessLabel != null)
-            {
-                lineThicknessLabel.Visible = showLineControls;
-            }
-            if (lineThicknessComboBox != null)
-            {
-                lineThicknessComboBox.Visible = showLineControls;
-            }
-            if (highlighterThicknessComboBox != null)
-            {
-                highlighterThicknessComboBox.Visible = showHighlighterControls;
-            }
-            if (highlighterOpacityLabel != null)
-            {
-                highlighterOpacityLabel.Visible = showHighlighterControls;
-            }
-            if (highlighterOpacityToolStripHost != null)
-            {
-                highlighterOpacityToolStripHost.Visible = showHighlighterControls;
-            }
-            if (highlighterOpacityValueLabel != null)
-            {
-                highlighterOpacityValueLabel.Visible = showHighlighterControls;
-            }
-            if (annotationColorButton != null)
-            {
-                annotationColorButton.Visible = showPanel;
-            }
-            if (arrowSizeLabel != null)
-            {
-                arrowSizeLabel.Visible = showArrowControls;
-            }
-            if (arrowSizeComboBox != null)
-            {
-                arrowSizeComboBox.Visible = showArrowControls;
-            }
-
-            if (annotationOptionsToolStrip != null)
-            {
-                annotationOptionsToolStrip.Visible = showPanel;
-                PositionOverlayToolStrips();
-            }
-
-            // Reflect the active tool's default color in the swatch (e.g. lemon when the highlighter
-            // tool is engaged with nothing selected).
-            UpdateAnnotationColorButtonAppearance();
         }
 
         private void ToggleDrawingTool(DrawingTool tool)
@@ -411,8 +293,6 @@ namespace screenzap
             {
                 FinalizeActiveTextAnnotation();
                 isTextToolActive = false;
-                UpdateTextToolButtons();
-                UpdateTextToolbarVisibility();
             }
 
             if (activeDrawingTool == tool && !isDrawingAnnotation)
@@ -425,7 +305,6 @@ namespace screenzap
             }
 
             CancelAnnotationPreview();
-            UpdateDrawingToolButtons();
         }
 
         private void CancelAnnotationPreview()
@@ -445,7 +324,7 @@ namespace screenzap
             highlighterResizeOriginalPoints = null;
             annotationTranslateModeActive = false;
             annotationDraftAnchorPixel = Point.Empty;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         private enum AnnotationSurface
@@ -463,13 +342,11 @@ namespace screenzap
 
             var previousSmoothing = graphics.SmoothingMode;
             graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-
             try
             {
                 foreach (var annotation in annotationShapes)
                 {
-                    if (surface == AnnotationSurface.Screen && annotation.Type == AnnotationType.Arrow
-                        && (annotation.Selected || annotation == hoveredAnnotation))
+                    if (surface == AnnotationSurface.Screen && annotation.Type == AnnotationType.Arrow && (annotation.Selected || annotation == hoveredAnnotation))
                         DrawArrowContour(graphics, annotation, annotation.Selected);
                     DrawAnnotationShape(graphics, annotation, surface);
                     if (surface == AnnotationSurface.Screen)
@@ -487,7 +364,6 @@ namespace screenzap
         private void DrawAnnotationShape(Graphics graphics, AnnotationShape annotation, AnnotationSurface surface)
         {
             float scale = surface == AnnotationSurface.Screen ? (float)ZoomLevel : 1f;
-
             if (annotation.Type == AnnotationType.Highlighter)
             {
                 DrawHighlighter(graphics, annotation, surface, scale);
@@ -495,13 +371,11 @@ namespace screenzap
             }
 
             float strokeWidth = Math.Max(1f, annotation.LineThickness * scale);
-
             // Interaction feedback is drawn separately; the annotation keeps its own color.
             using var pen = new Pen(annotation.Color, strokeWidth)
             {
                 Alignment = System.Drawing.Drawing2D.PenAlignment.Center
             };
-
             if (annotation.Type == AnnotationType.Arrow)
             {
                 // GDI+ cap dimensions are already multiplied by the pen width. Keep the
@@ -534,10 +408,21 @@ namespace screenzap
         {
             float dx = end.X - start.X, dy = end.Y - start.Y;
             float length = MathF.Sqrt(dx * dx + dy * dy);
-            if (length == 0) return new[] { end, end, end };
+            if (length == 0)
+                return new[]
+                {
+                    end,
+                    end,
+                    end
+                };
             float ux = dx / length, uy = dy / length;
             var center = new PointF(end.X - ux * depth, end.Y - uy * depth);
-            return new[] { end, new PointF(center.X - uy * width / 2, center.Y + ux * width / 2), new PointF(center.X + uy * width / 2, center.Y - ux * width / 2) };
+            return new[]
+            {
+                end,
+                new PointF(center.X - uy * width / 2, center.Y + ux * width / 2),
+                new PointF(center.X + uy * width / 2, center.Y - ux * width / 2)
+            };
         }
 
         private void DrawHighlighter(Graphics graphics, AnnotationShape annotation, AnnotationSurface surface, float scale)
@@ -557,7 +442,6 @@ namespace screenzap
             // Vertically-stretched chisel tip: t tall, t/3 wide (t=12 -> 4x12).
             float t = Math.Max(1f, annotation.LineThickness * scale);
             float w = Math.Max(1f, t / 3f);
-
             // Map path to target coordinates.
             var mapped = new PointF[pts.Count];
             for (int i = 0; i < pts.Count; i++)
@@ -576,16 +460,9 @@ namespace screenzap
                 maxY = Math.Max(maxY, p.Y);
             }
 
-            var bounds = Rectangle.FromLTRB(
-                (int)Math.Floor(minX - pad),
-                (int)Math.Floor(minY - pad),
-                (int)Math.Ceiling(maxX + pad),
-                (int)Math.Ceiling(maxY + pad));
-
+            var bounds = Rectangle.FromLTRB((int)Math.Floor(minX - pad), (int)Math.Floor(minY - pad), (int)Math.Ceiling(maxX + pad), (int)Math.Ceiling(maxY + pad));
             // Cap the buffer to the visible/relevant area to bound memory and cost.
-            var clip = surface == AnnotationSurface.Screen
-                ? new Rectangle(0, 0, pictureBox1?.ClientSize.Width ?? bounds.Right, pictureBox1?.ClientSize.Height ?? bounds.Bottom)
-                : new Rectangle(0, 0, pictureBox1?.Image?.Width ?? bounds.Right, pictureBox1?.Image?.Height ?? bounds.Bottom);
+            var clip = surface == AnnotationSurface.Screen ? new Rectangle(0, 0, viewport?.ClientSize.Width ?? bounds.Right, viewport?.ClientSize.Height ?? bounds.Bottom) : new Rectangle(0, 0, viewport?.Image?.Width ?? bounds.Right, viewport?.Image?.Height ?? bounds.Bottom);
             // Inflate the clip by the pad so caps near the edge still render.
             clip.Inflate((int)Math.Ceiling(pad), (int)Math.Ceiling(pad));
             bounds = Rectangle.Intersect(bounds, clip);
@@ -613,26 +490,20 @@ namespace screenzap
                 int blurRadius = Math.Max(2, (int)Math.Round(w * 0.45f));
                 var endA = new PointF(mapped[0].X - bounds.X, mapped[0].Y - bounds.Y);
                 var endB = new PointF(mapped[mapped.Length - 1].X - bounds.X, mapped[mapped.Length - 1].Y - bounds.Y);
-
                 // Affine map from image px to target px is uniform: target = image*scale + off.
                 // Recover off from a known pair, then express each buffer pixel back in image space.
                 var off = new PointF(mapped[0].X - pts[0].X * scale, mapped[0].Y - pts[0].Y * scale);
                 double invScale = 1.0 / scale;
                 double imageOriginX = (bounds.X - off.X) * invScale;
                 double imageOriginY = (bounds.Y - off.Y) * invScale;
-
-                PostProcessHighlighterBuffer(buffer, annotation.Color, annotation.Id.GetHashCode(), blurRadius, t,
-                    endA, endB, imageOriginX, imageOriginY, invScale);
-
+                PostProcessHighlighterBuffer(buffer, annotation.Color, annotation.Id.GetHashCode(), blurRadius, t, endA, endB, imageOriginX, imageOriginY, invScale);
                 using var attributes = new System.Drawing.Imaging.ImageAttributes();
-                var matrix = new System.Drawing.Imaging.ColorMatrix { Matrix33 = peakOpacity };
+                var matrix = new System.Drawing.Imaging.ColorMatrix
+                {
+                    Matrix33 = peakOpacity
+                };
                 attributes.SetColorMatrix(matrix);
-                graphics.DrawImage(
-                    buffer,
-                    new Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height),
-                    0, 0, bounds.Width, bounds.Height,
-                    GraphicsUnit.Pixel,
-                    attributes);
+                graphics.DrawImage(buffer, new Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height), 0, 0, bounds.Width, bounds.Height, GraphicsUnit.Pixel, attributes);
             }
         }
 
@@ -670,22 +541,24 @@ namespace screenzap
                 StartCap = System.Drawing.Drawing2D.LineCap.Round,
                 EndCap = System.Drawing.Drawing2D.LineCap.Round,
                 LineJoin = System.Drawing.Drawing2D.LineJoin.Round
-            })
+            }
+
+            )
             {
                 graphics.DrawLines(pen, drawPts);
             }
+
             graphics.Restore(state);
         }
 
         /// <summary>
         /// In-place 2D blur + value-noise alpha modulation of a 32bpp ARGB highlighter buffer. RGB
-        /// is forced to <paramref name="color"/> everywhere so blurring the alpha can't drag edge
+        /// is forced to <paramref name = "color"/> everywhere so blurring the alpha can't drag edge
         /// pixels toward black. Noise is seeded per-shape AND sampled in image space
-        /// (<paramref name="imageOriginX"/> + x·<paramref name="invScale"/>) so the texture is stable
+        /// (<paramref name = "imageOriginX"/> + x·<paramref name = "invScale"/>) so the texture is stable
         /// across repaints and stays locked to the stroke when the view zooms or pans.
         /// </summary>
-        private static void PostProcessHighlighterBuffer(Bitmap buffer, Color color, int seed, int blurRadius, float thickness,
-            PointF endA, PointF endB, double imageOriginX, double imageOriginY, double invScale)
+        private static void PostProcessHighlighterBuffer(Bitmap buffer, Color color, int seed, int blurRadius, float thickness, PointF endA, PointF endB, double imageOriginX, double imageOriginY, double invScale)
         {
             int width = buffer.Width;
             int height = buffer.Height;
@@ -702,7 +575,6 @@ namespace screenzap
                 int bytes = stride * height;
                 var pixels = new byte[bytes];
                 System.Runtime.InteropServices.Marshal.Copy(data.Scan0, pixels, 0, bytes);
-
                 // Pull the alpha channel out (memory order is B,G,R,A on little-endian).
                 var srcAlpha = new byte[width * height];
                 for (int y = 0; y < height; y++)
@@ -732,6 +604,7 @@ namespace screenzap
                     {
                         sum += srcAlpha[arow + Math.Clamp(k, 0, width - 1)];
                     }
+
                     for (int x = 0; x < width; x++)
                     {
                         tmp[arow + x] = (byte)(sum / windowX);
@@ -740,6 +613,7 @@ namespace screenzap
                         sum += srcAlpha[arow + inX] - srcAlpha[arow + outX];
                     }
                 }
+
                 int windowY = radiusY * 2 + 1;
                 for (int x = 0; x < width; x++)
                 {
@@ -748,6 +622,7 @@ namespace screenzap
                     {
                         sum += tmp[Math.Clamp(k, 0, height - 1) * width + x];
                     }
+
                     for (int y = 0; y < height; y++)
                     {
                         blur[y * width + x] = (byte)(sum / windowY);
@@ -772,12 +647,11 @@ namespace screenzap
                 // stroke), but the noise driving it is sampled in image space for zoom stability.
                 // Kept gentle — earlier values read like the page was marked up during an earthquake.
                 double dispAmp = Math.Max(0.8, thickness * 0.06);
-                const double dispCell = 26.0;   // longer wavelength → calmer, rolling edges
-                const double blobCell = 12.0;   // ~5–15px opacity blobs (image space)
+                const double dispCell = 26.0; // longer wavelength → calmer, rolling edges
+                const double blobCell = 12.0; // ~5–15px opacity blobs (image space)
                 const double poolStrength = 0.22;
                 const double fiberStrength = 0.16;
                 double tipRadius = Math.Max(3.0, thickness * 1.25); // how far in from each end the dab reaches
-
                 for (int y = 0; y < height; y++)
                 {
                     int row = y * stride;
@@ -786,14 +660,12 @@ namespace screenzap
                     {
                         int idx = row + x * 4;
                         double imgX = imageOriginX + x * invScale;
-
                         // Displace the sample position by a smooth 2D noise field (image-space noise,
                         // device-space offset).
                         double dispX = (ValueNoise(imgX / dispCell, imgY / dispCell, seed ^ 0x1b56c4e9) - 0.5) * 2.0 * dispAmp;
                         double dispY = (ValueNoise(imgX / dispCell, imgY / dispCell, seed ^ 0x7f4a7c15) - 0.5) * 2.0 * dispAmp;
                         int sx = Math.Clamp((int)Math.Round(x + dispX), 0, width - 1);
                         int sy = Math.Clamp((int)Math.Round(y + dispY), 0, height - 1);
-
                         double band = blur[sy * width + sx] / 255.0;
                         double nb;
                         if (band <= 0)
@@ -803,27 +675,23 @@ namespace screenzap
                         else
                         {
                             // Mottled opacity (two octaves of blobs) keeps a mostly-opaque floor.
-                            double blob = 0.65 * ValueNoise(imgX / blobCell, imgY / blobCell, seed)
-                                        + 0.35 * ValueNoise(imgX / (blobCell * 0.45), imgY / (blobCell * 0.45), seed ^ 0x5bd1e995);
+                            double blob = 0.65 * ValueNoise(imgX / blobCell, imgY / blobCell, seed) + 0.35 * ValueNoise(imgX / (blobCell * 0.45), imgY / (blobCell * 0.45), seed ^ 0x5bd1e995);
                             double mult = 0.80 + 0.20 * blob;
-
                             // Fiber grain: thin dry lines stretched ALONG the stroke (long cells in
                             // x, fine in y) plus a finer octave, for the streaky look of a felt tip.
-                            double fiber = 0.7 * ValueNoise(imgX / 42.0, imgY / 2.1, seed ^ 0x2c1b3a55)
-                                         + 0.3 * ValueNoise(imgX / 18.0, imgY / 1.3, seed ^ 0x511fb3a7);
+                            double fiber = 0.7 * ValueNoise(imgX / 42.0, imgY / 2.1, seed ^ 0x2c1b3a55) + 0.3 * ValueNoise(imgX / 18.0, imgY / 1.3, seed ^ 0x511fb3a7);
                             mult *= 1.0 - fiberStrength * fiber;
-
                             // Longitudinal density: body sits at the floor, rising toward the tips.
                             // The dab edge is roughened by noise so it isn't a clean radius.
                             double dEnd = Math.Min(Distance(sx, sy, endA), Distance(sx, sy, endB));
                             double rough = tipRadius * (0.30 * ValueNoise(imgX / 7.0, imgY / 7.0, seed ^ 0x3da1f29b) - 0.10);
                             double endE = 1.0 - Smoothstep(0.0, tipRadius, dEnd + rough);
                             double level = HighlighterBodyLevel + (1.0 - HighlighterBodyLevel) * endE;
-
                             // Edge factor peaks in the feathered band boundary (band ≈ 0.5).
                             double edge = 4.0 * band * (1.0 - band);
                             nb = band * level * mult + poolStrength * edge;
-                            if (nb > 1.0) nb = 1.0;
+                            if (nb > 1.0)
+                                nb = 1.0;
                         }
 
                         pixels[idx + 0] = color.B;
@@ -848,10 +716,11 @@ namespace screenzap
             return Math.Sqrt(dx * dx + dy * dy);
         }
 
-        /// <summary>Hermite smoothstep: 0 below <paramref name="edge0"/>, 1 above <paramref name="edge1"/>.</summary>
+        /// <summary>Hermite smoothstep: 0 below <paramref name = "edge0"/>, 1 above <paramref name = "edge1"/>.</summary>
         private static double Smoothstep(double edge0, double edge1, double x)
         {
-            if (edge1 <= edge0) return x < edge0 ? 0.0 : 1.0;
+            if (edge1 <= edge0)
+                return x < edge0 ? 0.0 : 1.0;
             double t = Math.Clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
             return t * t * (3.0 - 2.0 * t);
         }
@@ -863,12 +732,10 @@ namespace screenzap
             int y0 = (int)Math.Floor(y);
             double fx = x - x0;
             double fy = y - y0;
-
             double v00 = LatticeValue(x0, y0, seed);
             double v10 = LatticeValue(x0 + 1, y0, seed);
             double v01 = LatticeValue(x0, y0 + 1, seed);
             double v11 = LatticeValue(x0 + 1, y0 + 1, seed);
-
             double sx = fx * fx * (3 - 2 * fx);
             double sy = fy * fy * (3 - 2 * fy);
             double a = v00 + (v10 - v00) * sx;
@@ -891,26 +758,28 @@ namespace screenzap
 
         private void DrawArrowContour(Graphics graphics, AnnotationShape annotation, bool selected)
         {
-            var start = PixelToFormCoordF(annotation.Start);
-            var end = PixelToFormCoordF(annotation.End);
+            var start = ImageToViewportF(annotation.Start);
+            var end = ImageToViewportF(annotation.End);
             float dx = end.X - start.X, dy = end.Y - start.Y;
             float length = MathF.Sqrt(dx * dx + dy * dy);
-            if (length == 0) return;
+            if (length == 0)
+                return;
             float ux = dx / length, uy = dy / length;
             float strokeWidth = Math.Max(1f, annotation.LineThickness * (float)ZoomLevel);
             var head = GetArrowHeadDimensions(annotation, start, end, strokeWidth);
             var neck = new PointF(end.X - ux * head.Length, end.Y - uy * head.Length);
             PointF Side(PointF center, float width) => new(center.X - uy * width, center.Y + ux * width);
             using var path = new System.Drawing.Drawing2D.GraphicsPath();
-            path.AddPolygon(new[] {
-                Side(start, strokeWidth / 2), Side(neck, strokeWidth / 2), Side(neck, head.Width / 2),
-                end, Side(neck, -head.Width / 2), Side(neck, -strokeWidth / 2), Side(start, -strokeWidth / 2)
-            });
+            path.AddPolygon(new[] { Side(start, strokeWidth / 2), Side(neck, strokeWidth / 2), Side(neck, head.Width / 2), end, Side(neck, -head.Width / 2), Side(neck, -strokeWidth / 2), Side(start, -strokeWidth / 2) });
             if (selected)
             {
-                using var contrast = new Pen(Color.FromArgb(220, 24, 26, 29), 6f) { LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+                using var contrast = new Pen(Color.FromArgb(220, 24, 26, 29), 6f)
+                {
+                    LineJoin = System.Drawing.Drawing2D.LineJoin.Round
+                };
                 graphics.DrawPath(contrast, path);
             }
+
             using var outline = new Pen(Color.FromArgb(selected ? 235 : 95, Color.DodgerBlue), selected ? 4f : 3f)
             {
                 LineJoin = System.Drawing.Drawing2D.LineJoin.Round
@@ -934,12 +803,11 @@ namespace screenzap
 
             bool toolArmed = activeDrawingTool != DrawingTool.None;
             bool canEditArrow = activeDrawingTool == DrawingTool.Arrow && annotation.Type == AnnotationType.Arrow;
-
             if (annotation.Type != AnnotationType.Arrow && (toolArmed || annotation.Type == AnnotationType.Highlighter))
             {
                 // Dashed bounding outline makes the selection legible without the handles —
                 // for a highlighter that is the only edge it has to show.
-                var outline = PixelToFormCoord(annotation.GetBounds());
+                var outline = ImageToViewport(annotation.GetBounds());
                 outline.Inflate(4, 4);
                 using var selectionPen = new Pen(Color.FromArgb(200, Color.DodgerBlue), 1.5f)
                 {
@@ -958,8 +826,7 @@ namespace screenzap
             foreach (var kvp in handles)
             {
                 var rect = kvp.Value;
-                bool emphasized = annotation == selectedAnnotation
-                    && (kvp.Key == activeAnnotationHandle || kvp.Key == hoveredAnnotationHandle);
+                bool emphasized = annotation == selectedAnnotation && (kvp.Key == activeAnnotationHandle || kvp.Key == hoveredAnnotationHandle);
                 if (emphasized)
                 {
                     rect.Inflate(2, 2);
@@ -984,7 +851,6 @@ namespace screenzap
         {
             using var pen = new Pen(Color.FromArgb(180, Color.Cyan), 2f);
             pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dot;
-
             if (annotation.Type == AnnotationType.Highlighter)
             {
                 // Trace the polyline with a translucent cyan stroke roughly the stroke's width.
@@ -994,8 +860,9 @@ namespace screenzap
                     var formPts = new PointF[path.Count];
                     for (int i = 0; i < path.Count; i++)
                     {
-                        formPts[i] = PixelToFormCoordF(path[i]);
+                        formPts[i] = ImageToViewportF(path[i]);
                     }
+
                     float hitWidth = Math.Max(8f, annotation.LineThickness * (float)ZoomLevel);
                     using var hitPen = new Pen(Color.FromArgb(60, Color.Cyan), hitWidth)
                     {
@@ -1010,10 +877,9 @@ namespace screenzap
             else
             {
                 // Draw an inflated hitbox outside the rectangle
-                var bounds = PixelToFormCoord(annotation.GetBounds());
+                var bounds = ImageToViewport(annotation.GetBounds());
                 const int padding = 4;
                 bounds.Inflate(padding, padding);
-                
                 using var fillBrush = new SolidBrush(Color.FromArgb(30, Color.Cyan));
                 graphics.FillRectangle(fillBrush, bounds);
                 graphics.DrawRectangle(pen, bounds);
@@ -1022,22 +888,21 @@ namespace screenzap
 
         private PointF ConvertAnnotationPoint(Point pixelPoint, AnnotationSurface surface)
         {
-            return surface == AnnotationSurface.Screen ? PixelToFormCoordF(pixelPoint) : new PointF(pixelPoint.X, pixelPoint.Y);
+            return surface == AnnotationSurface.Screen ? ImageToViewportF(pixelPoint) : new PointF(pixelPoint.X, pixelPoint.Y);
         }
 
         private RectangleF ConvertAnnotationRectangle(Rectangle rect, AnnotationSurface surface)
         {
-            return surface == AnnotationSurface.Screen ? PixelToFormCoordF(rect) : new RectangleF(rect.Location, rect.Size);
+            return surface == AnnotationSurface.Screen ? ImageToViewportF(rect) : new RectangleF(rect.Location, rect.Size);
         }
 
         private Dictionary<AnnotationHandle, Rectangle> GetAnnotationHandleRects(AnnotationShape annotation, int size)
         {
             var handles = new Dictionary<AnnotationHandle, Rectangle>();
             int half = size / 2;
-
             void AddHandle(AnnotationHandle handle, Point pixelPoint)
             {
-                var center = PixelToFormCoordF(pixelPoint);
+                var center = ImageToViewportF(pixelPoint);
                 var rect = new Rectangle((int)Math.Round(center.X) - half, (int)Math.Round(center.Y) - half, size, size);
                 handles[handle] = rect;
             }
@@ -1082,7 +947,7 @@ namespace screenzap
                 }
                 else
                 {
-                    var bounds = PixelToFormCoord(annotation.GetBounds());
+                    var bounds = ImageToViewport(annotation.GetBounds());
                     if (bounds.Contains(formPoint))
                     {
                         return annotation;
@@ -1095,10 +960,11 @@ namespace screenzap
 
         private bool IsPointNearArrow(Point formPoint, AnnotationShape annotation)
         {
-            var start = PixelToFormCoordF(annotation.Start);
-            var end = PixelToFormCoordF(annotation.End);
+            var start = ImageToViewportF(annotation.Start);
+            var end = ImageToViewportF(annotation.End);
             float strokeWidth = Math.Max(1f, annotation.LineThickness * (float)ZoomLevel);
-            if (DistanceFromPointToSegment(formPoint, start, end) <= strokeWidth / 2f + 4f) return true;
+            if (DistanceFromPointToSegment(formPoint, start, end) <= strokeWidth / 2f + 4f)
+                return true;
             var head = GetArrowHeadDimensions(annotation, start, end, strokeWidth);
             using var path = new System.Drawing.Drawing2D.GraphicsPath();
             path.AddPolygon(GetArrowHeadPoints(start, end, head.Width, head.Length));
@@ -1117,7 +983,6 @@ namespace screenzap
             // Half the (vertical) stroke thickness, with a small floor so thin strokes at low
             // zoom stay grabbable.
             double tolerance = Math.Max(annotation.LineThickness / 2.0, 4.0 / (double)ZoomLevel);
-
             if (pts.Count == 1)
             {
                 double dx = pixelPoint.X - pts[0].X;
@@ -1132,6 +997,7 @@ namespace screenzap
                     return true;
                 }
             }
+
             return false;
         }
 
@@ -1139,7 +1005,6 @@ namespace screenzap
         {
             double dx = end.X - start.X;
             double dy = end.Y - start.Y;
-
             if (Math.Abs(dx) < double.Epsilon && Math.Abs(dy) < double.Epsilon)
             {
                 dx = point.X - start.X;
@@ -1149,7 +1014,6 @@ namespace screenzap
 
             double t = ((point.X - start.X) * dx + (point.Y - start.Y) * dy) / (dx * dx + dy * dy);
             t = Math.Max(0, Math.Min(1, t));
-
             double projectionX = start.X + t * dx;
             double projectionY = start.Y + t * dy;
             double diffX = point.X - projectionX;
@@ -1159,7 +1023,7 @@ namespace screenzap
 
         /// <summary>
         /// Moving-average smoothing of a freehand polyline (the "2D low-pass"). Endpoints are
-        /// preserved exactly; interior points are averaged over a window of <paramref name="window"/>
+        /// preserved exactly; interior points are averaged over a window of <paramref name = "window"/>
         /// samples. A window &lt; 2 (or fewer than 3 points) returns a copy unchanged.
         /// </summary>
         internal static List<Point> SmoothPolyline(IReadOnlyList<Point> points, int window)
@@ -1171,7 +1035,10 @@ namespace screenzap
             }
 
             int radius = window / 2;
-            var result = new List<Point>(n) { points[0] };
+            var result = new List<Point>(n)
+            {
+                points[0]
+            };
             for (int i = 1; i < n - 1; i++)
             {
                 int lo = Math.Max(0, i - radius);
@@ -1182,15 +1049,17 @@ namespace screenzap
                     sx += points[j].X;
                     sy += points[j].Y;
                 }
+
                 int count = hi - lo + 1;
                 result.Add(new Point((int)Math.Round(sx / count), (int)Math.Round(sy / count)));
             }
+
             result.Add(points[n - 1]);
             return result;
         }
 
         /// <summary>
-        /// Ramer–Douglas–Peucker decimation: drops samples that lie within <paramref name="epsilon"/>
+        /// Ramer–Douglas–Peucker decimation: drops samples that lie within <paramref name = "epsilon"/>
         /// pixels of the line between retained neighbours, collapsing near-straight runs while
         /// preserving the overall shape. Always keeps both endpoints.
         /// </summary>
@@ -1206,7 +1075,6 @@ namespace screenzap
             keep[0] = true;
             keep[n - 1] = true;
             SimplifySegment(points, 0, n - 1, epsilon, keep);
-
             var result = new List<Point>(n);
             for (int i = 0; i < n; i++)
             {
@@ -1215,6 +1083,7 @@ namespace screenzap
                     result.Add(points[i]);
                 }
             }
+
             return result;
         }
 
@@ -1247,8 +1116,7 @@ namespace screenzap
 
         private AnnotationHandle HitTestAnnotationHandle(Point formPoint)
         {
-            if (selectedAnnotation == null || (activeDrawingTool != DrawingTool.None
-                && !(activeDrawingTool == DrawingTool.Arrow && selectedAnnotation.Type == AnnotationType.Arrow)))
+            if (selectedAnnotation == null || (activeDrawingTool != DrawingTool.None && !(activeDrawingTool == DrawingTool.Arrow && selectedAnnotation.Type == AnnotationType.Arrow)))
                 return AnnotationHandle.None;
             int handleSize = selectedAnnotation.Type == AnnotationType.Arrow ? 16 : 8;
             var handles = GetAnnotationHandleRects(selectedAnnotation, handleSize);
@@ -1256,12 +1124,18 @@ namespace screenzap
             double nearestDistance = double.MaxValue;
             foreach (var kvp in handles)
             {
-                if (!kvp.Value.Contains(formPoint)) continue;
+                if (!kvp.Value.Contains(formPoint))
+                    continue;
                 double dx = formPoint.X - (kvp.Value.Left + handleSize / 2.0);
                 double dy = formPoint.Y - (kvp.Value.Top + handleSize / 2.0);
                 double distance = dx * dx + dy * dy;
-                if (distance < nearestDistance) { nearest = kvp.Key; nearestDistance = distance; }
+                if (distance < nearestDistance)
+                {
+                    nearest = kvp.Key;
+                    nearestDistance = distance;
+                }
             }
+
             return nearest;
         }
 
@@ -1274,8 +1148,7 @@ namespace screenzap
 
             var handle = HitTestAnnotationHandle(formPoint);
             var hit = HitTestAnnotation(pixelPoint, formPoint);
-            bool editingArrow = activeDrawingTool == DrawingTool.Arrow
-                && (handle != AnnotationHandle.None || (hit?.Type == AnnotationType.Arrow && HitTestTextAnnotation(pixelPoint, formPoint) == null));
+            bool editingArrow = activeDrawingTool == DrawingTool.Arrow && (handle != AnnotationHandle.None || (hit?.Type == AnnotationType.Arrow && HitTestTextAnnotation(pixelPoint, formPoint) == null));
             if (activeDrawingTool != DrawingTool.None && !editingArrow)
             {
                 BeginAnnotationDraft(pixelPoint, formPoint);
@@ -1290,18 +1163,20 @@ namespace screenzap
                 annotationDragOriginPixel = pixelPoint;
                 annotationDragStartFormPoint = formPoint;
                 annotationHandleMoved = false;
-                Cursor = Cursors.Cross;
+                Cursor = EditorCursor.Cross;
                 annotationChangedDuringDrag = false;
                 if (selectedAnnotation != null && IsCornerHandle(handle))
                 {
                     annotationResizeAnchorPixel = OppositeRectCorner(selectedAnnotation, handle);
                 }
+
                 // Snapshot the source polyline so the resize scales from the original each move.
                 if (selectedAnnotation?.Type == AnnotationType.Highlighter && IsCornerHandle(handle) && selectedAnnotation.Points != null)
                 {
                     highlighterResizeOriginalPoints = new List<Point>(selectedAnnotation.Points);
                     highlighterResizeOriginalBounds = selectedAnnotation.GetBounds();
                 }
+
                 return true;
             }
 
@@ -1323,12 +1198,13 @@ namespace screenzap
                     {
                         SelectTextAnnotation(null);
                     }
+
                     SelectAnnotation(hit, add: false);
                 }
+
                 // else: plain click on an already-selected item → preserve the multi-
                 // selection so the user can drag the group as a whole. (Replacing would
                 // collapse the selection to this single item and silently break multi-drag.)
-
                 // Only arm a drag when the click ended with the hit shape still in the
                 // selection — shift-deselecting (toggling a shape off) should not start
                 // a translate gesture.
@@ -1341,13 +1217,15 @@ namespace screenzap
                     {
                         textAnnotationSnapshotBeforeEdit = CloneTextAnnotations();
                     }
+
                     activeAnnotationHandle = AnnotationHandle.Move;
                     annotationDragOriginPixel = pixelPoint;
                     annotationDragStartFormPoint = formPoint;
                     annotationHandleMoved = false;
-                    Cursor = Cursors.SizeAll;
+                    Cursor = EditorCursor.SizeAll;
                     annotationChangedDuringDrag = false;
                 }
+
                 return true;
             }
 
@@ -1362,7 +1240,7 @@ namespace screenzap
         /// <summary>
         /// Start a drawing-tool draft at the given point. Whether the gesture ends up a
         /// draw or a selection click is decided on mouse-up from
-        /// <see cref="annotationDraftMoved"/>.
+        /// <see cref = "annotationDraftMoved"/>.
         /// </summary>
         private void BeginAnnotationDraft(Point pixelPoint, Point formPoint)
         {
@@ -1392,7 +1270,12 @@ namespace screenzap
                 Color = isHighlighter ? annotationHighlighterColor : annotationColor,
                 Opacity = isHighlighter ? annotationHighlighterOpacity : 1f,
                 Selected = true,
-                Points = isHighlighter ? new List<Point> { clampedPoint } : null
+                Points = isHighlighter ? new List<Point>
+                {
+                    clampedPoint
+                }
+
+                : null
             };
             annotationShapes.Add(workingAnnotation);
             SelectAnnotation(workingAnnotation);
@@ -1412,8 +1295,7 @@ namespace screenzap
         /// </summary>
         private void ResolveArmedToolClick(Point pixelPoint)
         {
-            var formPoint = PixelToFormCoord(pixelPoint);
-
+            var formPoint = ImageToViewport(pixelPoint);
             var textHit = HitTestTextAnnotation(pixelPoint, formPoint);
             if (textHit != null)
             {
@@ -1431,6 +1313,7 @@ namespace screenzap
                 {
                     SelectTextAnnotation(null);
                 }
+
                 SelectAnnotation(shapeHit);
                 return;
             }
@@ -1442,7 +1325,9 @@ namespace screenzap
                 SelectImageLayer(layerHit.Value);
                 return;
             }
-            if (activeDrawingTool == DrawingTool.Arrow) activeDrawingTool = DrawingTool.None;
+
+            if (activeDrawingTool == DrawingTool.Arrow)
+                activeDrawingTool = DrawingTool.None;
             DeselectImageLayerIfAny();
         }
 
@@ -1457,9 +1342,7 @@ namespace screenzap
             {
                 if (isDrawingAnnotation && workingAnnotation != null)
                 {
-                    if (!annotationDraftMoved
-                        && (Math.Abs(formPoint.X - annotationDraftStartFormPoint.X) >= AnnotationDraftClickSlopPixels
-                            || Math.Abs(formPoint.Y - annotationDraftStartFormPoint.Y) >= AnnotationDraftClickSlopPixels))
+                    if (!annotationDraftMoved && (Math.Abs(formPoint.X - annotationDraftStartFormPoint.X) >= AnnotationDraftClickSlopPixels || Math.Abs(formPoint.Y - annotationDraftStartFormPoint.Y) >= AnnotationDraftClickSlopPixels))
                     {
                         annotationDraftMoved = true;
                     }
@@ -1488,20 +1371,20 @@ namespace screenzap
                     }
 
                     annotationChangedDuringDrag = true;
-                    pictureBox1.Invalidate();
+                    viewport.Invalidate();
                     return true;
                 }
 
                 if (activeAnnotationHandle != AnnotationHandle.None)
                 {
-                    if (selectedAnnotation?.Type == AnnotationType.Arrow && !annotationHandleMoved && Math.Abs(formPoint.X - annotationDragStartFormPoint.X) < AnnotationDraftClickSlopPixels
-                        && Math.Abs(formPoint.Y - annotationDragStartFormPoint.Y) < AnnotationDraftClickSlopPixels) return true;
+                    if (selectedAnnotation?.Type == AnnotationType.Arrow && !annotationHandleMoved && Math.Abs(formPoint.X - annotationDragStartFormPoint.X) < AnnotationDraftClickSlopPixels && Math.Abs(formPoint.Y - annotationDragStartFormPoint.Y) < AnnotationDraftClickSlopPixels)
+                        return true;
                     annotationHandleMoved = true;
                     var beforeStart = selectedAnnotation?.Start;
                     var beforeEnd = selectedAnnotation?.End;
                     ApplyAnnotationHandleDrag(pixelPoint);
                     annotationChangedDuringDrag |= beforeStart != selectedAnnotation?.Start || beforeEnd != selectedAnnotation?.End;
-                    pictureBox1.Invalidate();
+                    viewport.Invalidate();
                     return true;
                 }
             }
@@ -1512,7 +1395,7 @@ namespace screenzap
                 if (handle != AnnotationHandle.None)
                 {
                     SetHoveredAnnotation(null);
-                    Cursor = Cursors.Cross;
+                    Cursor = EditorCursor.Cross;
                     return true;
                 }
 
@@ -1520,8 +1403,7 @@ namespace screenzap
                 SetHoveredAnnotation(hit);
                 if (hit != null)
                 {
-                    Cursor = activeDrawingTool != DrawingTool.None && !(activeDrawingTool == DrawingTool.Arrow && hit.Type == AnnotationType.Arrow)
-                        ? Cursors.Cross : hit.Type == AnnotationType.Arrow ? Cursors.SizeAll : Cursors.Hand;
+                    Cursor = activeDrawingTool != DrawingTool.None && !(activeDrawingTool == DrawingTool.Arrow && hit.Type == AnnotationType.Arrow) ? EditorCursor.Cross : hit.Type == AnnotationType.Arrow ? EditorCursor.SizeAll : EditorCursor.Hand;
                     return true;
                 }
             }
@@ -1531,9 +1413,10 @@ namespace screenzap
 
         private void SetHoveredAnnotationHandle(AnnotationHandle handle)
         {
-            if (hoveredAnnotationHandle == handle) return;
+            if (hoveredAnnotationHandle == handle)
+                return;
             hoveredAnnotationHandle = handle;
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         private void SetHoveredAnnotation(AnnotationShape? annotation)
@@ -1541,7 +1424,7 @@ namespace screenzap
             if (hoveredAnnotation != annotation)
             {
                 hoveredAnnotation = annotation;
-                pictureBox1?.Invalidate();
+                viewport?.Invalidate();
             }
         }
 
@@ -1570,8 +1453,8 @@ namespace screenzap
                 annotationSnapshotBeforeEdit = null;
                 annotationChangedDuringDrag = false;
                 highlighterResizeOriginalPoints = null;
-                HandleAnnotationMouseMove(releasePixel, PixelToFormCoord(releasePixel), MouseButtons.None);
-                pictureBox1?.Invalidate();
+                HandleAnnotationMouseMove(releasePixel, ImageToViewport(releasePixel), MouseButtons.None);
+                viewport?.Invalidate();
                 return true;
             }
 
@@ -1587,7 +1470,6 @@ namespace screenzap
 
             var clamped = ClampPointToImage(currentPixel);
             var target = selectedAnnotation;
-
             // Highlighter corner-drag scales the whole polyline about the opposite corner rather
             // than moving a single vertex.
             if (target.Type == AnnotationType.Highlighter && IsCornerHandle(activeAnnotationHandle))
@@ -1616,8 +1498,7 @@ namespace screenzap
 
             // Dragging either end of an arrow with Shift snaps it about the OTHER end, so the
             // held end stays put — the same rule the draw gesture uses about its anchor.
-            if (target.Type == AnnotationType.Arrow && IsShiftModifierDown()
-                && activeAnnotationHandle is AnnotationHandle.ArrowStart or AnnotationHandle.ArrowEnd)
+            if (target.Type == AnnotationType.Arrow && IsShiftModifierDown() && activeAnnotationHandle is AnnotationHandle.ArrowStart or AnnotationHandle.ArrowEnd)
             {
                 var pivot = activeAnnotationHandle == AnnotationHandle.ArrowStart ? target.End : target.Start;
                 clamped = ClampPointToImage(ConstrainPointToAngle(pivot, clamped));
@@ -1637,7 +1518,6 @@ namespace screenzap
                     }
 
                     delta = ClampMultiSelectionMoveDelta(delta);
-
                     if (delta.X == 0 && delta.Y == 0)
                     {
                         annotationDragOriginPixel = clamped;
@@ -1676,7 +1556,7 @@ namespace screenzap
         }
 
         /// <summary>
-        /// The corner that stays put while <paramref name="handle"/> is dragged. Rect
+        /// The corner that stays put while <paramref name = "handle"/> is dragged. Rect
         /// annotations are kept normalized, so Start is the top-left and End the bottom-right.
         /// </summary>
         private static Point OppositeRectCorner(AnnotationShape shape, AnnotationHandle handle) => handle switch
@@ -1686,15 +1566,11 @@ namespace screenzap
             AnnotationHandle.RectBottomLeft => new Point(shape.End.X, shape.Start.Y),
             _ => shape.Start,
         };
-
-        private static bool IsCornerHandle(AnnotationHandle handle) =>
-            handle is AnnotationHandle.RectTopLeft or AnnotationHandle.RectTopRight
-                   or AnnotationHandle.RectBottomLeft or AnnotationHandle.RectBottomRight;
-
+        private static bool IsCornerHandle(AnnotationHandle handle) => handle is AnnotationHandle.RectTopLeft or AnnotationHandle.RectTopRight or AnnotationHandle.RectBottomLeft or AnnotationHandle.RectBottomRight;
         /// <summary>
         /// Scale a highlighter's whole polyline about the corner opposite the dragged handle. The
         /// scale is taken from the ORIGINAL geometry captured at drag-start (see
-        /// <see cref="highlighterResizeOriginalPoints"/>), so repeated mouse-moves don't accumulate
+        /// <see cref = "highlighterResizeOriginalPoints"/>), so repeated mouse-moves don't accumulate
         /// rounding drift. A signed scale lets the stroke mirror if the cursor crosses the anchor.
         /// </summary>
         private void ScaleHighlighterByHandle(AnnotationShape target, AnnotationHandle handle, Point clamped)
@@ -1710,13 +1586,21 @@ namespace screenzap
             switch (handle)
             {
                 case AnnotationHandle.RectTopLeft:
-                    anchor = new Point(ob.Right, ob.Bottom); dragged = new Point(ob.Left, ob.Top); break;
+                    anchor = new Point(ob.Right, ob.Bottom);
+                    dragged = new Point(ob.Left, ob.Top);
+                    break;
                 case AnnotationHandle.RectTopRight:
-                    anchor = new Point(ob.Left, ob.Bottom); dragged = new Point(ob.Right, ob.Top); break;
+                    anchor = new Point(ob.Left, ob.Bottom);
+                    dragged = new Point(ob.Right, ob.Top);
+                    break;
                 case AnnotationHandle.RectBottomLeft:
-                    anchor = new Point(ob.Right, ob.Top); dragged = new Point(ob.Left, ob.Bottom); break;
+                    anchor = new Point(ob.Right, ob.Top);
+                    dragged = new Point(ob.Left, ob.Bottom);
+                    break;
                 default: // RectBottomRight
-                    anchor = new Point(ob.Left, ob.Top); dragged = new Point(ob.Right, ob.Bottom); break;
+                    anchor = new Point(ob.Left, ob.Top);
+                    dragged = new Point(ob.Right, ob.Bottom);
+                    break;
             }
 
             double denomX = dragged.X - anchor.X; // ±original width
@@ -1729,12 +1613,12 @@ namespace screenzap
             // New offset of the dragged corner from the anchor, floored so the stroke can't collapse.
             int dx = clamped.X - anchor.X;
             int dy = clamped.Y - anchor.Y;
-            if (Math.Abs(dx) < 2) dx = dx < 0 ? -2 : 2;
-            if (Math.Abs(dy) < 2) dy = dy < 0 ? -2 : 2;
-
+            if (Math.Abs(dx) < 2)
+                dx = dx < 0 ? -2 : 2;
+            if (Math.Abs(dy) < 2)
+                dy = dy < 0 ? -2 : 2;
             double sx = dx / denomX;
             double sy = dy / denomY;
-
             // Shift locks the stroke's aspect: take the larger magnitude so the drag still
             // follows the cursor outward, and keep each axis' direction so it can still mirror.
             if (IsShiftModifierDown())
@@ -1752,6 +1636,7 @@ namespace screenzap
                 int ny = anchor.Y + (int)Math.Round((op.Y - anchor.Y) * sy);
                 pts[i] = new Point(nx, ny);
             }
+
             target.Start = pts[0];
             target.End = pts[pts.Count - 1];
         }
@@ -1763,9 +1648,10 @@ namespace screenzap
         /// </summary>
         private Point ClampMultiSelectionMoveDelta(Point delta)
         {
-            if (pictureBox1?.Image == null) return delta;
-            if (selectedShapes.Count == 0 && selectedTexts.Count == 0) return delta;
-
+            if (viewport?.Image == null)
+                return delta;
+            if (selectedShapes.Count == 0 && selectedTexts.Count == 0)
+                return delta;
             int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
             foreach (var shape in selectedShapes)
             {
@@ -1776,6 +1662,7 @@ namespace screenzap
                 minY = Math.Min(minY, b.Top);
                 maxY = Math.Max(maxY, b.Bottom);
             }
+
             foreach (var text in selectedTexts)
             {
                 minX = Math.Min(minX, text.Position.X);
@@ -1808,6 +1695,7 @@ namespace screenzap
                     }
                 }
             }
+
             foreach (var text in selectedTexts)
             {
                 text.Position = text.Position.Add(delta);
@@ -1816,18 +1704,17 @@ namespace screenzap
 
         // Keyboard move/resize gesture. Auto-repeat fires a KeyDown per repeat, so the
         // presses are folded into ONE undo step that is closed when the arrow key comes back
-        // up (ImageEditor_KeyUp) or when the mouse takes the selection over.
+        // up (HandleKeyUp) or when the mouse takes the selection over.
         private bool annotationKeyTransformActive;
         private bool annotationKeyTransformChanged;
         private bool annotationKeyTransformStagedShapes;
         private bool annotationKeyTransformStagedTexts;
-
         /// <summary>
         /// Arrow keys drive the selected annotation objects: plain arrows nudge the whole
         /// selection (shapes and texts alike) by one image pixel, Shift accelerates to 10, and
         /// Ctrl resizes the selected SHAPES instead of moving them (Ctrl+Shift for 10px steps).
         /// Returns false whenever the selection isn't the right target, so the marquee handler
-        /// and WinForms' own navigation still get their turn.
+        /// and native input controls still get their turn.
         /// </summary>
         private bool TryHandleAnnotationArrowKey(Keys keyData)
         {
@@ -1835,33 +1722,22 @@ namespace screenzap
             bool ctrl = (keyData & Keys.Control) == Keys.Control;
             bool alt = (keyData & Keys.Alt) == Keys.Alt;
             bool shift = (keyData & Keys.Shift) == Keys.Shift;
-
             // Alt+Arrow belongs to the marquee's clone gesture and to the system menu.
             if (alt)
                 return false;
-
-            if (!HasEditableImage || pictureBox1?.Image == null)
+            if (!HasEditableImage || viewport?.Image == null)
                 return false;
-
             if (isStraightenToolActive || isCensorToolActive || isFreeRotateToolActive)
                 return false;
-
             // While a text annotation is being edited the arrows belong to the caret. Moving
             // the box out from under the caret mid-word is never what the keystroke meant.
             if (activeTextAnnotation?.IsEditing == true)
                 return false;
-
             if (selectedShapes.Count == 0 && selectedTexts.Count == 0)
                 return false;
-
             // A drag owns the selection while it is in flight.
             if (IsMouseGestureInFlight)
                 return false;
-
-            var focused = ActiveControl ?? FindFocusedControl();
-            if (focused is TextBoxBase || focused is ComboBox || focused is ToolStrip || focused?.Parent is ToolStrip)
-                return false;
-
             int step = shift ? 10 : 1;
             var delta = code switch
             {
@@ -1871,20 +1747,14 @@ namespace screenzap
                 Keys.Down => new Size(0, step),
                 _ => Size.Empty,
             };
-
             if (delta.IsEmpty)
                 return false;
-
             BeginAnnotationKeyTransform();
-
-            bool changed = ctrl
-                ? ResizeSelectedShapesBy(delta) | ResizeSelectedTextsBy(delta)
-                : MoveSelectionByKeyboard(delta);
-
+            bool changed = ctrl ? ResizeSelectedShapesBy(delta) | ResizeSelectedTextsBy(delta) : MoveSelectionByKeyboard(delta);
             if (changed)
             {
                 annotationKeyTransformChanged = true;
-                pictureBox1.Invalidate();
+                viewport.Invalidate();
             }
 
             // Claimed either way: a press that clamped against the canvas edge must still not
@@ -1898,14 +1768,7 @@ namespace screenzap
         /// the OS — including over an entirely different window — so a keyboard nudge silently
         /// did nothing whenever the user happened to be holding a mouse button elsewhere.
         /// </summary>
-        private bool IsMouseGestureInFlight =>
-            isDrawingAnnotation
-            || activeAnnotationHandle != AnnotationHandle.None
-            || isTextAnnotationDragging
-            || isDrawingRubberBand
-            || isMovingSelection
-            || isCtrlResizingSelection
-            || isLayerInteractionActive;
+        private bool IsMouseGestureInFlight => isDrawingAnnotation || activeAnnotationHandle != AnnotationHandle.None || isTextAnnotationDragging || isDrawingRubberBand || isMovingSelection || isCtrlResizingSelection || isLayerInteractionActive;
 
         private bool MoveSelectionByKeyboard(Size delta)
         {
@@ -1970,8 +1833,6 @@ namespace screenzap
 
             if (changed && selectedTextAnnotation != null)
             {
-                // Keep the text toolbar showing what the selection actually is.
-                SyncTextToolbarFromAnnotation(selectedTextAnnotation);
             }
 
             return changed;
@@ -1979,11 +1840,9 @@ namespace screenzap
 
         private const float MinKeyboardFontSize = 4f;
         private const float MaxKeyboardFontSize = 400f;
-
         private bool ResizeShapeBy(AnnotationShape shape, Size delta)
         {
             var bounds = GetImageBounds();
-
             if (shape.Type == AnnotationType.Highlighter)
             {
                 return ScaleHighlighterBy(shape, delta, bounds);
@@ -1995,11 +1854,7 @@ namespace screenzap
             var end = shape.End;
             int minX = shape.Type == AnnotationType.Rectangle ? shape.Start.X + 2 : bounds.Left;
             int minY = shape.Type == AnnotationType.Rectangle ? shape.Start.Y + 2 : bounds.Top;
-
-            var moved = new Point(
-                Math.Clamp(end.X + delta.Width, Math.Min(minX, bounds.Right), bounds.Right),
-                Math.Clamp(end.Y + delta.Height, Math.Min(minY, bounds.Bottom), bounds.Bottom));
-
+            var moved = new Point(Math.Clamp(end.X + delta.Width, Math.Min(minX, bounds.Right), bounds.Right), Math.Clamp(end.Y + delta.Height, Math.Min(minY, bounds.Bottom), bounds.Bottom));
             if (moved == end || (shape.Type == AnnotationType.Arrow && moved == shape.Start))
             {
                 return false;
@@ -2010,7 +1865,7 @@ namespace screenzap
         }
 
         /// <summary>
-        /// Scale a freehand stroke so its bounding box grows by <paramref name="delta"/>, held
+        /// Scale a freehand stroke so its bounding box grows by <paramref name = "delta"/>, held
         /// in place by its top-left corner. The new box is computed in integers and the points
         /// are mapped onto it, so the outer bounds stay exact across repeated presses.
         /// </summary>
@@ -2029,7 +1884,6 @@ namespace screenzap
             int newHeight = box.Height == 0 ? 0 : Math.Max(1, box.Height + delta.Height);
             newWidth = Math.Min(newWidth, bounds.Right - box.Left);
             newHeight = Math.Min(newHeight, bounds.Bottom - box.Top);
-
             if (newWidth == box.Width && newHeight == box.Height)
             {
                 return false;
@@ -2037,13 +1891,10 @@ namespace screenzap
 
             double scaleX = box.Width == 0 ? 1.0 : (double)newWidth / box.Width;
             double scaleY = box.Height == 0 ? 1.0 : (double)newHeight / box.Height;
-
             for (int i = 0; i < points.Count; i++)
             {
                 var p = points[i];
-                points[i] = new Point(
-                    box.Left + (int)Math.Round((p.X - box.Left) * scaleX),
-                    box.Top + (int)Math.Round((p.Y - box.Top) * scaleY));
+                points[i] = new Point(box.Left + (int)Math.Round((p.X - box.Left) * scaleX), box.Top + (int)Math.Round((p.Y - box.Top) * scaleY));
             }
 
             shape.Start = points[0];
@@ -2060,7 +1911,6 @@ namespace screenzap
 
             annotationKeyTransformActive = true;
             annotationKeyTransformChanged = false;
-
             // Only stage the snapshots that aren't staged already - one left by another gesture
             // belongs to that gesture, and stomping it would corrupt its undo step.
             annotationKeyTransformStagedShapes = selectedShapes.Count > 0 && annotationSnapshotBeforeEdit == null;
@@ -2089,15 +1939,16 @@ namespace screenzap
             }
 
             annotationKeyTransformActive = false;
-
             if (annotationKeyTransformChanged)
             {
                 CommitAnnotationUndo();
             }
             else
             {
-                if (annotationKeyTransformStagedShapes) annotationSnapshotBeforeEdit = null;
-                if (annotationKeyTransformStagedTexts) textAnnotationSnapshotBeforeEdit = null;
+                if (annotationKeyTransformStagedShapes)
+                    annotationSnapshotBeforeEdit = null;
+                if (annotationKeyTransformStagedTexts)
+                    textAnnotationSnapshotBeforeEdit = null;
             }
 
             annotationKeyTransformChanged = false;
@@ -2114,15 +1965,15 @@ namespace screenzap
         {
             bool hadShapes = selectedShapes.Count > 0;
             bool hadTexts = selectedTexts.Count > 0;
-            if (!hadShapes && !hadTexts) return;
-
+            if (!hadShapes && !hadTexts)
+                return;
             var shapesBefore = hadShapes ? CloneAnnotations() : null;
             var textsBefore = hadTexts ? CloneTextAnnotations() : null;
-
             foreach (var shape in selectedShapes.ToList())
             {
                 annotationShapes.Remove(shape);
             }
+
             foreach (var text in selectedTexts.ToList())
             {
                 textAnnotations.Remove(text);
@@ -2131,13 +1982,10 @@ namespace screenzap
             SelectAnnotation(null);
             SelectTextAnnotation(null);
             activeTextAnnotation = null;
-
             var shapesAfter = hadShapes ? CloneAnnotations() : null;
             var textsAfter = hadTexts ? CloneTextAnnotations() : null;
-            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false,
-                shapesBefore, shapesAfter,
-                textsBefore, textsAfter);
-            pictureBox1?.Invalidate();
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, shapesBefore, shapesAfter, textsBefore, textsAfter);
+            viewport?.Invalidate();
         }
 
         private void CompleteAnnotationDraft(Point pixelPoint)
@@ -2160,7 +2008,7 @@ namespace screenzap
                 annotationTranslateModeActive = false;
                 annotationDraftAnchorPixel = Point.Empty;
                 ResolveArmedToolClick(pixelPoint);
-                pictureBox1.Invalidate();
+                viewport.Invalidate();
                 return;
             }
 
@@ -2173,6 +2021,7 @@ namespace screenzap
                 {
                     pts.Add(clamped);
                 }
+
                 // Round jitter (moving average), then drop redundant samples (RDP).
                 var processed = SimplifyPolyline(SmoothPolyline(pts, 3), 1.5);
                 workingAnnotation.Points = processed;
@@ -2213,7 +2062,7 @@ namespace screenzap
             annotationChangedDuringDrag = false;
             annotationTranslateModeActive = false;
             annotationDraftAnchorPixel = Point.Empty;
-            pictureBox1.Invalidate();
+            viewport.Invalidate();
         }
 
         private void NormalizeRectangleAnnotation(AnnotationShape annotation)
@@ -2235,7 +2084,7 @@ namespace screenzap
                 return false;
             }
 
-            if ((Control.MouseButtons & MouseButtons.Left) == 0)
+            if ((pointerButtons & MouseButtons.Left) == 0)
             {
                 return false;
             }
@@ -2264,7 +2113,6 @@ namespace screenzap
             var candidateStart = annotationTranslationStartSnapshot.Add(delta);
             var candidateEnd = annotationTranslationEndSnapshot.Add(delta);
             var candidateAnchor = annotationTranslationAnchorSnapshot.Add(delta);
-
             var clampOffset = CalculateShapeClampOffset(candidateStart, candidateEnd);
             if (clampOffset != Point.Empty)
             {
@@ -2276,12 +2124,11 @@ namespace screenzap
             workingAnnotation.Start = candidateStart;
             workingAnnotation.End = candidateEnd;
             annotationDraftAnchorPixel = candidateAnchor;
-
         }
 
         private Point CalculateShapeClampOffset(Point start, Point end)
         {
-            if (pictureBox1?.Image == null)
+            if (viewport?.Image == null)
             {
                 return Point.Empty;
             }
@@ -2291,7 +2138,6 @@ namespace screenzap
             int maxX = Math.Max(start.X, end.X);
             int minY = Math.Min(start.Y, end.Y);
             int maxY = Math.Max(start.Y, end.Y);
-
             int offsetX = 0;
             if (minX < bounds.Left)
             {
@@ -2362,10 +2208,7 @@ namespace screenzap
             const double Step = Math.PI / 4;
             double length = Math.Sqrt(dx * dx + dy * dy);
             double snapped = Math.Round(Math.Atan2(dy, dx) / Step) * Step;
-
-            return new Point(
-                anchor.X + (int)Math.Round(Math.Cos(snapped) * length),
-                anchor.Y + (int)Math.Round(Math.Sin(snapped) * length));
+            return new Point(anchor.X + (int)Math.Round(Math.Cos(snapped) * length), anchor.Y + (int)Math.Round(Math.Sin(snapped) * length));
         }
 
         /// <summary>
@@ -2377,7 +2220,7 @@ namespace screenzap
         private Point ConstrainDraftCornerToSquare(Point anchor, Point current)
         {
             var square = ConstrainPointToSquare(anchor, current);
-            if (pictureBox1?.Image == null)
+            if (viewport?.Image == null)
             {
                 return square;
             }
@@ -2387,11 +2230,9 @@ namespace screenzap
             int signY = square.Y >= anchor.Y ? 1 : -1;
             // ConstrainPointToSquare guarantees equal |dx| and |dy|, so either is the side.
             int size = Math.Abs(square.X - anchor.X);
-
             int roomX = signX > 0 ? bounds.Right - anchor.X : anchor.X - bounds.Left;
             int roomY = signY > 0 ? bounds.Bottom - anchor.Y : anchor.Y - bounds.Top;
             size = Math.Min(size, Math.Min(roomX, roomY));
-
             return new Point(anchor.X + signX * size, anchor.Y + signY * size);
         }
 
@@ -2399,7 +2240,6 @@ namespace screenzap
         {
             int dx = current.X - anchor.X;
             int dy = current.Y - anchor.Y;
-
             if (dx == 0 && dy == 0)
             {
                 return current;
@@ -2408,27 +2248,25 @@ namespace screenzap
             int absDx = Math.Abs(dx);
             int absDy = Math.Abs(dy);
             int size = Math.Max(absDx, absDy);
-
             int signX = dx == 0 ? (dy >= 0 ? 1 : -1) : Math.Sign(dx);
             int signY = dy == 0 ? (dx >= 0 ? 1 : -1) : Math.Sign(dy);
-
             return new Point(anchor.X + size * signX, anchor.Y + size * signY);
         }
 
         private Point GetCursorPixelPosition()
         {
-            if (pictureBox1 == null)
+            if (viewport == null)
             {
                 return Point.Empty;
             }
 
             var cursorClient = CurrentPointerInViewport();
-            return FormCoordToPixel(cursorClient);
+            return ViewportToImage(cursorClient);
         }
 
         private Point ClampPointToImage(Point point)
         {
-            if (pictureBox1.Image == null)
+            if (viewport.Image == null)
             {
                 return point;
             }
@@ -2458,9 +2296,7 @@ namespace screenzap
             // a snapshot on the corresponding type at drag-start.
             var shapesAfter = annotationSnapshotBeforeEdit != null ? CloneAnnotations() : null;
             var textsAfter = textAnnotationSnapshotBeforeEdit != null ? CloneTextAnnotations() : null;
-            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false,
-                annotationSnapshotBeforeEdit, shapesAfter,
-                textAnnotationSnapshotBeforeEdit, textsAfter);
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, annotationSnapshotBeforeEdit, shapesAfter, textAnnotationSnapshotBeforeEdit, textsAfter);
             annotationSnapshotBeforeEdit = null;
             textAnnotationSnapshotBeforeEdit = null;
         }
@@ -2490,13 +2326,11 @@ namespace screenzap
 
             var newBounds = new Rectangle(Point.Empty, newSize);
             var updated = new List<AnnotationShape>();
-
             foreach (var shape in annotationShapes)
             {
                 var clone = shape.Clone();
                 clone.Start = clone.Start.Subtract(cropOrigin);
                 clone.End = clone.End.Subtract(cropOrigin);
-
                 if (clone.Type == AnnotationType.Highlighter)
                 {
                     var path = clone.Points;
@@ -2504,15 +2338,18 @@ namespace screenzap
                     {
                         continue;
                     }
+
                     for (int i = 0; i < path.Count; i++)
                     {
                         path[i] = ClampPointToBounds(path[i].Subtract(cropOrigin), newBounds);
                     }
+
                     // Drop strokes that collapsed to (effectively) a single point after clamping.
                     if (!clone.IsValid())
                     {
                         continue;
                     }
+
                     clone.Start = path[0];
                     clone.End = path[path.Count - 1];
                     updated.Add(clone);
@@ -2551,70 +2388,6 @@ namespace screenzap
             SyncSelectedAnnotation();
         }
 
-        private void InitializeAnnotationToolbar()
-        {
-            if (lineThicknessComboBox != null)
-            {
-                lineThicknessComboBox.Items.AddRange(new object[] { "1", "2", "3", "4", "5", "6", "8", "10" });
-                int defaultIndex = lineThicknessComboBox.Items.IndexOf(annotationLineThickness.ToString());
-                lineThicknessComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 1; // Default to "2"
-            }
-
-            if (arrowSizeComboBox != null)
-            {
-                arrowSizeComboBox.Items.AddRange(new object[] { "0", "0.5", "0.75", "1", "1.25", "1.5", "2", "2.5", "3" });
-                int defaultIndex = arrowSizeComboBox.Items.IndexOf(ArrowSizeToComboBoxText(annotationArrowSize));
-                arrowSizeComboBox.SelectedIndex = defaultIndex >= 0
-                    ? defaultIndex
-                    : arrowSizeComboBox.Items.IndexOf("1");
-            }
-
-            if (highlighterThicknessComboBox != null)
-            {
-                highlighterThicknessComboBox.Items.AddRange(new object[] { "8", "12", "16", "20", "24" });
-                int defaultIndex = highlighterThicknessComboBox.Items.IndexOf(annotationHighlighterThickness.ToString());
-                highlighterThicknessComboBox.SelectedIndex = defaultIndex >= 0 ? defaultIndex : 1; // Default to "12"
-            }
-
-            if (highlighterOpacityTrackBar != null)
-            {
-                int percent = HighlighterOpacityToPercent(annotationHighlighterOpacity);
-                highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
-            }
-            UpdateHighlighterOpacityValueLabel(HighlighterOpacityToPercent(annotationHighlighterOpacity));
-
-            UpdateAnnotationColorButtonAppearance();
-        }
-
-        private void UpdateHighlighterOpacityValueLabel(int? percent, bool mixed = false)
-        {
-            if (highlighterOpacityValueLabel == null)
-            {
-                return;
-            }
-
-            highlighterOpacityValueLabel.Text = mixed
-                ? "Mixed"
-                : $"{Math.Clamp(percent ?? 0, 0, 100)}%";
-        }
-
-        private void annotationColorButton_Click(object? sender, EventArgs e)
-        {
-            // Choose the dialog's starting color: use the unanimous selection color when
-            // all selected items agree, fall back to the primary's color or tool default.
-            if (SharedColorDialog.ShowDialog(
-                    this,
-                    GetRepresentativeSelectionColor() ?? ActiveToolDefaultColor,
-                    out Color selectedColor) != DialogResult.OK)
-            {
-                return;
-            }
-
-            ActiveToolDefaultColor = selectedColor;
-            ApplyColorToSelection(selectedColor);
-            UpdateAnnotationColorButtonAppearance();
-        }
-
         /// <summary>
         /// Push one undo step that applies the colour to every selected shape and text
         /// annotation. Items in the selection that don't have an applicable colour slot
@@ -2631,13 +2404,15 @@ namespace screenzap
 
             List<AnnotationShape>? shapesBefore = null;
             List<TextAnnotation>? textsBefore = null;
-            if (anyShapeChange) shapesBefore = CloneAnnotations();
-            if (anyTextChange) textsBefore = CloneTextAnnotations();
-
+            if (anyShapeChange)
+                shapesBefore = CloneAnnotations();
+            if (anyTextChange)
+                textsBefore = CloneTextAnnotations();
             foreach (var shape in selectedShapes)
             {
                 shape.Color = color;
             }
+
             foreach (var text in selectedTexts)
             {
                 text.TextColor = color;
@@ -2647,9 +2422,8 @@ namespace screenzap
             // multi-target colour change.
             var shapesAfter = anyShapeChange ? CloneAnnotations() : null;
             var textsAfter = anyTextChange ? CloneTextAnnotations() : null;
-            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false,
-                shapesBefore, shapesAfter, textsBefore, textsAfter);
-            pictureBox1?.Invalidate();
+            PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, shapesBefore, shapesAfter, textsBefore, textsAfter);
+            viewport?.Invalidate();
         }
 
         /// <summary>
@@ -2661,111 +2435,21 @@ namespace screenzap
             Color? candidate = null;
             foreach (var shape in selectedShapes)
             {
-                if (candidate == null) candidate = shape.Color;
-                else if (candidate.Value.ToArgb() != shape.Color.ToArgb()) return null;
+                if (candidate == null)
+                    candidate = shape.Color;
+                else if (candidate.Value.ToArgb() != shape.Color.ToArgb())
+                    return null;
             }
+
             foreach (var text in selectedTexts)
             {
-                if (candidate == null) candidate = text.TextColor;
-                else if (candidate.Value.ToArgb() != text.TextColor.ToArgb()) return null;
+                if (candidate == null)
+                    candidate = text.TextColor;
+                else if (candidate.Value.ToArgb() != text.TextColor.ToArgb())
+                    return null;
             }
+
             return candidate;
-        }
-
-        private void UpdateAnnotationColorButtonAppearance()
-        {
-            if (annotationColorButton == null)
-            {
-                return;
-            }
-
-            int selectionCount = selectedShapes.Count + selectedTexts.Count;
-            var representative = GetRepresentativeSelectionColor();
-
-            if (selectionCount > 1 && representative == null)
-            {
-                // Mixed colours across the multi-selection — neutral swatch + "Mixed".
-                annotationColorButton.BackColor = SystemColors.Control;
-                annotationColorButton.ForeColor = SystemColors.ControlText;
-                annotationColorButton.Text = "Mixed";
-                return;
-            }
-
-            var swatch = representative ?? ActiveToolDefaultColor;
-            annotationColorButton.BackColor = swatch;
-            annotationColorButton.ForeColor = GetContrastColor(swatch);
-            annotationColorButton.Text = "Color";
-        }
-
-        private void lineThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (isSyncingAnnotationToolbarControls)
-            {
-                return;
-            }
-            if (lineThicknessComboBox?.SelectedItem is string thicknessStr &&
-                float.TryParse(thicknessStr, out float thickness) && thickness > 0)
-            {
-                annotationLineThickness = thickness;
-                ApplyLineThicknessToSelection(thickness);
-            }
-        }
-
-        private void highlighterThicknessComboBox_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (isSyncingAnnotationToolbarControls)
-            {
-                return;
-            }
-            if (highlighterThicknessComboBox?.SelectedItem is string thicknessStr &&
-                float.TryParse(thicknessStr, out float thickness) && thickness > 0)
-            {
-                annotationHighlighterThickness = thickness;
-                ApplyHighlighterThicknessToSelection(thickness);
-            }
-        }
-
-        private void highlighterOpacityTrackBar_ValueChanged(object? sender, EventArgs e)
-        {
-            if (highlighterOpacityTrackBar == null)
-            {
-                return;
-            }
-
-            int percent = highlighterOpacityTrackBar.Value;
-            UpdateHighlighterOpacityValueLabel(percent);
-
-            if (isSyncingAnnotationToolbarControls)
-            {
-                return;
-            }
-
-            annotationHighlighterOpacity = HighlighterOpacityFromPercent(percent);
-            ApplyHighlighterOpacityToSelection(annotationHighlighterOpacity);
-        }
-
-        private void arrowSizeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (isSyncingAnnotationToolbarControls)
-            {
-                return;
-            }
-            if (TryGetArrowSize(arrowSizeComboBox?.SelectedItem, out decimal size))
-            {
-                annotationArrowSize = size;
-                ApplyArrowSizeToSelection(size);
-            }
-        }
-
-        private static string ArrowSizeToComboBoxText(decimal size) =>
-            Math.Max(0m, size).ToString("0.##", CultureInfo.InvariantCulture);
-
-        private static bool TryGetArrowSize(object? selectedItem, out decimal size)
-        {
-            size = 0m;
-            return selectedItem is string sizeText
-                && decimal.TryParse(sizeText, NumberStyles.Float, CultureInfo.InvariantCulture, out size)
-                && size >= 0m;
         }
 
         /// <summary>
@@ -2777,9 +2461,7 @@ namespace screenzap
         {
             // Highlighters have their own thickness combo (8–24); the line combo governs
             // arrows and rectangles only.
-            var targets = selectedShapes
-                .Where(s => s.Type != AnnotationType.Highlighter && s.LineThickness != thickness)
-                .ToList();
+            var targets = selectedShapes.Where(s => s.Type != AnnotationType.Highlighter && s.LineThickness != thickness).ToList();
             if (targets.Count == 0)
             {
                 return;
@@ -2790,9 +2472,10 @@ namespace screenzap
             {
                 shape.LineThickness = thickness;
             }
+
             var after = CloneAnnotations();
             PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         /// <summary>
@@ -2802,9 +2485,7 @@ namespace screenzap
         /// </summary>
         private void ApplyHighlighterThicknessToSelection(float thickness)
         {
-            var targets = selectedShapes
-                .Where(s => s.Type == AnnotationType.Highlighter && s.LineThickness != thickness)
-                .ToList();
+            var targets = selectedShapes.Where(s => s.Type == AnnotationType.Highlighter && s.LineThickness != thickness).ToList();
             if (targets.Count == 0)
             {
                 return;
@@ -2815,17 +2496,16 @@ namespace screenzap
             {
                 shape.LineThickness = thickness;
             }
+
             var after = CloneAnnotations();
             PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         private void ApplyHighlighterOpacityToSelection(float opacity)
         {
             float clampedOpacity = ClampHighlighterOpacity(opacity);
-            var targets = selectedShapes
-                .Where(s => s.Type == AnnotationType.Highlighter && Math.Abs(s.Opacity - clampedOpacity) > 0.0001f)
-                .ToList();
+            var targets = selectedShapes.Where(s => s.Type == AnnotationType.Highlighter && Math.Abs(s.Opacity - clampedOpacity) > 0.0001f).ToList();
             if (targets.Count == 0)
             {
                 return;
@@ -2836,9 +2516,10 @@ namespace screenzap
             {
                 shape.Opacity = clampedOpacity;
             }
+
             var after = CloneAnnotations();
             PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
-            pictureBox1?.Invalidate();
+            viewport?.Invalidate();
         }
 
         /// <summary>
@@ -2848,9 +2529,7 @@ namespace screenzap
         /// </summary>
         private void ApplyArrowSizeToSelection(decimal size)
         {
-            var targets = selectedShapes
-                .Where(s => s.Type == AnnotationType.Arrow && s.ArrowSize != size)
-                .ToList();
+            var targets = selectedShapes.Where(s => s.Type == AnnotationType.Arrow && s.ArrowSize != size).ToList();
             if (targets.Count == 0)
             {
                 return;
@@ -2861,95 +2540,10 @@ namespace screenzap
             {
                 shape.ArrowSize = size;
             }
+
             var after = CloneAnnotations();
             PushUndoStep(Rectangle.Empty, null, null, Selection, Selection, false, before, after);
-            pictureBox1?.Invalidate();
-        }
-
-        private void UpdateAnnotationToolbarFromSelection()
-        {
-            // Programmatic pushes — the handlers must not interpret these as user edits
-            // and write them back into the selection.
-            isSyncingAnnotationToolbarControls = true;
-            try
-            {
-                if (lineThicknessComboBox != null && selectedShapes.Count > 0)
-                {
-                    float? unanimous = GetUnanimousLineThickness();
-                    if (unanimous.HasValue)
-                    {
-                        int index = lineThicknessComboBox.Items.IndexOf(unanimous.Value.ToString());
-                        lineThicknessComboBox.SelectedIndex = index >= 0 ? index : -1;
-                    }
-                    else
-                    {
-                        // Mixed thicknesses across the selection — show the combobox blank
-                        // (no value) as the indeterminate state. Picking a value from the
-                        // dropdown will apply it to every selected shape.
-                        lineThicknessComboBox.SelectedIndex = -1;
-                    }
-                }
-
-                if (highlighterThicknessComboBox != null && AnyHighlighterInSelection())
-                {
-                    float? unanimous = GetUnanimousHighlighterThickness();
-                    if (unanimous.HasValue)
-                    {
-                        int index = highlighterThicknessComboBox.Items.IndexOf(unanimous.Value.ToString());
-                        highlighterThicknessComboBox.SelectedIndex = index >= 0 ? index : -1;
-                    }
-                    else
-                    {
-                        highlighterThicknessComboBox.SelectedIndex = -1;
-                    }
-                }
-
-                if (highlighterOpacityTrackBar != null)
-                {
-                    if (AnyHighlighterInSelection())
-                    {
-                        float? unanimous = GetUnanimousHighlighterOpacity();
-                        if (unanimous.HasValue)
-                        {
-                            int percent = HighlighterOpacityToPercent(unanimous.Value);
-                            highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
-                            UpdateHighlighterOpacityValueLabel(percent);
-                        }
-                        else
-                        {
-                            int percent = HighlighterOpacityToPercent(annotationHighlighterOpacity);
-                            highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
-                            UpdateHighlighterOpacityValueLabel(null, mixed: true);
-                        }
-                    }
-                    else if (activeDrawingTool == DrawingTool.Highlighter)
-                    {
-                        int percent = HighlighterOpacityToPercent(annotationHighlighterOpacity);
-                        highlighterOpacityTrackBar.Value = Math.Clamp(percent, highlighterOpacityTrackBar.Minimum, highlighterOpacityTrackBar.Maximum);
-                        UpdateHighlighterOpacityValueLabel(percent);
-                    }
-                }
-
-                if (arrowSizeComboBox != null && AnyArrowInSelection())
-                {
-                    decimal? unanimous = GetUnanimousArrowSize();
-                    if (unanimous.HasValue)
-                    {
-                        int index = arrowSizeComboBox.Items.IndexOf(ArrowSizeToComboBoxText(unanimous.Value));
-                        arrowSizeComboBox.SelectedIndex = index >= 0 ? index : -1;
-                    }
-                    else
-                    {
-                        arrowSizeComboBox.SelectedIndex = -1;
-                    }
-                }
-            }
-            finally
-            {
-                isSyncingAnnotationToolbarControls = false;
-            }
-
-            UpdateAnnotationColorButtonAppearance();
+            viewport?.Invalidate();
         }
 
         private float? GetUnanimousLineThickness()
@@ -2957,10 +2551,14 @@ namespace screenzap
             float? candidate = null;
             foreach (var shape in selectedShapes)
             {
-                if (shape.Type == AnnotationType.Highlighter) continue;
-                if (candidate == null) candidate = shape.LineThickness;
-                else if (candidate.Value != shape.LineThickness) return null;
+                if (shape.Type == AnnotationType.Highlighter)
+                    continue;
+                if (candidate == null)
+                    candidate = shape.LineThickness;
+                else if (candidate.Value != shape.LineThickness)
+                    return null;
             }
+
             return candidate;
         }
 
@@ -2969,10 +2567,14 @@ namespace screenzap
             float? candidate = null;
             foreach (var shape in selectedShapes)
             {
-                if (shape.Type != AnnotationType.Highlighter) continue;
-                if (candidate == null) candidate = shape.LineThickness;
-                else if (candidate.Value != shape.LineThickness) return null;
+                if (shape.Type != AnnotationType.Highlighter)
+                    continue;
+                if (candidate == null)
+                    candidate = shape.LineThickness;
+                else if (candidate.Value != shape.LineThickness)
+                    return null;
             }
+
             return candidate;
         }
 
@@ -2981,33 +2583,35 @@ namespace screenzap
             float? candidate = null;
             foreach (var shape in selectedShapes)
             {
-                if (shape.Type != AnnotationType.Highlighter) continue;
-                if (candidate == null) candidate = shape.Opacity;
-                else if (Math.Abs(candidate.Value - shape.Opacity) > 0.0001f) return null;
+                if (shape.Type != AnnotationType.Highlighter)
+                    continue;
+                if (candidate == null)
+                    candidate = shape.Opacity;
+                else if (Math.Abs(candidate.Value - shape.Opacity) > 0.0001f)
+                    return null;
             }
+
             return candidate;
         }
 
-        private bool AnyHighlighterInSelection() =>
-            selectedShapes.Any(s => s.Type == AnnotationType.Highlighter);
-
-        private bool AnyNonHighlighterShapeInSelection() =>
-            selectedShapes.Any(s => s.Type != AnnotationType.Highlighter);
-
+        private bool AnyHighlighterInSelection() => selectedShapes.Any(s => s.Type == AnnotationType.Highlighter);
+        private bool AnyNonHighlighterShapeInSelection() => selectedShapes.Any(s => s.Type != AnnotationType.Highlighter);
         private decimal? GetUnanimousArrowSize()
         {
             decimal? candidate = null;
             foreach (var shape in selectedShapes)
             {
-                if (shape.Type != AnnotationType.Arrow) continue;
-                if (candidate == null) candidate = shape.ArrowSize;
-                else if (candidate.Value != shape.ArrowSize) return null;
+                if (shape.Type != AnnotationType.Arrow)
+                    continue;
+                if (candidate == null)
+                    candidate = shape.ArrowSize;
+                else if (candidate.Value != shape.ArrowSize)
+                    return null;
             }
+
             return candidate;
         }
 
-        private bool AnyArrowInSelection() =>
-            selectedShapes.Any(s => s.Type == AnnotationType.Arrow);
-
+        private bool AnyArrowInSelection() => selectedShapes.Any(s => s.Type == AnnotationType.Arrow);
     }
 }

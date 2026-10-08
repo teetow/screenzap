@@ -5,20 +5,18 @@ using System.Windows.Forms;
 
 namespace screenzap
 {
-    public partial class ImageEditor
+    public partial class ImageDocumentEditor
     {
-        // isFreeRotateToolActive lives on ImageEditor.Tool.cs as a computed accessor.
+        // isFreeRotateToolActive lives on ImageDocumentEditor.Tool.cs as a computed accessor.
         private float freeRotateAngleDeg;
         private bool isFreeRotateDragging;
         private Point freeRotateDragOriginPixel;
         private float freeRotateDragStartAngleDeg;
         private Rectangle freeRotateTargetBounds;
-
         // Screen-space dimensions of the drag handle, constant regardless of zoom — mirrors
         // the image layer rotate handle's LayerHandleScreenSize/LayerRotationHandleScreenOffset.
         private const float FreeRotateHandleScreenOffset = 32f;
         private const float FreeRotateHandleScreenSize = 10f;
-
         internal bool ActivateFreeRotateTool()
         {
             if (!HasEditableImage)
@@ -36,23 +34,8 @@ namespace screenzap
             freeRotateAngleDeg = 0f;
             isFreeRotateDragging = false;
             freeRotateTargetBounds = Selection.IsEmpty ? GetImageBounds() : ClampToImage(Selection);
-
-            Cursor = Cursors.Default;
-
-            if (freeRotateToolStripButton != null)
-            {
-                freeRotateToolStripButton.Checked = true;
-            }
-
-            if (rotateToolStrip != null)
-            {
-                rotateToolStrip.Visible = true;
-                PositionOverlayToolStrips();
-            }
-
-            UpdateRotateToolbarState();
-            UpdateCommandUI();
-            pictureBox1.Invalidate();
+            Cursor = EditorCursor.Default;
+            viewport.Invalidate();
             return true;
         }
 
@@ -71,21 +54,8 @@ namespace screenzap
             isFreeRotateToolActive = false;
             isFreeRotateDragging = false;
             freeRotateAngleDeg = 0f;
-            Cursor = Cursors.Default;
-
-            if (freeRotateToolStripButton != null)
-            {
-                freeRotateToolStripButton.Checked = false;
-            }
-
-            if (rotateToolStrip != null)
-            {
-                rotateToolStrip.Visible = false;
-                PositionOverlayToolStrips();
-            }
-
-            UpdateCommandUI();
-            pictureBox1.Invalidate();
+            Cursor = EditorCursor.Default;
+            viewport.Invalidate();
         }
 
         // The live preview rotates via GDI+ RotateTransform, where a positive angle is CLOCKWISE.
@@ -95,12 +65,8 @@ namespace screenzap
         // matches what the handle showed. (The straighten tool passes its own OpenCV-convention
         // correction angle straight through, so it is unaffected.)
         private void ApplyFreeRotate() => RotateEditorContentBy(-freeRotateAngleDeg);
-
         private Rectangle FreeRotateBounds => freeRotateTargetBounds;
-
-        private PointF FreeRotateCenterPixel => new PointF(
-            freeRotateTargetBounds.X + freeRotateTargetBounds.Width / 2f,
-            freeRotateTargetBounds.Y + freeRotateTargetBounds.Height / 2f);
+        private PointF FreeRotateCenterPixel => new PointF(freeRotateTargetBounds.X + freeRotateTargetBounds.Width / 2f, freeRotateTargetBounds.Y + freeRotateTargetBounds.Height / 2f);
 
         /// <summary>
         /// The handle's current image-pixel position: it sits above the target's top-center at
@@ -108,9 +74,9 @@ namespace screenzap
         /// </summary>
         private Point GetFreeRotateHandleImagePoint()
         {
-            float zoom = pictureBox1 != null ? (float)pictureBox1.ZoomLevel : 1f;
-            if (zoom <= 0f) zoom = 1f;
-
+            float zoom = viewport != null ? (float)viewport.ZoomLevel : 1f;
+            if (zoom <= 0f)
+                zoom = 1f;
             var bounds = freeRotateTargetBounds;
             var restPoint = new PointF(bounds.Left + bounds.Width / 2f, bounds.Top - FreeRotateHandleScreenOffset / zoom);
             return Point.Round(RotatePointAroundCenter(restPoint, bounds, freeRotateAngleDeg));
@@ -123,9 +89,9 @@ namespace screenzap
                 return false;
             }
 
-            float zoom = pictureBox1 != null ? (float)pictureBox1.ZoomLevel : 1f;
-            if (zoom <= 0f) zoom = 1f;
-
+            float zoom = viewport != null ? (float)viewport.ZoomLevel : 1f;
+            if (zoom <= 0f)
+                zoom = 1f;
             float tol = (FreeRotateHandleScreenSize / 2f) * 1.5f / zoom;
             return IsNearF(pixelPoint, GetFreeRotateHandleImagePoint(), tol);
         }
@@ -135,7 +101,7 @@ namespace screenzap
             isFreeRotateDragging = true;
             freeRotateDragOriginPixel = pixelPoint;
             freeRotateDragStartAngleDeg = freeRotateAngleDeg;
-            Cursor = Cursors.Cross;
+            Cursor = EditorCursor.Cross;
         }
 
         private void UpdateFreeRotateDrag(Point pixelPoint)
@@ -144,7 +110,6 @@ namespace screenzap
             double startAngle = Math.Atan2(freeRotateDragOriginPixel.Y - center.Y, freeRotateDragOriginPixel.X - center.X) * 180.0 / Math.PI;
             double currentAngle = Math.Atan2(pixelPoint.Y - center.Y, pixelPoint.X - center.X) * 180.0 / Math.PI;
             float newAngle = NormalizeLayerAngle(freeRotateDragStartAngleDeg + (float)(currentAngle - startAngle));
-
             if (IsShiftModifierDown())
             {
                 newAngle = (float)(Math.Round(newAngle / 15.0) * 15.0);
@@ -153,60 +118,46 @@ namespace screenzap
             if (newAngle != freeRotateAngleDeg)
             {
                 freeRotateAngleDeg = newAngle;
-                UpdateRotateToolbarState();
-                pictureBox1?.Invalidate();
+                viewport?.Invalidate();
             }
         }
 
         private void EndFreeRotateDrag()
         {
             isFreeRotateDragging = false;
-            Cursor = Cursors.Default;
-        }
-
-        private void UpdateRotateToolbarState()
-        {
-            if (rotateHintLabel != null)
-            {
-                rotateHintLabel.Text = Math.Abs(freeRotateAngleDeg) < 0.05f
-                    ? "Drag the handle to rotate (hold Shift for 15° steps), then Apply"
-                    : $"{freeRotateAngleDeg:F1}°";
-            }
-
-            if (rotateApplyButton != null)
-            {
-                rotateApplyButton.Enabled = Math.Abs(freeRotateAngleDeg) >= 0.05f;
-            }
+            Cursor = EditorCursor.Default;
         }
 
         /// <summary>
         /// Draws the interactive rotate handle + wireframe bounds, plus a live raster preview of
-        /// the rotated content, when the free-rotate tool is engaged. Call from pictureBox1_Paint.
+        /// the rotated content, when the free-rotate tool is engaged. Call from ViewportPaint.
         /// </summary>
         internal void DrawFreeRotateOverlay(Graphics g)
         {
-            if (!isFreeRotateToolActive || freeRotateTargetBounds.IsEmpty || pictureBox1?.Image == null)
+            if (!isFreeRotateToolActive || freeRotateTargetBounds.IsEmpty || viewport?.Image == null)
             {
                 return;
             }
 
-            float zoom = (float)pictureBox1.ZoomLevel;
-            if (zoom <= 0f) zoom = 1f;
-            PointF pan = pictureBox1.Metrics.PanOffset;
-
+            float zoom = (float)viewport.ZoomLevel;
+            if (zoom <= 0f)
+                zoom = 1f;
+            PointF pan = viewport.Metrics.PanOffset;
             var bounds = freeRotateTargetBounds;
             float cx = pan.X + (bounds.X + bounds.Width / 2f) * zoom;
             float cy = pan.Y + (bounds.Y + bounds.Height / 2f) * zoom;
             float hw = bounds.Width * zoom / 2f;
             float hh = bounds.Height * zoom / 2f;
-
             DrawFreeRotatePreviewContent(g, cx, cy, hw, hh);
-
             var state = g.Save();
             g.TranslateTransform(cx, cy);
             g.RotateTransform(freeRotateAngleDeg);
+            using (var pen = new Pen(Color.DodgerBlue, 1.25f)
+            {
+                DashStyle = DashStyle.Dash
+            }
 
-            using (var pen = new Pen(Color.DodgerBlue, 1.25f) { DashStyle = DashStyle.Dash })
+            )
             {
                 g.DrawRectangle(pen, -hw, -hh, hw * 2f, hh * 2f);
             }
@@ -218,13 +169,12 @@ namespace screenzap
             }
 
             DrawRotationHandle(g, 0f, stemEndY);
-
             g.Restore(state);
         }
 
         /// <summary>
         /// Fast GDI+ preview of the rotated pixels (not the final quality bake — that happens on
-        /// Apply via <see cref="lib.ImageStraightener.RotateImage"/>). Whole-image rotate erases
+        /// Apply via <see cref = "lib.ImageStraightener.RotateImage"/>). Whole-image rotate erases
         /// the pre-rotation footprint so the corners the rotated image no longer covers show the
         /// canvas backdrop; in-place selection rotate clips to the original marquee footprint so
         /// the untouched image shows through the corners instead — exactly what Apply bakes.
@@ -232,11 +182,10 @@ namespace screenzap
         private void DrawFreeRotatePreviewContent(Graphics g, float cx, float cy, float hw, float hh)
         {
             var footprint = RectangleF.FromLTRB(cx - hw, cy - hh, cx + hw, cy + hh);
-
             Region? savedClip = null;
             if (Selection.IsEmpty)
             {
-                using var backdrop = new SolidBrush(pictureBox1!.BackColor);
+                using var backdrop = new SolidBrush(viewport!.BackColor);
                 g.FillRectangle(backdrop, footprint);
             }
             else
@@ -250,20 +199,12 @@ namespace screenzap
             g.RotateTransform(freeRotateAngleDeg);
             g.InterpolationMode = InterpolationMode.NearestNeighbor;
             g.PixelOffsetMode = PixelOffsetMode.Half;
-            g.DrawImage(pictureBox1!.Image!, new RectangleF(-hw, -hh, hw * 2f, hh * 2f), freeRotateTargetBounds, GraphicsUnit.Pixel);
+            g.DrawImage(viewport!.Image!, new RectangleF(-hw, -hh, hw * 2f, hh * 2f), freeRotateTargetBounds, GraphicsUnit.Pixel);
             g.Restore(state);
-
             if (savedClip != null)
             {
                 g.Clip = savedClip;
-                savedClip.Dispose();
             }
-        }
-
-        private void freeRotateToolStripButton_Click(object sender, EventArgs e)
-        {
-            ActivateFreeRotateTool();
-            RequestCanvasFocus();
         }
 
         private void rotateApplyButton_Click(object sender, EventArgs e)
@@ -280,8 +221,9 @@ namespace screenzap
 
         internal bool TestIsFreeRotateToolActive => isFreeRotateToolActive;
         internal float TestFreeRotateAngleDeg => freeRotateAngleDeg;
-        internal bool TestFreeRotateButtonChecked => freeRotateToolStripButton?.Checked == true;
+        internal bool TestFreeRotateButtonChecked => isFreeRotateToolActive;
         internal Point TestFreeRotateHandleImagePoint => GetFreeRotateHandleImagePoint();
-        internal void TestClickFreeRotateToolButton() => freeRotateToolStripButton_Click(this, EventArgs.Empty);
+
+        internal void TestClickFreeRotateToolButton() => ActivateFreeRotateTool();
     }
 }

@@ -7,7 +7,7 @@
 - [x] Drag-to-resize: 8 corner/edge handles, free aspect, min 1px
 - [x] Delete/Escape: Delete removes selected layer; Escape deselects
 - [x] Text-tool fix: clicking existing text in Move mode selects it (no auto-activation); Enter/F2 promotes to edit mode
-- [x] UI test kit: real WinForms input pipeline, screenshot capture, `--ui-capture` CLI mode
+- [x] Native WinUI automation and direct document regression tests (legacy UI harness removed)
 - [x] 6 bugs fixed (see [ISSUES.md](ISSUES.md))
 
 ## Done (thumbnail panel + stash perf — `6d3bc89`)
@@ -19,7 +19,7 @@
 - [x] Annotation Move-mode: validated correct (click-to-select, drag, delete, Escape all work via real pipeline)
 - [x] 6 annotation Move-mode unit tests added (`AnnotationSelectionTests`)
 - [x] Shift-to-preserve-aspect-ratio on corner resize handles
-- [x] Annotation tools exercised through `--ui-capture` (arrow + rect flows)
+- [x] Annotation tools exercised through native WinUI automation (arrow + rect flows)
 
 ## Done (Slice 4 — Layer rotation — `db32c89`)
 
@@ -32,8 +32,8 @@
 
 ## Done (Slice 5 — History thumbnail click coverage)
 
-- [x] ClipboardHistoryPanel thumbnail strip is wired through `UiTestKit`
-- [x] `--ui-capture` history switch flow clicks thumbnails instead of calling host activation directly
+- [x] Native history filmstrip activation is covered by WinUI automation
+- [x] Native UI automation clicks history thumbnails to test switching
 - [x] Regression test verifies thumbnail click stashes/restores image layer state
 
 ## Backlog — unexercised flows (wire through kit)

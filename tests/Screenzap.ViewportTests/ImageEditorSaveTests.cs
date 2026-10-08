@@ -23,7 +23,7 @@ namespace Screenzap.ViewportTests
 
                 StaTest.Run(() =>
                 {
-                    using var editor = new screenzap.ImageEditor();
+                    using var editor = new screenzap.ImageDocumentEditor();
                     using var source = new Bitmap(32, 24);
                     editor.LoadImage(source);
 
@@ -72,7 +72,7 @@ namespace Screenzap.ViewportTests
             {
                 StaTest.Run(() =>
                 {
-                    using var editor = new screenzap.ImageEditor();
+                    using var editor = new screenzap.ImageDocumentEditor();
                     using var source = new Bitmap(20, 10);
                     editor.LoadImage(source);
 

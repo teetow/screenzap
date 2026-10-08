@@ -22,7 +22,7 @@ namespace Screenzap.ViewportTests
         /// All three are drawn through the real input pipeline, then their drawing tools
         /// are deactivated → editor sits in Move mode for the assertion phase.
         /// </summary>
-        private static screenzap.ImageEditor PrepareEditorWithRectArrowAndText()
+        private static screenzap.ImageDocumentEditor PrepareEditorWithRectArrowAndText()
         {
             var editor = EditorFixture.WithCanvas(160, 120);
 
@@ -146,41 +146,9 @@ namespace Screenzap.ViewportTests
             });
         }
 
-        [Fact]
-        public void ColorButton_ShowsMixedLabel_WhenSelectedColorsDiffer()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditorWithRectArrowAndText();
 
-                // Select rect, paint it blue.
-                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestApplyColorToSelection(Color.Blue);
 
-                // Add arrow to selection — still has default red. Now selection is mixed.
-                editor.TestShiftClickAtImagePixel(new Point(85, 67));
-                Assert.Equal(2, editor.TestSelectedShapeCount);
-                Assert.Equal("Mixed", editor.TestAnnotationColorButtonText);
-            });
-        }
 
-        [Fact]
-        public void ColorButton_ShowsUnanimousColor_WhenAllSelectedAgree()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditorWithRectArrowAndText();
-
-                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestShiftClickAtImagePixel(new Point(85, 67));
-                editor.TestApplyColorToSelection(Color.Green);
-
-                Assert.Equal("Color", editor.TestAnnotationColorButtonText);
-                Assert.Equal(Color.Green.ToArgb(), editor.TestAnnotationColorButtonBackColor.ToArgb());
-            });
-        }
 
         [Fact]
         public void MultiDrag_ShapeBody_MovesAllSelectedShapes()
@@ -342,41 +310,9 @@ namespace Screenzap.ViewportTests
             });
         }
 
-        [Fact]
-        public void LineThicknessCombo_ShowsBlank_WhenSelectionIsMixed()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditorWithRectArrowAndText();
 
-                // Select rect, set thickness 6, then add arrow (still default 2) → mixed.
-                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestSetAnnotationLineThickness(6f);
-                editor.TestShiftClickAtImagePixel(new Point(85, 67));
-                Assert.Equal(2, editor.TestSelectedShapeCount);
 
-                Assert.Equal(-1, editor.TestLineThicknessComboBoxSelectedIndex);
-            });
-        }
 
-        [Fact]
-        public void LineThicknessCombo_ShowsValue_WhenSelectionIsUnanimous()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditorWithRectArrowAndText();
-
-                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestShiftClickAtImagePixel(new Point(85, 67));
-                editor.TestSetAnnotationLineThickness(6f);
-
-                // After the unanimous apply, the combo should be selecting "6" (index 5
-                // for items {"1","2","3","4","5","6","8","10"}).
-                Assert.NotEqual(-1, editor.TestLineThicknessComboBoxSelectedIndex);
-            });
-        }
 
         [Fact]
         public void MultiArrowSize_AppliesOnlyToArrows()
@@ -402,36 +338,8 @@ namespace Screenzap.ViewportTests
             });
         }
 
-        [Fact]
-        public void ArrowSizeCombo_HiddenWhen_NoArrowInSelection()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditorWithRectArrowAndText();
 
-                // Select only the rect.
-                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                Assert.Equal(1, editor.TestSelectedShapeCount);
-                Assert.Equal(screenzap.AnnotationType.Rectangle, editor.TestSelectedShapes[0].Type);
 
-                Assert.False(editor.TestArrowSizeComboBoxAvailable);
-            });
-        }
 
-        [Fact]
-        public void ArrowSizeCombo_Visible_WhenSelectionContainsAnArrow()
-        {
-            StaTest.Run(() =>
-            {
-                using var editor = PrepareEditorWithRectArrowAndText();
-
-                editor.TestFireMouseDownAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestFireMouseUpAtImagePixel(new Point(35, 30), MouseButtons.Left);
-                editor.TestShiftClickAtImagePixel(new Point(85, 67));
-
-                Assert.True(editor.TestArrowSizeComboBoxAvailable);
-            });
-        }
     }
 }

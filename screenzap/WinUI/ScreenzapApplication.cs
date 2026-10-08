@@ -18,8 +18,6 @@ public sealed partial class ScreenzapApplication : Microsoft.UI.Xaml.Application
         background = new Screenzap();
         background.EditorHostCreated = (host, editor) =>
         {
-            editor.AttachExternalSurface();
-            _ = host.Handle;
             host.ExternalActivateRequested = () =>
             {
                 editorWindow ??= new EditorWindow(host, editor);
@@ -34,9 +32,8 @@ public sealed partial class ScreenzapApplication : Microsoft.UI.Xaml.Application
 
         if (background == null)
         {
-            var editor = new ImageEditor();
-            editor.AttachExternalSurface();
-            var host = new ClipboardEditorHostForm(true, editor);
+            var editor = new ImageDocumentEditor();
+            var host = new ClipboardDocumentHost(true, editor);
             editorWindow = new EditorWindow(host, editor);
             host.ExternalActivateRequested = editorWindow.ShowEditor;
             using var image = new System.Drawing.Bitmap(960, 600);

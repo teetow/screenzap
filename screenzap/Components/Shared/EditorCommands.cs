@@ -50,7 +50,6 @@ namespace screenzap.Components.Shared
         public EditorCommandId Id { get; init; }
         public string Label { get; init; } = string.Empty;
         public string ToolTip { get; init; } = string.Empty;
-        public FontAwesome.Sharp.IconChar Icon { get; init; }
         public Keys? Shortcut { get; init; }
     }
 }

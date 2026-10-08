@@ -12,7 +12,7 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class SelectionGripZoomTests
     {
-        private static screenzap.ImageEditor PrepareEditor(Rectangle selection, decimal zoom, Color blockColor)
+        private static screenzap.ImageDocumentEditor PrepareEditor(Rectangle selection, decimal zoom, Color blockColor)
         {
             var editor = EditorFixture.WithCanvas(160, 120, graphics =>
             {
@@ -26,7 +26,7 @@ namespace Screenzap.ViewportTests
         }
 
         /// <summary>Center of an image pixel in viewport client coordinates.</summary>
-        private static Point PixelCenter(screenzap.ImageEditor editor, Point imagePixel, int zoom)
+        private static Point PixelCenter(screenzap.ImageDocumentEditor editor, Point imagePixel, int zoom)
         {
             var topLeft = editor.TestImagePixelToClient(imagePixel);
             // Deliberately off the exact half-pixel: ClientToPixel rounds, and .5 lands on a

@@ -126,7 +126,7 @@ namespace Screenzap.ViewportTests
                 source.SetPixel(x, y, Color.FromArgb(tone, tone, tone));
             }
 
-            var optimize = typeof(ImageEditor).GetMethod("CreateOptimizedForTextCopy",
+            var optimize = typeof(ImageDocumentEditor).GetMethod("CreateOptimizedForTextCopy",
                 BindingFlags.NonPublic | BindingFlags.Static)!;
             using var result = (Bitmap)optimize.Invoke(null, new object[] { source })!;
 
@@ -150,7 +150,7 @@ namespace Screenzap.ViewportTests
                     using var brush = new SolidBrush(Color.FromArgb(120, 120, 120));
                     graphics.FillRectangle(brush, 40, 24, 2, 16);
                 }
-                using var editor = new ImageEditor();
+                using var editor = new ImageDocumentEditor();
                 editor.LoadImage(source);
                 var selection = new Rectangle(16, 8, 96, 48);
                 editor.SetSelectionForDiagnostics(selection);

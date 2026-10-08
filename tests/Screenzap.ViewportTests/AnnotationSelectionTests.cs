@@ -7,7 +7,7 @@ namespace Screenzap.ViewportTests
     /// <summary>
     /// Verifies annotation shape (Arrow / Rectangle) Move-mode interaction: select by click,
     /// translate by drag, delete, deselect by Escape. Uses the real WinForms input pipeline via
-    /// TestFireMouseDown/Move/Up so the full pictureBox1_MouseDown cascade is exercised.
+    /// TestFireMouseDown/Move/Up so the full ViewportMouseDown cascade is exercised.
     /// </summary>
     public class AnnotationSelectionTests
     {
@@ -15,7 +15,7 @@ namespace Screenzap.ViewportTests
         /// Set up a 120×80 canvas with an arrow drawn from (20,20) to (60,50), arrow tool then
         /// deactivated so we're in Move mode.
         /// </summary>
-        private static screenzap.ImageEditor PrepareEditorWithArrow()
+        private static screenzap.ImageDocumentEditor PrepareEditorWithArrow()
         {
             var editor = EditorFixture.WithCanvas(120, 80);
 
@@ -134,7 +134,7 @@ namespace Screenzap.ViewportTests
         /// the arrow runs from (60,60) to (110,75) (midpoint ~(85,67)). They don't overlap, so
         /// hit-tests for each are unambiguous.
         /// </summary>
-        private static screenzap.ImageEditor PrepareEditorWithRectThenArrow()
+        private static screenzap.ImageDocumentEditor PrepareEditorWithRectThenArrow()
         {
             var editor = EditorFixture.WithCanvas(140, 100);
 
@@ -159,7 +159,7 @@ namespace Screenzap.ViewportTests
         /// Mirrors what likely happens in the running app: pick rect tool, drag rect, pick
         /// arrow tool, drag arrow. After step 2 activeTool is still Arrow.
         /// </summary>
-        private static screenzap.ImageEditor PrepareEditorWithRectThenArrow_ToolStaysActive()
+        private static screenzap.ImageDocumentEditor PrepareEditorWithRectThenArrow_ToolStaysActive()
         {
             var editor = EditorFixture.WithCanvas(140, 100);
 
@@ -405,7 +405,7 @@ namespace Screenzap.ViewportTests
                 editor.TestSetAnnotationArrowSize(0f);
 
                 Assert.Equal(0m, editor.TestSelectedAnnotation!.ArrowSize);
-                Assert.Equal(0, editor.TestArrowSizeComboBoxSelectedIndex);
+                Assert.Equal(0m, editor.SurfaceArrowSize);
 
                 using var lineComposite = editor.BuildCompositeImageForTests();
                 int lineInk = CountNonWhitePixels(lineComposite, new Rectangle(48, 30, 27, 21));

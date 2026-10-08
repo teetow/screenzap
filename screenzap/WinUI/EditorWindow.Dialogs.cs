@@ -21,6 +21,10 @@ internal sealed partial class EditorWindow
             if (command is EditorCommandId.Save or EditorCommandId.SaveAs or EditorCommandId.Copy) editor.SurfaceFinalizeText();
             switch (command)
             {
+                case EditorCommandId.Reload:
+                    if (!editor.DocumentIsDirty || await Dialog("Reload image?", "Discard the current edits and reload from the clipboard?", "Reload").ShowAsync() == ContentDialogResult.Primary)
+                        editor.SurfaceReloadConfirmed();
+                    break;
                 case EditorCommandId.SaveAs: await SaveAsDialog(); break;
                 case EditorCommandId.ResizeImage: await ResizeDialog(); break;
                 case EditorCommandId.EmojiTool: ShowEmojiFlyout(); break;

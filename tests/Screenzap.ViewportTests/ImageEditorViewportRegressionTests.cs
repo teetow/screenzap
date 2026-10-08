@@ -17,14 +17,15 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var editor = new ImageEditor();
+                    using var editor = new ImageDocumentEditor();
+                    editor.ResizeSurface(new Size(800, 800));
                     using var source = new Bitmap(640, 200);
                     using (var g = Graphics.FromImage(source))
                     {
                         g.Clear(Color.DarkSlateBlue);
                     }
 
-                    var loadImage = typeof(ImageEditor).GetMethod(
+                    var loadImage = typeof(ImageDocumentEditor).GetMethod(
                         "LoadImage",
                         BindingFlags.Instance | BindingFlags.NonPublic,
                         binder: null,
@@ -33,12 +34,13 @@ namespace Screenzap.ViewportTests
                     Assert.NotNull(loadImage);
                     loadImage!.Invoke(editor, new object[] { source, false });
 
-                    var rotate = typeof(ImageEditor).GetMethod("ExecuteRotate90Cw", BindingFlags.Instance | BindingFlags.NonPublic);
+                    var rotate = typeof(ImageDocumentEditor).GetMethod("ExecuteRotate90Cw", BindingFlags.Instance | BindingFlags.NonPublic);
                     Assert.NotNull(rotate);
                     var ok = rotate!.Invoke(editor, null);
                     Assert.True(ok is bool b && b, "Expected full-image rotate command to execute successfully.");
 
                     var metrics = editor.ViewportDiagnostics;
+                    Assert.Equal(new Size(800, 800), metrics.ClientSize);
                     Assert.True(metrics.HasImage, "Expected viewport diagnostics to report an active image.");
                     Assert.True(metrics.ImageClientRectangle.Left >= -0.5f, "Image should not overflow left edge after rotate.");
                     Assert.True(metrics.ImageClientRectangle.Top >= -0.5f, "Image should not overflow top edge after rotate.");

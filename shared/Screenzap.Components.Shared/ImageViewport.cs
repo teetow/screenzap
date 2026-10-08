@@ -4,11 +4,10 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.CompilerServices;
-using System.Windows.Forms;
 
 namespace screenzap.Components.Shared
 {
-    public class ImageViewportControl : Control
+    public class ImageViewport : IDisposable
     {
         private Image? image;
         private decimal zoomLevel = 1m;
@@ -20,16 +19,13 @@ namespace screenzap.Components.Shared
         private Size panReferenceClientSize;
         private InterpolationMode interpolationMode = InterpolationMode.NearestNeighbor;
         private bool alphaViewEnabled = true;
-
         // Per-instance GDI+ paint resources for the alpha-view modes, created on first use and
-        // disposed with the control. These MUST NOT be static/shared: a Brush, Bitmap, or
+        // disposed with the viewport. These MUST NOT be static/shared: a Brush, Bitmap, or
         // ImageAttributes is a native GDI+ object that throws "Object is currently in use
-        // elsewhere" when used by two paints at once — which happens across ImageViewportControl
-        // instances (each editor has one, DrawToBitmap offscreen renders overlap on-screen paint,
-        // and the test host paints several controls on parallel STA threads).
+        // elsewhere" when used by two paints at once — which happens across ImageViewport
+        // instances when document rendering and tests run on different threads.
         private TextureBrush? alphaCheckerboardBrush;
         private ImageAttributes? forceOpaqueImageAttributes;
-
         // Transparency-checkerboard colors. Defaults match the original hardcoded greys; the host
         // overrides them from user settings. Setting either rebuilds the cached brush on next paint.
         private static readonly Color DefaultCheckerboardLight = Color.FromArgb(205, 205, 205);
@@ -37,20 +33,10 @@ namespace screenzap.Components.Shared
         private const int CheckerboardSquare = 8;
         private Color checkerboardLightColor = DefaultCheckerboardLight;
         private Color checkerboardDarkColor = DefaultCheckerboardDark;
-
         /// <summary>Lighter of the two alpha-checkerboard squares. Host-configurable.</summary>
-        public Color CheckerboardLightColor
-        {
-            get => checkerboardLightColor;
-            set => SetCheckerboardColor(ref checkerboardLightColor, value);
-        }
-
+        public Color CheckerboardLightColor { get => checkerboardLightColor; set => SetCheckerboardColor(ref checkerboardLightColor, value); }
         /// <summary>Darker of the two alpha-checkerboard squares. Host-configurable.</summary>
-        public Color CheckerboardDarkColor
-        {
-            get => checkerboardDarkColor;
-            set => SetCheckerboardColor(ref checkerboardDarkColor, value);
-        }
+        public Color CheckerboardDarkColor { get => checkerboardDarkColor; set => SetCheckerboardColor(ref checkerboardDarkColor, value); }
 
         private void SetCheckerboardColor(ref Color field, Color value)
         {
@@ -72,15 +58,7 @@ namespace screenzap.Components.Shared
         // Forces output alpha to 1 regardless of the source pixel's alpha, leaving RGB untouched:
         // row 3 (alpha-in) contributes 0, row 4 (constant-1) contributes 1 to the alpha output.
         // A ColorMatrix is plain managed data (no native handle), so sharing one is safe.
-        private static readonly ColorMatrix ForceOpaqueColorMatrix = new ColorMatrix(new float[][]
-        {
-            new float[] { 1, 0, 0, 0, 0 },
-            new float[] { 0, 1, 0, 0, 0 },
-            new float[] { 0, 0, 1, 0, 0 },
-            new float[] { 0, 0, 0, 0, 0 },
-            new float[] { 0, 0, 0, 1, 1 },
-        });
-
+        private static readonly ColorMatrix ForceOpaqueColorMatrix = new ColorMatrix(new float[][] { new float[] { 1, 0, 0, 0, 0 }, new float[] { 0, 1, 0, 0, 0 }, new float[] { 0, 0, 1, 0, 0 }, new float[] { 0, 0, 0, 0, 0 }, new float[] { 0, 0, 0, 1, 1 }, });
         private TextureBrush GetAlphaCheckerboardBrush()
         {
             if (alphaCheckerboardBrush == null)
@@ -117,16 +95,32 @@ namespace screenzap.Components.Shared
             return forceOpaqueImageAttributes;
         }
 
-        public event EventHandler<PaintEventArgs>? OverlayPaint;
+        public event EventHandler<ViewportPaintEventArgs>? OverlayPaint;
         public event EventHandler? ZoomChanged;
-
-        public ImageViewportControl()
+        private Size clientSize = new(640, 480);
+        public Size ClientSize
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
-            BackColor = SystemColors.ControlDarkDark;
-            TabStop = true;
+            get => clientSize;
+            set
+            {
+                if (clientSize == value)
+                    return;
+                clientSize = value;
+                SlidePanForResize();
+                ClampPan();
+                Invalidate();
+            }
         }
 
+        public int Width => ClientSize.Width;
+        public int Height => ClientSize.Height;
+        public Rectangle ClientRectangle => new(Point.Empty, ClientSize);
+        public Color BackColor { get; set; } = Color.FromArgb(24, 26, 29);
+
+        public event EventHandler? Invalidated;
+        public void Invalidate() => Invalidated?.Invoke(this, EventArgs.Empty);
+        public Graphics CreateGraphics() => Graphics.FromImage(measurementBitmap);
+        private readonly Bitmap measurementBitmap = new(1, 1);
         public Image? Image
         {
             get => image;
@@ -142,8 +136,8 @@ namespace screenzap.Components.Shared
                 {
                     newSize = Size.Empty;
                 }
+
                 LogDebug($"Image setter: old={oldSize}, new={newSize}, ClientSize={ClientSize}");
-                
                 if (image == value)
                 {
                     LogDebug("Image setter: same reference, skipping");
@@ -214,14 +208,7 @@ namespace screenzap.Components.Shared
             }
         }
 
-        public ViewportMetrics Metrics => new ViewportMetrics(
-            HasImage,
-            zoomLevel,
-            panOffset,
-            GetImagePixelSize(),
-            GetScaledImageSize(),
-            GetImageClientRectangle(),
-            ClientSize);
+        public ViewportMetrics Metrics => new ViewportMetrics(HasImage, zoomLevel, panOffset, GetImagePixelSize(), GetScaledImageSize(), GetImageClientRectangle(), ClientSize);
 
         public Size GetImagePixelSize()
         {
@@ -269,7 +256,6 @@ namespace screenzap.Components.Shared
         {
             var imageSize = GetImagePixelSize();
             LogDebug($"CenterImage called by {caller}: image={imageSize}, ClientSize={ClientSize}");
-            
             if (imageSize.IsEmpty || ClientSize.Width <= 0 || ClientSize.Height <= 0)
             {
                 LogDebug($"CenterImage: early exit (null/zero), setting panOffset=Empty");
@@ -297,11 +283,9 @@ namespace screenzap.Components.Shared
         /// panning; the rest may overscroll past the edges.
         /// </summary>
         public const float OverscrollVisibleMargin = 48f;
-
         public void ClampPan([CallerMemberName] string? caller = null)
         {
             LogDebug($"ClampPan called by {caller}: panOffset before={panOffset}, ClientSize={ClientSize}");
-
             var scaled = GetScaledImageSize();
             if (scaled.IsEmpty)
             {
@@ -311,9 +295,7 @@ namespace screenzap.Components.Shared
             }
 
             var oldPan = panOffset;
-            panOffset = new PointF(
-                ConstrainPanAxis(panOffset.X, scaled.Width, ClientSize.Width),
-                ConstrainPanAxis(panOffset.Y, scaled.Height, ClientSize.Height));
+            panOffset = new PointF(ConstrainPanAxis(panOffset.X, scaled.Width, ClientSize.Width), ConstrainPanAxis(panOffset.Y, scaled.Height, ClientSize.Height));
             LogDebug($"ClampPan: scaled={scaled}, old={oldPan}, new={panOffset}");
         }
 
@@ -377,9 +359,7 @@ namespace screenzap.Components.Shared
             var scaled = GetScaledImageSize();
             if (!scaled.IsEmpty)
             {
-                panOffset = new PointF(
-                    SettleZoomAxis(panOffset.X, scaled.Width, ClientSize.Width, zoomingOut),
-                    SettleZoomAxis(panOffset.Y, scaled.Height, ClientSize.Height, zoomingOut));
+                panOffset = new PointF(SettleZoomAxis(panOffset.X, scaled.Width, ClientSize.Width, zoomingOut), SettleZoomAxis(panOffset.Y, scaled.Height, ClientSize.Height, zoomingOut));
             }
 
             ClampPan();
@@ -418,9 +398,7 @@ namespace screenzap.Components.Shared
                 return PointF.Empty;
             }
 
-            return new PointF(
-                panOffset.X + (float)(pixel.X * (double)zoomLevel),
-                panOffset.Y + (float)(pixel.Y * (double)zoomLevel));
+            return new PointF(panOffset.X + (float)(pixel.X * (double)zoomLevel), panOffset.Y + (float)(pixel.Y * (double)zoomLevel));
         }
 
         public RectangleF PixelToClientF(Rectangle rect)
@@ -437,21 +415,16 @@ namespace screenzap.Components.Shared
                 return Point.Empty;
             }
 
-            return new Point(
-                (int)Math.Round((point.X - panOffset.X) / (double)zoomLevel),
-                (int)Math.Round((point.Y - panOffset.Y) / (double)zoomLevel));
+            return new Point((int)Math.Round((point.X - panOffset.X) / (double)zoomLevel), (int)Math.Round((point.Y - panOffset.Y) / (double)zoomLevel));
         }
 
-        public void Render(Graphics graphics) => OnPaint(new PaintEventArgs(graphics, ClientRectangle));
-
-        protected override void OnPaint(PaintEventArgs e)
+        public void Render(Graphics graphics) => Paint(new ViewportPaintEventArgs(graphics, ClientRectangle));
+        private void Paint(ViewportPaintEventArgs e)
         {
             e.Graphics.Clear(BackColor);
-
             if (image != null)
             {
                 var destRect = GetImageClientRectangle();
-
                 e.Graphics.InterpolationMode = interpolationMode;
                 if (interpolationMode == InterpolationMode.NearestNeighbor)
                 {
@@ -470,39 +443,18 @@ namespace screenzap.Components.Shared
                 }
                 else
                 {
-                    e.Graphics.DrawImage(
-                        image,
-                        Rectangle.Round(destRect),
-                        0f, 0f, image.Width, image.Height,
-                        GraphicsUnit.Pixel,
-                        GetForceOpaqueImageAttributes());
+                    e.Graphics.DrawImage(image, Rectangle.Round(destRect), 0f, 0f, image.Width, image.Height, GraphicsUnit.Pixel, GetForceOpaqueImageAttributes());
                 }
             }
 
             OverlayPaint?.Invoke(this, e);
-            base.OnPaint(e);
         }
 
-        protected override void Dispose(bool disposing)
+        public void Dispose()
         {
-            if (disposing)
-            {
-                alphaCheckerboardBrush?.Dispose();
-                alphaCheckerboardBrush = null;
-                forceOpaqueImageAttributes?.Dispose();
-                forceOpaqueImageAttributes = null;
-            }
-
-            base.Dispose(disposing);
-        }
-
-        protected override void OnSizeChanged(EventArgs e)
-        {
-            LogDebug($"OnSizeChanged: new ClientSize={ClientSize}");
-            SlidePanForResize();
-            base.OnSizeChanged(e);
-            ClampPan();
-            Invalidate();
+            alphaCheckerboardBrush?.Dispose();
+            forceOpaqueImageAttributes?.Dispose();
+            measurementBitmap.Dispose();
         }
 
         /// <summary>
@@ -521,7 +473,6 @@ namespace screenzap.Components.Shared
         {
             var previous = panReferenceClientSize;
             panReferenceClientSize = ClientSize;
-
             if (image == null || previous.IsEmpty || ClientSize.Width <= 0 || ClientSize.Height <= 0)
             {
                 return;
@@ -548,13 +499,11 @@ namespace screenzap.Components.Shared
         /// actively chasing a viewport bug.
         /// </summary>
         public static bool EnableFileLogging;
-
         [Conditional("DEBUG")]
         private static void LogDebug(string message)
         {
             var line = $"[{DateTime.Now:HH:mm:ss.fff}] [ImageViewport] {message}";
             Debug.WriteLine(line);
-
             if (!EnableFileLogging)
             {
                 return;
@@ -562,13 +511,13 @@ namespace screenzap.Components.Shared
 
             try
             {
-                var logPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "Screenzap", "viewport-debug.log");
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Screenzap", "viewport-debug.log");
                 System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(logPath)!);
                 System.IO.File.AppendAllText(logPath, line + Environment.NewLine);
             }
-            catch { }
+            catch
+            {
+            }
         }
 
         private SizeF GetScaledImageSize()

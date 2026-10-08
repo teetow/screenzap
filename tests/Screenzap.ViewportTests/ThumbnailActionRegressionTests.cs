@@ -13,52 +13,10 @@ namespace Screenzap.ViewportTests
 {
     public class ThumbnailActionRegressionTests
     {
-        [Fact]
-        public void HistoryRows_ShareOneContextMenu()
-        {
-            StaTest.Run(() =>
-            {
-                using var panel = new ClipboardHistoryPanel();
-                var store = new ClipboardHistoryStore();
-                panel.AttachStore(store);
 
-                AddImage(store, Color.Red);
-                AddImage(store, Color.Blue);
-                AddImage(store, Color.Green);
 
-                var buttonsField = typeof(ClipboardHistoryPanel).GetField("buttons", BindingFlags.Instance | BindingFlags.NonPublic);
-                var buttons = Assert.IsAssignableFrom<System.Collections.IDictionary>(buttonsField!.GetValue(panel));
-                var menus = buttons.Values
-                    .Cast<Control>()
-                    .Select(button => button.ContextMenuStrip)
-                    .ToList();
 
-                Assert.Equal(3, menus.Count);
-                Assert.NotNull(menus[0]);
-                Assert.All(menus, menu => Assert.Same(menus[0], menu));
-            });
-        }
 
-        [Fact]
-        public void WarmForFirstShow_PrimesHiddenHostWithoutChangingVisibility()
-        {
-            StaTest.Run(() =>
-            {
-                using var presenter = new StubImagePresenter();
-                using var host = new ClipboardEditorHostForm(true, presenter)
-                {
-                    SuppressActivation = true,
-                    ShowInTaskbar = false
-                };
-
-                host.WarmForFirstShow();
-
-                Assert.True(host.IsHandleCreated);
-                Assert.False(host.Visible);
-                Assert.False(host.ShowInTaskbar);
-                Assert.True(host.SuppressActivation);
-            });
-        }
 
         [Fact]
         public void RevertToOriginal_ClearsPreviewComposite()
@@ -102,13 +60,8 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
+                    using var host = new ClipboardDocumentHost(true, presenter);
 
-                    host.CreateControl();
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                     var first = AddImage(host.HistoryStore, Color.Red);
@@ -117,7 +70,7 @@ namespace Screenzap.ViewportTests
                     Assert.True(host.ActivateHistoryItem(first));
                     presenter.CurrentColor = Color.Green; // simulate a live edit on the active presenter
 
-                    var duplicateMethod = typeof(ClipboardEditorHostForm).GetMethod("DuplicateItem", BindingFlags.Instance | BindingFlags.NonPublic);
+                    var duplicateMethod = typeof(ClipboardDocumentHost).GetMethod("DuplicateItem", BindingFlags.Instance | BindingFlags.NonPublic);
                     Assert.NotNull(duplicateMethod);
                     duplicateMethod!.Invoke(host, new object[] { second });
 
@@ -149,14 +102,9 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var imagePresenter = new screenzap.ImageEditor();
-                    using var host = new ClipboardEditorHostForm(true, imagePresenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
+                    using var imagePresenter = new screenzap.ImageDocumentEditor();
+                    using var host = new ClipboardDocumentHost(true, imagePresenter);
 
-                    host.CreateControl();
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                     using var baseImage = new Bitmap(10, 10);
@@ -185,7 +133,7 @@ namespace Screenzap.ViewportTests
                         return true;
                     };
 
-                    var setItemMethod = typeof(ClipboardEditorHostForm).GetMethod("SetItemAsClipboard", BindingFlags.Instance | BindingFlags.NonPublic);
+                    var setItemMethod = typeof(ClipboardDocumentHost).GetMethod("SetItemAsClipboard", BindingFlags.Instance | BindingFlags.NonPublic);
                     Assert.NotNull(setItemMethod);
                     setItemMethod!.Invoke(host, new object[] { item });
 
@@ -221,14 +169,9 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
+                    using var host = new ClipboardDocumentHost(true, presenter);
 
-                    host.CreateControl();
-                    Assert.False(host.Visible);
+
 
                     var edited = AddImage(host.HistoryStore, Color.Red);
                     var newCapture = AddImage(host.HistoryStore, Color.Blue);
@@ -265,13 +208,7 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
-
-                    host.CreateControl();
+                    using var host = new ClipboardDocumentHost(true, presenter);
 
                     var edited = AddImage(host.HistoryStore, Color.Red);
                     Assert.True(host.ActivateHistoryItem(edited));
@@ -309,13 +246,7 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
-
-                    host.CreateControl();
+                    using var host = new ClipboardDocumentHost(true, presenter);
 
                     var item = AddImage(host.HistoryStore, Color.Red);
                     Assert.True(host.ActivateHistoryItem(item));
@@ -352,13 +283,8 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
+                    using var host = new ClipboardDocumentHost(true, presenter);
 
-                    host.CreateControl();
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                     var first = AddImage(host.HistoryStore, Color.Red);
@@ -368,7 +294,7 @@ namespace Screenzap.ViewportTests
                     Assert.True(host.ActivateHistoryItem(second));
                     Assert.Same(second, host.HistoryStore.ActiveItem);
 
-                    var deleteMethod = typeof(ClipboardEditorHostForm).GetMethod("DeleteItemAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+                    var deleteMethod = typeof(ClipboardDocumentHost).GetMethod("DeleteItemAsync", BindingFlags.Instance | BindingFlags.NonPublic);
                     Assert.NotNull(deleteMethod);
                     var task = (System.Threading.Tasks.Task?)deleteMethod!.Invoke(host, new object[] { second });
                     Assert.NotNull(task);
@@ -390,342 +316,17 @@ namespace Screenzap.ViewportTests
             }
         }
 
-        [Fact]
-        public void DeleteKey_OnFocusedThumbnail_RemovesOnlyThatItem()
-        {
-            Exception? failure = null;
 
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
 
-                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
-                    var first = AddImage(host.HistoryStore, Color.Red);
-                    var second = AddImage(host.HistoryStore, Color.Blue);
-                    var third = AddImage(host.HistoryStore, Color.Green);
 
-                    // Create handles after the buttons exist so the focused-Delete path runs its real
-                    // deferred (BeginInvoke) branch rather than the handleless fallback.
-                    host.CreateControl();
-                    Application.DoEvents();
 
-                    // A non-Delete key on a focused thumbnail must not remove anything.
-                    Assert.True(host.SendKeyToHistoryItemForDiagnostics(second, Keys.A));
-                    Application.DoEvents();
-                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, second));
 
-                    // Delete on the focused thumbnail removes exactly that item (deferred via
-                    // BeginInvoke, hence the DoEvents pump), leaving the others untouched.
-                    Assert.True(host.SendKeyToHistoryItemForDiagnostics(second, Keys.Delete));
-                    Application.DoEvents();
 
-                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, second));
-                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, first));
-                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, third));
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
 
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
 
-        [Fact]
-        public void ClickFocusesThumbnail_AndDeleteThroughFocus_RemovesItemsSerially()
-        {
-            Exception? failure = null;
 
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
 
-                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-                    var first = AddImage(host.HistoryStore, Color.Red);
-                    var second = AddImage(host.HistoryStore, Color.Blue);
-                    var third = AddImage(host.HistoryStore, Color.Green);
-
-                    host.CreateControl();
-                    Application.DoEvents();
-
-                    // A real click must leave keyboard focus on the thumbnail — that focus is the
-                    // only thing that routes Delete to the list (regression: it never landed there).
-                    Assert.True(host.ClickHistoryItemForDiagnostics(second));
-                    Assert.Same(second, host.FocusedHistoryItemForDiagnostics);
-
-                    // Route Delete through whatever holds focus, not a hand-picked button.
-                    int index = host.HistoryStore.Items.ToList().FindIndex(i => ReferenceEquals(i, second));
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
-                    Application.DoEvents();
-
-                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, second));
-
-                    // Selection lands on the item now occupying the deleted slot, so Delete chains.
-                    var successor = host.HistoryStore.Items[Math.Min(index, host.HistoryStore.Items.Count - 1)];
-                    Assert.Same(successor, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(successor, host.HistoryStore.ActiveItem);
-
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
-                    Application.DoEvents();
-
-                    Assert.DoesNotContain(host.HistoryStore.Items, i => ReferenceEquals(i, successor));
-                    Assert.Single(host.HistoryStore.Items);
-                    Assert.Same(host.HistoryStore.Items[0], host.FocusedHistoryItemForDiagnostics);
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
-
-        [Fact]
-        public void ArrowKeys_MoveTheSelection_FocusAndActivationTogether()
-        {
-            Exception? failure = null;
-
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
-
-                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-                    AddImage(host.HistoryStore, Color.Red);
-                    AddImage(host.HistoryStore, Color.Blue);
-                    AddImage(host.HistoryStore, Color.Green);
-
-                    host.CreateControl();
-                    Application.DoEvents();
-
-                    // Items in display (store) order — flow order mirrors it.
-                    var top = host.HistoryStore.Items[0];
-                    var mid = host.HistoryStore.Items[1];
-                    var bottom = host.HistoryStore.Items[2];
-
-                    Assert.True(host.ClickHistoryItemForDiagnostics(top));
-                    Assert.Same(top, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(top, host.HistoryStore.ActiveItem);
-
-                    // One selection: the keyboard, the focus cue and the active (blue) item all
-                    // travel together.
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
-                    Assert.Same(mid, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(mid, host.HistoryStore.ActiveItem);
-
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
-                    Assert.Same(bottom, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(bottom, host.HistoryStore.ActiveItem);
-
-                    // Clamps at the bottom instead of wrapping or escaping the list.
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Down));
-                    Assert.Same(bottom, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(bottom, host.HistoryStore.ActiveItem);
-
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Up));
-                    Assert.Same(mid, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(mid, host.HistoryStore.ActiveItem);
-
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Home));
-                    Assert.Same(top, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(top, host.HistoryStore.ActiveItem);
-
-                    Assert.True(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.End));
-                    Assert.Same(bottom, host.FocusedHistoryItemForDiagnostics);
-                    Assert.Same(bottom, host.HistoryStore.ActiveItem);
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
-
-        [Fact]
-        public void ThumbnailDoesNotReclaimFocus_AfterUserMovesToEditor()
-        {
-            Exception? failure = null;
-
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
-
-                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-                    AddImage(host.HistoryStore, Color.Red);
-                    AddImage(host.HistoryStore, Color.Blue);
-                    AddImage(host.HistoryStore, Color.Green);
-
-                    // CreateControl is a no-op on invisible forms; the deferred (BeginInvoke) focus
-                    // races need a real handle, so force one.
-                    _ = host.Handle;
-                    Application.DoEvents();
-
-                    var editorFocusTarget = new Button();
-                    presenter.View.Controls.Add(editorFocusTarget);
-
-                    var items = host.HistoryStore.Items;
-                    int clickIndex = ReferenceEquals(items[0], host.HistoryStore.ActiveItem) ? 1 : 0;
-                    var clickTarget = items[clickIndex];
-
-                    Assert.True(host.ClickHistoryItemForDiagnostics(clickTarget));
-                    Assert.Same(clickTarget, host.FocusedHistoryItemForDiagnostics);
-
-                    // Model a click into the editor before posted callbacks are drained. The list
-                    // must not remember its old focus claim and take the keyboard back afterward.
-                    editorFocusTarget.Select();
-                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
-                    Application.DoEvents();
-                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
-                    Assert.False(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
-
-        [Fact]
-        public void CanvasMouseDown_TakesFocusFromThumbnail()
-        {
-            Exception? failure = null;
-
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var editor = new ImageEditor();
-                    using var host = new ClipboardEditorHostForm(true, editor)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false,
-                        Opacity = 0
-                    };
-
-                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-                    AddImage(host.HistoryStore, Color.Red);
-                    var second = AddImage(host.HistoryStore, Color.Blue);
-
-                    host.Show();
-                    Application.DoEvents();
-
-                    Assert.True(host.ClickHistoryItemForDiagnostics(second));
-                    Application.DoEvents();
-                    Assert.Same(second, host.FocusedHistoryItemForDiagnostics);
-
-                    editor.TestFireMouseDownAtImagePixel(new Point(1, 1), MouseButtons.Left);
-                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
-                    Assert.False(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
-
-        [Fact]
-        public void DeleteKey_DoesNotReachHistoryList_WhenFocusIsElsewhere()
-        {
-            Exception? failure = null;
-
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
-
-                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-                    var first = AddImage(host.HistoryStore, Color.Red);
-                    var second = AddImage(host.HistoryStore, Color.Blue);
-
-                    host.CreateControl();
-                    Application.DoEvents();
-
-                    Assert.True(host.ClickHistoryItemForDiagnostics(second));
-                    Assert.Same(second, host.FocusedHistoryItemForDiagnostics);
-
-                    // Move focus out of the history list, as a click into the editor would.
-                    var editorFocusTarget = new Button();
-                    presenter.View.Controls.Add(editorFocusTarget);
-                    editorFocusTarget.Select();
-                    Assert.Null(host.FocusedHistoryItemForDiagnostics);
-
-                    // With focus elsewhere there is no focused thumbnail for Delete to act on.
-                    Assert.False(host.SendKeyThroughHistoryFocusForDiagnostics(Keys.Delete));
-                    Application.DoEvents();
-
-                    Assert.Equal(2, host.HistoryStore.Items.Count);
-                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, first));
-                    Assert.Contains(host.HistoryStore.Items, i => ReferenceEquals(i, second));
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
 
         [Fact]
         public void DeleteSystemHistoryItem_RemovesLocalItemBeforeSystemDeleteCompletes()
@@ -737,13 +338,8 @@ namespace Screenzap.ViewportTests
                 try
                 {
                     using var presenter = new StubImagePresenter();
-                    using var host = new ClipboardEditorHostForm(true, presenter)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
+                    using var host = new ClipboardDocumentHost(true, presenter);
 
-                    host.CreateControl();
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                     var first = AddImage(host.HistoryStore, Color.Red);
@@ -763,7 +359,7 @@ namespace Screenzap.ViewportTests
                         return true;
                     };
 
-                    var deleteMethod = typeof(ClipboardEditorHostForm).GetMethod("DeleteItemAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+                    var deleteMethod = typeof(ClipboardDocumentHost).GetMethod("DeleteItemAsync", BindingFlags.Instance | BindingFlags.NonPublic);
                     Assert.NotNull(deleteMethod);
                     var task = (Task?)deleteMethod!.Invoke(host, new object[] { second });
                     Assert.NotNull(task);
@@ -788,228 +384,15 @@ namespace Screenzap.ViewportTests
             }
         }
 
-        [Fact]
-        public void ThumbnailClick_ActivatesMatchingItem()
-        {
-            Exception? failure = null;
 
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var panel = new ClipboardHistoryPanel();
-                    var store = new ClipboardHistoryStore();
-                    panel.AttachStore(store);
 
-                    var first = AddImage(store, Color.Red);
-                    var second = AddImage(store, Color.Blue);
-                    var third = AddImage(store, Color.Green);
 
-                    ClipboardHistoryItem? activated = null;
-                    panel.ItemActivated += (_, item) => activated = item;
 
-                    var buttonsField = typeof(ClipboardHistoryPanel).GetField("buttons", BindingFlags.Instance | BindingFlags.NonPublic);
-                    Assert.NotNull(buttonsField);
-                    var buttons = buttonsField!.GetValue(panel);
-                    Assert.NotNull(buttons);
 
-                    var dictionaryType = buttons!.GetType();
-                    var tryGetValue = dictionaryType.GetMethod("TryGetValue");
-                    Assert.NotNull(tryGetValue);
 
-                    foreach (var item in new[] { first, second, third })
-                    {
-                        var args = new object?[] { item.Id, null };
-                        var found = (bool)tryGetValue!.Invoke(buttons, args)!;
-                        Assert.True(found);
 
-                        var button = args[1];
-                        Assert.NotNull(button);
 
-                        var onClick = button!.GetType().GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic);
-                        Assert.NotNull(onClick);
-                        onClick!.Invoke(button, new object[] { EventArgs.Empty });
 
-                        Assert.Same(item, activated);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
-
-        [Fact]
-        public void SwitchingActiveItem_DoesNotMutateExistingThumbnailButtonSizes()
-        {
-            Exception? failure = null;
-
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var host = new Form
-                    {
-                        ClientSize = new Size(220, 420),
-                        ShowInTaskbar = false,
-                        StartPosition = FormStartPosition.Manual,
-                        Location = new Point(-32000, -32000)
-                    };
-
-                    using var panel = new ClipboardHistoryPanel
-                    {
-                        Dock = DockStyle.Fill
-                    };
-
-                    host.Controls.Add(panel);
-                    host.Show();
-                    Application.DoEvents();
-
-                    var store = new ClipboardHistoryStore();
-                    panel.AttachStore(store);
-
-                    using var wide = new Bitmap(320, 80);
-                    using var tall = new Bitmap(80, 320);
-                    using (var g = Graphics.FromImage(wide))
-                    {
-                        g.Clear(Color.DarkOrange);
-                    }
-
-                    using (var g = Graphics.FromImage(tall))
-                    {
-                        g.Clear(Color.CadetBlue);
-                    }
-
-                    var first = store.AddObservedImage(wide);
-                    var second = store.AddObservedImage(tall);
-                    using (var extra = MakeSolid(Color.SlateGray))
-                    {
-                        store.AddObservedImage(extra);
-                    }
-
-                    Application.DoEvents();
-
-                    var buttonsField = typeof(ClipboardHistoryPanel).GetField("buttons", BindingFlags.Instance | BindingFlags.NonPublic);
-                    Assert.NotNull(buttonsField);
-                    var buttons = (System.Collections.IDictionary?)buttonsField!.GetValue(panel);
-                    Assert.NotNull(buttons);
-
-                    Size firstSizeBefore = GetButtonSize(buttons!, first.Id);
-                    Size secondSizeBefore = GetButtonSize(buttons!, second.Id);
-
-                    store.Activate(first);
-                    Application.DoEvents();
-                    store.Activate(second);
-                    Application.DoEvents();
-
-                    Size firstSizeAfter = GetButtonSize(buttons!, first.Id);
-                    Size secondSizeAfter = GetButtonSize(buttons!, second.Id);
-
-                    Assert.Equal(firstSizeBefore, firstSizeAfter);
-                    Assert.Equal(secondSizeBefore, secondSizeAfter);
-                    Assert.Equal(firstSizeAfter.Width, secondSizeAfter.Width);
-                    Assert.True(firstSizeAfter.Height < secondSizeAfter.Height);
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
-
-        [Fact]
-        public void ThumbnailSizing_DoesNotChange_WhenScrollbarAppears()
-        {
-            Exception? failure = null;
-
-            StaTest.Run(() =>
-            {
-                try
-                {
-                    using var hostWithoutScroll = CreatePanelHost(out var panelWithoutScroll);
-                    using var hostWithScroll = CreatePanelHost(out var panelWithScroll);
-
-                    using var wide = new Bitmap(320, 80);
-                    using var filler = new Bitmap(80, 320);
-                    using (var g = Graphics.FromImage(wide))
-                    {
-                        g.Clear(Color.DarkOrange);
-                    }
-
-                    using (var g = Graphics.FromImage(filler))
-                    {
-                        g.Clear(Color.CadetBlue);
-                    }
-
-                    var storeWithoutScroll = new ClipboardHistoryStore();
-                    panelWithoutScroll.AttachStore(storeWithoutScroll);
-                    var singleWide = storeWithoutScroll.AddObservedImage(wide);
-
-                    var storeWithScroll = new ClipboardHistoryStore();
-                    panelWithScroll.AttachStore(storeWithScroll);
-                    var wideAmongOverflow = storeWithScroll.AddObservedImage(wide);
-                    for (int i = 0; i < 8; i++)
-                    {
-                        storeWithScroll.AddObservedImage(filler);
-                    }
-
-                    Application.DoEvents();
-
-                    var sizeWithoutScroll = panelWithoutScroll.GetItemButtonSizeForDiagnostics(singleWide.Id);
-                    var sizeWithScroll = panelWithScroll.GetItemButtonSizeForDiagnostics(wideAmongOverflow.Id);
-
-                    Assert.Equal(sizeWithoutScroll, sizeWithScroll);
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            if (failure != null)
-            {
-                throw new TargetInvocationException(failure);
-            }
-        }
-
-        private static Size GetButtonSize(System.Collections.IDictionary buttons, Guid id)
-        {
-            var button = (Control?)buttons[id];
-            Assert.NotNull(button);
-            return button!.Size;
-        }
-
-        private static Form CreatePanelHost(out ClipboardHistoryPanel panel)
-        {
-            var host = new Form
-            {
-                ClientSize = new Size(93, 180),
-                ShowInTaskbar = false,
-                StartPosition = FormStartPosition.Manual,
-                Location = new Point(-32000, -32000)
-            };
-
-            panel = new ClipboardHistoryPanel
-            {
-                Dock = DockStyle.Fill
-            };
-
-            host.Controls.Add(panel);
-            host.Show();
-            Application.DoEvents();
-            return host;
-        }
 
         internal static Bitmap MakeSolid(Color color)
         {
@@ -1033,15 +416,16 @@ namespace Screenzap.ViewportTests
         /// Minimal image presenter for host/store behavior tests. Tracks the currently-displayed
         /// content as a single color so tests can simulate a live in-presenter edit
         /// (<see cref="CurrentColor"/>) and assert which content was loaded/stashed without a real
-        /// image editor. Mirrors how the real ImageEditor round-trips an item's CurrentImage.
+        /// image editor. Mirrors how the real ImageDocumentEditor round-trips an item's CurrentImage.
         /// </summary>
         private sealed class StubImagePresenter : IClipboardDocumentPresenter
         {
-            private readonly System.Windows.Forms.Panel view = new System.Windows.Forms.Panel();
+
+
 
             public Color CurrentColor { get; set; } = Color.Empty;
 
-            public System.Windows.Forms.Control View => view;
+
 
             public string DisplayName => "StubImage";
 
@@ -1068,13 +452,9 @@ namespace Screenzap.ViewportTests
                 return false;
             }
 
-            public void OnActivated()
-            {
-            }
 
-            public void OnDeactivated()
-            {
-            }
+
+
 
             public bool CanPresent(ClipboardHistoryItem item)
             {
@@ -1097,12 +477,9 @@ namespace Screenzap.ViewportTests
                 return CurrentColor == Color.Empty ? null : MakeSolid(CurrentColor);
             }
 
-            public PresenterContentSize? GetNaturalContentSize() => null;
 
-            public void Dispose()
-            {
-                view.Dispose();
-            }
+
+            public void Dispose() { }
         }
     }
 }

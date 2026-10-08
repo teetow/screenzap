@@ -1,5 +1,4 @@
 ﻿using screenzap.lib;
-using screenzap.Testing;
 using System;
 using System.Threading;
 using System.Windows.Forms;
@@ -21,22 +20,6 @@ namespace screenzap
         [STAThread]
         static void Main(string[] args)
         {
-            if (IsEditorHarnessRequested(args))
-            {
-                ConfigureApplication();
-                var exitCode = EditorHarness.Run();
-                Environment.Exit(exitCode);
-                return;
-            }
-
-            if (IsUiCaptureRequested(args))
-            {
-                ConfigureApplication();
-                var exitCode = UiCaptureSession.Run();
-                Environment.Exit(exitCode);
-                return;
-            }
-
             bool smoke = Array.Exists(args, arg => arg == "--winui-smoke");
             mutex = new Mutex(false, mutexId);
 
@@ -67,39 +50,6 @@ namespace screenzap
             }
 
             Logger.Log($"Unhandled exception on {source}: {exception}");
-        }
-
-        private static bool IsEditorHarnessRequested(string[] args)
-        {
-            if (args != null)
-            {
-                foreach (var arg in args)
-                {
-                    if (string.Equals(arg, "--editor-harness", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            var env = Environment.GetEnvironmentVariable("SCREENZAP_EDITOR_HARNESS");
-            return string.Equals(env, "1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(env, "true", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool IsUiCaptureRequested(string[] args)
-        {
-            if (args != null)
-            {
-                foreach (var arg in args)
-                {
-                    if (string.Equals(arg, "--ui-capture", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-            }
-            return false;
         }
 
         private static void ConfigureApplication()

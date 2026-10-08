@@ -6,7 +6,7 @@ namespace Screenzap.ViewportTests
 {
     public class ImageEditorExpandCanvasTests
     {
-        // Mirrors ImageEditor.ExpandCanvasPaddingPixels.
+        // Mirrors ImageDocumentEditor.ExpandCanvasPaddingPixels.
         private const int Padding = 8;
 
         [Fact]
@@ -14,7 +14,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var source = new Bitmap(100, 60);
                 editor.LoadImage(source);
 

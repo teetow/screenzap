@@ -1,1 +1,2 @@
 - after task is complete, check for running instances, build and relaunch.
+- Do not run foreground desktop UI automation unless the user explicitly requests it. Use the isolated regression runner; relaunch in the tray without taking focus.

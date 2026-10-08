@@ -13,10 +13,10 @@ namespace Screenzap.ViewportTests
     public class ToolModeRegressionTests
     {
         /// <summary>160×120 white canvas, no annotations.</summary>
-        private static screenzap.ImageEditor PrepareEditor() => EditorFixture.WithCanvas(160, 120);
+        private static screenzap.ImageDocumentEditor PrepareEditor() => EditorFixture.WithCanvas(160, 120);
 
         /// <summary>Draw a rect (15,15)-(55,45) through the pipeline, then exit the tool.</summary>
-        private static void DrawRectInMoveMode(screenzap.ImageEditor editor)
+        private static void DrawRectInMoveMode(screenzap.ImageDocumentEditor editor)
         {
             editor.TestToggleRectTool();
             editor.TestFireMouseDownAtImagePixel(new Point(15, 15), MouseButtons.Left);
@@ -25,7 +25,7 @@ namespace Screenzap.ViewportTests
             editor.TestDeactivateDrawingTool();
         }
 
-        private static void ClickAtImagePixel(screenzap.ImageEditor editor, Point p)
+        private static void ClickAtImagePixel(screenzap.ImageDocumentEditor editor, Point p)
         {
             editor.TestFireMouseDownAtImagePixel(p, MouseButtons.Left);
             editor.TestFireMouseUpAtImagePixel(p, MouseButtons.Left);

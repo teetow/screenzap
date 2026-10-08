@@ -20,7 +20,7 @@ public class AcceptEditsUndoRegressionTests
         StaTest.Run(() =>
         {
             using var original = EditorFixture.Canvas(300, 200);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, original);
             var item = host.HistoryStore.ActiveItem!;
             var recentPath = Path.Combine(Path.GetTempPath(), "Screenzap-export-emoji-" + Guid.NewGuid() + ".json");
@@ -71,7 +71,7 @@ public class AcceptEditsUndoRegressionTests
         {
             using var source = EditorFixture.Canvas(220, 160);
             using (var g = Graphics.FromImage(source)) g.FillRectangle(Brushes.Blue, 0, 0, 30, 40);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             Assert.True(host.ExecuteHostCommand(EditorCommandId.RotateRight));
@@ -117,7 +117,7 @@ public class AcceptEditsUndoRegressionTests
         {
             using var source = EditorFixture.Canvas(220, 160);
             using (var g = Graphics.FromImage(source)) g.FillRectangle(Brushes.Blue, 0, 0, 30, 40);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             Assert.True(host.ExecuteHostCommand(rotate ? EditorCommandId.RotateRight : EditorCommandId.FlipHorizontal));
@@ -141,7 +141,7 @@ public class AcceptEditsUndoRegressionTests
         StaTest.Run(() =>
         {
             using var source = EditorFixture.Canvas(300, 200);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             AddText(editor, new Point(20, 20), "First");
@@ -168,7 +168,7 @@ public class AcceptEditsUndoRegressionTests
         StaTest.Run(() =>
         {
             using var source = EditorFixture.Canvas(300, 200);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             AddText(editor, new Point(20, 20), "First");
@@ -194,7 +194,7 @@ public class AcceptEditsUndoRegressionTests
         StaTest.Run(() =>
         {
             using var source = EditorFixture.Canvas(300, 200);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             AddText(editor, new Point(20, 20), "Old branch");
@@ -217,7 +217,7 @@ public class AcceptEditsUndoRegressionTests
         StaTest.Run(() =>
         {
             using var source = EditorFixture.Canvas(300, 200);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             AddText(editor, new Point(20, 20), "First");
@@ -248,7 +248,7 @@ public class AcceptEditsUndoRegressionTests
         StaTest.Run(() =>
         {
             using var source = EditorFixture.Canvas(300, 200);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             host.ExecuteHostCommand(EditorCommandId.TextTool);
@@ -295,7 +295,7 @@ public class AcceptEditsUndoRegressionTests
             try
             {
                 using var original = EditorFixture.Canvas(300, 200);
-                using var editor = new ImageEditor();
+                using var editor = new ImageDocumentEditor();
                 using var host = CreateHost(editor, original);
                 var item = host.HistoryStore.ActiveItem!;
                 AddRectangle(editor);
@@ -315,7 +315,7 @@ public class AcceptEditsUndoRegressionTests
                     Assert.Single(reopened.Overlay!.Shapes);
                     Assert.Single(reopened.Overlay.Texts);
                     Assert.Single(reopened.Overlay.Layers);
-                    using var freshEditor = new ImageEditor();
+                    using var freshEditor = new ImageDocumentEditor();
                     using var freshHost = CreateHost(freshEditor, original);
                     freshHost.HistoryStore.ReplaceAll(restored.Items);
                     Assert.True(freshHost.ActivateHistoryItem(reopened));
@@ -338,7 +338,7 @@ public class AcceptEditsUndoRegressionTests
         StaTest.Run(() =>
         {
             using var source = EditorFixture.Canvas(300, 200);
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var host = CreateHost(editor, source);
             var item = host.HistoryStore.ActiveItem!;
             AddText(editor, new Point(20, 20), "Export");
@@ -366,10 +366,10 @@ public class AcceptEditsUndoRegressionTests
         });
     }
 
-    private static ClipboardEditorHostForm CreateHost(ImageEditor editor, Bitmap source)
+    private static ClipboardDocumentHost CreateHost(ImageDocumentEditor editor, Bitmap source)
     {
-        editor.AttachExternalSurface();
-        var host = new ClipboardEditorHostForm(true, editor) { SuppressActivation = true };
+
+        var host = new ClipboardDocumentHost(true, editor);
         host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
         Assert.True(host.ActivateHistoryItem(host.HistoryStore.AddObservedImage(source)));
         editor.ResizeSurface(new Size(500, 400));
@@ -377,7 +377,7 @@ public class AcceptEditsUndoRegressionTests
         return host;
     }
 
-    private static void AddRectangle(ImageEditor editor)
+    private static void AddRectangle(ImageDocumentEditor editor)
     {
         editor.TestToggleRectTool();
         editor.TestFireMouseDownAtImagePixel(new Point(10, 10), MouseButtons.Left);
@@ -386,7 +386,7 @@ public class AcceptEditsUndoRegressionTests
         editor.TestDeactivateDrawingTool();
     }
 
-    private static void AddText(ImageEditor editor, Point position, string text)
+    private static void AddText(ImageDocumentEditor editor, Point position, string text)
     {
         editor.TestToggleTextTool();
         Assert.True(editor.TestHandleTextToolMouseDown(position));

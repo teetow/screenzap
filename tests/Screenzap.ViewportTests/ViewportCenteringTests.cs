@@ -13,10 +13,10 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class ViewportCenteringTests
     {
-        private static screenzap.ImageEditor NewEditor(Size formSize, Size imageSize)
-            => EditorFixture.WithCanvas(imageSize, formSize: formSize);
+        private static screenzap.ImageDocumentEditor NewEditor(Size formSize, Size imageSize)
+            => EditorFixture.WithCanvas(imageSize, viewportSize: formSize);
 
-        private static void AssertCentred(screenzap.ImageEditor editor)
+        private static void AssertCentred(screenzap.ImageDocumentEditor editor)
         {
             var m = editor.TestViewportMetrics;
             var expectedX = (m.ClientSize.Width - m.ScaledImageSize.Width) / 2f;

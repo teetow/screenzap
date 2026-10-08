@@ -14,7 +14,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(64, 48);
                 using (var g = Graphics.FromImage(canvas))
                 {
@@ -54,7 +54,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(40, 30);
                 editor.LoadImage(canvas);
 
@@ -168,7 +168,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(40, 30);
                 editor.LoadImage(canvas);
 
@@ -199,8 +199,8 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                using var host = new ClipboardEditorHostForm(true, editor);
+                using var editor = new screenzap.ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
                 using var original = EditorFixture.Canvas(40, 30);
                 var item = host.HistoryStore.AddObservedImage(original);
                 Assert.True(host.ActivateHistoryItem(item));

@@ -4,7 +4,7 @@ namespace screenzap
 {
     /// <summary>
     /// The currently engaged editor tool. Exactly one tool is active at any time;
-    /// activating a new tool deactivates the previous one through <see cref="ImageEditor.SetActiveTool"/>.
+    /// activating a new tool deactivates the previous one through <see cref = "ImageDocumentEditor.SetActiveTool"/>.
     /// </summary>
     internal enum ActiveTool
     {
@@ -18,24 +18,23 @@ namespace screenzap
         FreeRotate
     }
 
-    public partial class ImageEditor
+    public partial class ImageDocumentEditor
     {
         private ActiveTool activeTool = ActiveTool.None;
         private bool insideSetActiveTool;
-
         internal ActiveTool CurrentTool => activeTool;
 
-        // Computed accessors keep legacy field-style call sites working while routing
-        // every state change through SetActiveTool. Setters preserve the prior behavior
-        // where assigning `false` only clears state if THIS tool was the active one
-        // (assigning `false` to an inactive tool was a no-op in the old code).
+        // All tool state changes go through the central transition below. Clearing an
+        // inactive accessor leaves the currently active tool alone.
         private bool isTextToolActive
         {
             get => activeTool == ActiveTool.Text;
             set
             {
-                if (value) SetActiveTool(ActiveTool.Text);
-                else if (activeTool == ActiveTool.Text) SetActiveTool(ActiveTool.None);
+                if (value)
+                    SetActiveTool(ActiveTool.Text);
+                else if (activeTool == ActiveTool.Text)
+                    SetActiveTool(ActiveTool.None);
             }
         }
 
@@ -44,8 +43,10 @@ namespace screenzap
             get => activeTool == ActiveTool.Censor;
             set
             {
-                if (value) SetActiveTool(ActiveTool.Censor);
-                else if (activeTool == ActiveTool.Censor) SetActiveTool(ActiveTool.None);
+                if (value)
+                    SetActiveTool(ActiveTool.Censor);
+                else if (activeTool == ActiveTool.Censor)
+                    SetActiveTool(ActiveTool.None);
             }
         }
 
@@ -54,8 +55,10 @@ namespace screenzap
             get => activeTool == ActiveTool.Straighten;
             set
             {
-                if (value) SetActiveTool(ActiveTool.Straighten);
-                else if (activeTool == ActiveTool.Straighten) SetActiveTool(ActiveTool.None);
+                if (value)
+                    SetActiveTool(ActiveTool.Straighten);
+                else if (activeTool == ActiveTool.Straighten)
+                    SetActiveTool(ActiveTool.None);
             }
         }
 
@@ -64,8 +67,10 @@ namespace screenzap
             get => activeTool == ActiveTool.FreeRotate;
             set
             {
-                if (value) SetActiveTool(ActiveTool.FreeRotate);
-                else if (activeTool == ActiveTool.FreeRotate) SetActiveTool(ActiveTool.None);
+                if (value)
+                    SetActiveTool(ActiveTool.FreeRotate);
+                else if (activeTool == ActiveTool.FreeRotate)
+                    SetActiveTool(ActiveTool.None);
             }
         }
 
@@ -98,6 +103,7 @@ namespace screenzap
                         {
                             SetActiveTool(ActiveTool.None);
                         }
+
                         break;
                 }
             }
@@ -118,32 +124,13 @@ namespace screenzap
             SelectAnnotation(null);
             SelectTextAnnotation(null);
             activeTextAnnotation = null;
-            pictureBox1?.Invalidate();
-        }
-
-        /// <summary>
-        /// Rail button for ActiveTool.None. Switching to Move cancels whatever tool is
-        /// engaged — SetActiveTool runs the previous tool's deactivator with apply=false,
-        /// so this is the click equivalent of walking the Escape ladder to the bottom.
-        /// </summary>
-        private void moveToolStripButton_Click(object? sender, EventArgs e)
-        {
-            SetActiveTool(ActiveTool.None);
-            RequestCanvasFocus();
-        }
-
-        private void UpdateMoveToolButton()
-        {
-            if (moveToolStripButton != null)
-            {
-                moveToolStripButton.Checked = activeTool == ActiveTool.None;
-            }
+            viewport?.Invalidate();
         }
 
         /// <summary>
         /// Central tool switcher. Tears down the previously active tool (finalizing
-        /// in-flight edits, hiding overlay toolstrips) before flipping the flag, so
-        /// activating tool B from tool A always leaves A's UI consistent — even when
+        /// in-flight edits, releasing tool state) before flipping the flag, so
+        /// activating tool B from tool A always leaves A's state consistent — even when
         /// the new tool was engaged via an Activate*() that doesn't know about A.
         /// </summary>
         private void SetActiveTool(ActiveTool next)
@@ -165,7 +152,6 @@ namespace screenzap
             try
             {
                 var previous = activeTool;
-
                 // Run the previous tool's deactivator while its flag is still set
                 // (deactivators may guard on it).
                 switch (previous)
@@ -190,7 +176,6 @@ namespace screenzap
                 }
 
                 activeTool = next;
-
                 // Engaging a tool starts a new act, so whatever was selected for the previous
                 // one is dropped — otherwise the rectangle you just picked keeps its options
                 // toolbar (and eats Delete) while the text tool is armed. Switching TO
@@ -200,24 +185,10 @@ namespace screenzap
                 {
                     ClearAnnotationObjectSelection();
                 }
-
-                switch (previous)
-                {
-                    case ActiveTool.Text:
-                        UpdateTextToolButtons();
-                        UpdateTextToolbarVisibility();
-                        break;
-                    case ActiveTool.Arrow:
-                    case ActiveTool.Rectangle:
-                    case ActiveTool.Highlighter:
-                        UpdateDrawingToolButtons();
-                        break;
-                }
             }
             finally
             {
                 insideSetActiveTool = false;
-                UpdateMoveToolButton();
             }
         }
     }

@@ -8,9 +8,9 @@ namespace Screenzap.ViewportTests
 {
     public class ImageLayerToolbarAndCropTests
     {
-        private static screenzap.ImageEditor PrepareEditor(out RectangleF frame)
+        private static screenzap.ImageDocumentEditor PrepareEditor(out RectangleF frame)
         {
-            var editor = new screenzap.ImageEditor();
+            var editor = new screenzap.ImageDocumentEditor();
             // This suite drives Ctrl (crop) and Shift (aspect invert) heavily, and both read
             // the real keyboard unless pinned. It keeps its own uncleared — therefore
             // transparent — canvas, so it takes the pinning without the rest of the fixture.
@@ -31,15 +31,11 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var editor = PrepareEditor(out _);
-                editor.Show();
+
                 Application.DoEvents();
 
-                Assert.True(editor.LayerToolbarAvailableForTests);
-                Assert.True(editor.LayerToolbarShownForTests);
-                Assert.True(editor.LayerRotationInputAvailableForTests);
 
                 editor.SetSelectedLayerForTests(-1);
-                Assert.False(editor.LayerToolbarShownForTests);
             });
         }
 
@@ -356,9 +352,8 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 using var editor = PrepareEditor(out var original);
-                editor.Show();
+
                 Application.DoEvents();
-                Assert.True(editor.LayerPositionInputAvailableForTests);
 
                 var centre = new Point(
                     (int)(original.X + original.Width / 2f),
@@ -370,8 +365,6 @@ namespace Screenzap.ViewportTests
                 var moved = editor.GetImageLayerFrameForTests(0);
                 Assert.Equal(original.X + 5f, moved.X);
                 Assert.Equal(original.Y + 3f, moved.Y);
-                Assert.Equal(moved.X.ToString("0.##", CultureInfo.CurrentCulture), editor.LayerXTextForTests);
-                Assert.Equal(moved.Y.ToString("0.##", CultureInfo.CurrentCulture), editor.LayerYTextForTests);
             });
         }
     }

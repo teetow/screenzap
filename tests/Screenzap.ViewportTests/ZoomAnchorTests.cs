@@ -13,9 +13,9 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class ZoomAnchorTests
     {
-        private static ImageViewportControl NewViewport(Size client, Size image, decimal zoom = 1m)
+        private static ImageViewport NewViewport(Size client, Size image, decimal zoom = 1m)
         {
-            var control = new ImageViewportControl { ClientSize = client };
+            var control = new ImageViewport { ClientSize = client };
             control.Image = new Bitmap(image.Width, image.Height);
             control.ZoomLevel = zoom;
             control.CenterImage();
@@ -149,8 +149,8 @@ namespace Screenzap.ViewportTests
             control.PanBy(new Size(5000, 5000));
 
             var rect = control.Metrics.ImageClientRectangle;
-            Assert.Equal(800f - ImageViewportControl.OverscrollVisibleMargin, rect.Left);
-            Assert.Equal(600f - ImageViewportControl.OverscrollVisibleMargin, rect.Top);
+            Assert.Equal(800f - ImageViewport.OverscrollVisibleMargin, rect.Left);
+            Assert.Equal(600f - ImageViewport.OverscrollVisibleMargin, rect.Top);
         }
     }
 }

@@ -9,10 +9,10 @@ namespace Screenzap.ViewportTests;
 
 public class ArrowInteractionTests
 {
-    private static ImageEditor Arrow(double zoom = 1, decimal scale = 1m)
+    private static ImageDocumentEditor Arrow(double zoom = 1, decimal scale = 1m)
     {
         var editor = EditorFixture.WithCanvas(640, 400);
-        editor.AttachExternalSurface();
+
         editor.ResizeSurface(new Size(640, 400));
         editor.SurfaceSetZoom((decimal)zoom);
         ((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.ArrowTool);
@@ -23,7 +23,7 @@ public class ArrowInteractionTests
         return editor;
     }
 
-    private static void Gesture(ImageEditor editor, Point from, Point to)
+    private static void Gesture(ImageDocumentEditor editor, Point from, Point to)
     {
         var start = editor.TestImagePixelToClient(from);
         var finish = editor.TestImagePixelToClient(to);
@@ -184,7 +184,7 @@ public class ArrowInteractionTests
         });
     }
 
-    private static Bitmap Frame(ImageEditor editor)
+    private static Bitmap Frame(ImageDocumentEditor editor)
     {
         var image = new Bitmap(640, 400);
         using var graphics = Graphics.FromImage(image);

@@ -30,8 +30,8 @@ namespace screenzap.WinUI;
 
 internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
 {
-    private readonly ClipboardEditorHostForm host;
-    private readonly ImageEditor editor;
+    private readonly ClipboardDocumentHost host;
+    private readonly ImageDocumentEditor editor;
     private readonly Grid root = new();
     private readonly EditorCanvas canvas = new() { IsTabStop = true };
     private readonly StackPanel inspector = new() { Spacing = 16, Padding = new Thickness(20) };
@@ -73,7 +73,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
     private static SolidColorBrush Brush(byte r, byte g, byte b) => new(Color.FromArgb(255, r, g, b));
     private static readonly SolidColorBrush Accent = Brush(235, 174, 78);
 
-    internal EditorWindow(ClipboardEditorHostForm host, ImageEditor editor)
+    internal EditorWindow(ClipboardDocumentHost host, ImageDocumentEditor editor)
     {
         this.host = host;
         this.editor = editor;
@@ -102,6 +102,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         editor.SurfaceInvalidated += InvalidateCanvas;
         editor.SurfaceNotification = (title, message) => { notification = $"{title}: {message}"; notificationUntil = DateTime.UtcNow.AddSeconds(15); RefreshState(); };
         InitializeNativeDrop();
+        host.StateChanged += QueueStateRefresh;
         host.HistoryStore.Changed += HistoryChanged;
         host.HistoryStore.ActiveItemChanged += ActiveHistoryChanged;
         host.HistoryStore.ItemUpdated += HistoryItemUpdated;
@@ -112,7 +113,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         canvas.Loaded += (_, _) => { if (root.XamlRoot != null) root.XamlRoot.Changed += (_, _) => { if (root.XamlRoot.RasterizationScale != scale) ResizeCanvas(); }; ResizeCanvas(); editor.SurfaceSetZoom(1); Execute(EditorCommandId.FitImageToView); RefreshState(); };
         canvas.LostFocus += (_, _) => editor.SurfaceSuspendText();
         canvas.PointerPressed += PointerPressed;
-        canvas.PointerMoved += (_, e) => { var p = e.GetCurrentPoint(canvas); lastPointerPoint = CanvasPoint(p.Position); editor.SurfacePointer(1, lastPointerPoint, MouseButton(p.Properties)); e.Handled = true; };
+        canvas.PointerMoved += (_, e) => { var p = e.GetCurrentPoint(canvas); lastPointerPoint = CanvasPoint(p.Position); editor.SurfaceModifiers(KeyData(VirtualKey.None)); editor.SurfacePointer(1, lastPointerPoint, MouseButton(p.Properties)); e.Handled = true; };
         canvas.PointerExited += (_, _) => { if (!capturedPointer.HasValue) editor.SurfacePointerExit(); };
         canvas.PointerReleased += (_, e) =>
         {
@@ -120,6 +121,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
             var p = e.GetCurrentPoint(canvas); lastPointerPoint = CanvasPoint(p.Position);
             // A release can arrive ahead of a coalesced final move. Apply its final position
             // while the drag is still active before ending the gesture.
+            editor.SurfaceModifiers(KeyData(VirtualKey.None));
             editor.SurfacePointer(1, lastPointerPoint, capturedButton);
             editor.SurfacePointer(2, lastPointerPoint, capturedButton);
             capturedPointer = null; canvas.ReleasePointerCapture(e.Pointer); e.Handled = true;
@@ -130,6 +132,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         {
             var keys = KeyData(e.Key);
             if (keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Enter)) { Execute(EditorCommandId.CommitEdits); e.Handled = true; }
+            else if (keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.R)) { Execute(EditorCommandId.Reload); e.Handled = true; }
             else if (keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Shift | System.Windows.Forms.Keys.S)) { Execute(EditorCommandId.SaveAs); e.Handled = true; }
             else if (editor.SurfaceEditingText && keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Z)) { Execute(EditorCommandId.Undo); e.Handled = true; }
             else { e.Handled = editor.SurfaceKey(keys); }
@@ -150,7 +153,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         RefreshState();
         canvas.Focus(FocusState.Programmatic);
     }
-    internal void Shutdown() { shuttingDown = true; stateTimer.Stop(); editor.SurfaceInvalidated -= InvalidateCanvas; host.HistoryStore.Changed -= HistoryChanged; host.HistoryStore.ActiveItemChanged -= ActiveHistoryChanged; host.HistoryStore.ItemUpdated -= HistoryItemUpdated; host.HistoryStore.ItemPreviewRefreshed -= HistoryItemUpdated; canvas.DisposeCursors(); canvas.RemoveFromVisualTree(); texture?.Dispose(); frame?.Dispose(); Close(); }
+    internal void Shutdown() { shuttingDown = true; stateTimer.Stop(); editor.SurfaceInvalidated -= InvalidateCanvas; host.StateChanged -= QueueStateRefresh; host.HistoryStore.Changed -= HistoryChanged; host.HistoryStore.ActiveItemChanged -= ActiveHistoryChanged; host.HistoryStore.ItemUpdated -= HistoryItemUpdated; host.HistoryStore.ItemPreviewRefreshed -= HistoryItemUpdated; canvas.DisposeCursors(); canvas.RemoveFromVisualTree(); texture?.Dispose(); frame?.Dispose(); Close(); }
     private void HistoryChanged(object? sender, EventArgs args) { historyDirty = true; QueueStateRefresh(); }
     private void ActiveHistoryChanged(object? sender, EventArgs args) { QueueStateRefresh(); InvalidateCanvas(); }
     private void HistoryItemUpdated(object? sender, ClipboardHistoryItem item)
@@ -407,6 +410,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         var p = e.GetCurrentPoint(canvas); var point = CanvasPoint(p.Position);
         capturedButton = MouseButton(p.Properties); lastPointerPoint = point;
         bool doubleClick = Environment.TickCount64 - lastPress < System.Windows.Forms.SystemInformation.DoubleClickTime && Math.Abs(point.X - lastPressPoint.X) < 5 && Math.Abs(point.Y - lastPressPoint.Y) < 5;
+        editor.SurfaceModifiers(KeyData(VirtualKey.None));
         editor.SurfacePointer(0, point, MouseButton(p.Properties), doubleClick ? 2 : 1);
         if (doubleClick) editor.SurfacePointer(3, point, MouseButton(p.Properties), 2);
         lastPress = Environment.TickCount64; lastPressPoint = point; e.Handled = true;

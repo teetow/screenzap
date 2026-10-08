@@ -9,7 +9,7 @@ using System.Windows.Forms;
 using screenzap;
 using screenzap.Components;
 using screenzap.Components.Shared;
-using screenzap.Testing;
+
 using Xunit;
 
 namespace Screenzap.ViewportTests
@@ -245,19 +245,13 @@ namespace Screenzap.ViewportTests
 
                 StaTest.Run(() =>
                 {
-                    using var imagePresenter = new ImageEditor();
-                    using var host = new ClipboardEditorHostForm(
+                    using var imagePresenter = new ImageDocumentEditor();
+                    using var host = new ClipboardDocumentHost(
                         new IClipboardDocumentPresenter[] { imagePresenter },
                         persistence,
                         restorePersistedHistory: true,
                         persistHistoryChanges: false,
-                        allowSystemClipboardWrites: false)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false
-                    };
-
-                    host.CreateControl();
+                        allowSystemClipboardWrites: false);
 
                     Assert.Same(imagePresenter, host.ActivePresenter);
 
@@ -292,7 +286,6 @@ namespace Screenzap.ViewportTests
             {
                 var store = new ClipboardHistoryStore();
                 using var host = new Form();
-                host.CreateControl();
 
                 using var knownImage = CreateSolidBitmap(Color.DarkSlateBlue);
                 var known = store.AddObservedImage(knownImage);
@@ -321,7 +314,6 @@ namespace Screenzap.ViewportTests
             {
                 var store = new ClipboardHistoryStore();
                 using var host = new Form();
-                host.CreateControl();
 
                 using var fallbackImage = CreateSolidBitmap(Color.DarkCyan);
                 var fallback = store.AddObservedImage(fallbackImage);
@@ -357,7 +349,6 @@ namespace Screenzap.ViewportTests
             {
                 var store = new ClipboardHistoryStore();
                 using var host = new Form();
-                host.CreateControl();
 
                 using var localImage = CreateSolidBitmap(Color.MidnightBlue);
                 var localOnly = store.AddObservedImage(localImage);
@@ -392,7 +383,6 @@ namespace Screenzap.ViewportTests
             {
                 var store = new ClipboardHistoryStore();
                 using var host = new Form();
-                host.CreateControl();
 
                 // A "set as active"/committed item: local-only (no SystemHistoryId), not a seeded
                 // fallback, carrying a suppressed old system id. This is the on-disk shape of 539e706c.
@@ -441,7 +431,6 @@ namespace Screenzap.ViewportTests
             {
                 var store = new ClipboardHistoryStore();
                 using var host = new Form();
-                host.CreateControl();
 
                 using var committedImage = CreateSolidBitmap(Color.SteelBlue);
                 var committed = store.AddObservedImage(committedImage);
@@ -479,7 +468,6 @@ namespace Screenzap.ViewportTests
             {
                 var store = new ClipboardHistoryStore();
                 using var host = new Form();
-                host.CreateControl();
 
                 using var oldImage = CreateSolidBitmap(Color.SteelBlue);
                 var old = store.AddObservedImage(oldImage);
@@ -517,7 +505,6 @@ namespace Screenzap.ViewportTests
             {
                 var store = new ClipboardHistoryStore();
                 using var host = new Form();
-                host.CreateControl();
 
                 using var image = CreateSolidBitmap(Color.SeaGreen);
                 var original = store.AddObservedImage(image);
@@ -550,61 +537,6 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void HostedEditor_ExternalClipboardUpdate_DoesNotClobberActiveItem()
-        {
-            Exception? failure = null;
-            var thread = new Thread(() =>
-            {
-                try
-                {
-                    using var kit = new UiTestKit(new Size(400, 300), withHost: true, visible: false);
-                    kit.Host!.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-
-                    var active = kit.LoadCanvas(64, 48, Color.MidnightBlue);
-                    Assert.True(kit.Editor.IsHostedViewForDiagnostics);
-
-                    // Simulate an external clipboard change to a different image (a new screenshot).
-                    // Both the detection probe and the image it would load are injected: writing a
-                    // real bitmap to the system clipboard here would destroy whatever the person
-                    // running the tests had copied, and the detection path never reads the
-                    // injected value anyway unless the hosted guard has regressed — which is
-                    // exactly the failure this test is here to catch.
-                    kit.Editor.ConfirmReloadWhenDirtyOverrideForDiagnostics = () => true;
-                    kit.Editor.ClipboardContainsImageProviderForDiagnostics = () => true;
-                    kit.Editor.ClipboardImageProviderForDiagnostics = () => new Bitmap(120, 90);
-
-                    kit.Editor.FireClipboardUpdatedForDiagnostics();
-                    kit.PumpUi();
-
-                    // Switch away so the previously-active item is stashed (where a clobber persists).
-                    using var otherImg = new Bitmap(30, 30);
-                    using (var g = Graphics.FromImage(otherImg)) g.Clear(Color.Green);
-                    var other = kit.Host.HistoryStore.AddObservedImage(otherImg);
-                    kit.Host.ActivateHistoryItem(other);
-                    kit.PumpUi();
-
-                    // Hosted editor must ignore external clipboard changes (the host's sync owns that):
-                    // the previously-active item keeps its own content rather than being overwritten.
-                    Assert.Equal(64, active.CurrentImage!.Width);
-                    Assert.Equal(48, active.CurrentImage!.Height);
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join();
-
-            if (failure != null)
-            {
-                throw failure;
-            }
-        }
-
-        [Fact]
         public void HistoryThumbnailClick_StashesAndRestoresImageLayerState()
         {
             Exception? failure = null;
@@ -613,18 +545,20 @@ namespace Screenzap.ViewportTests
             {
                 try
                 {
-                    using var kit = new UiTestKit(new Size(800, 600), withHost: true, visible: false);
-                    kit.Host!.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-
-                    var first = kit.LoadCanvas(96, 64, Color.LightCyan);
+                    using var editor = new ImageDocumentEditor();
+                    using var host = new ClipboardDocumentHost(true, editor);
+                    using var image = EditorFixture.Canvas(96, 64, Color.LightCyan);
+                    var first = host.HistoryStore.AddObservedImage(image);
+                    host.ActivateHistoryItem(first);
                     using var pasted = new Bitmap(20, 14);
                     using (var g = Graphics.FromImage(pasted))
                     {
                         g.Clear(Color.Purple);
                     }
 
-                    kit.PasteImage(pasted);
-                    Assert.Equal(1, kit.Editor.ImageLayerCountForTests);
+                    editor.SetInternalClipboardImageForDiagnostics(pasted);
+                    Assert.True(editor.PasteFromClipboardForDiagnostics());
+                    Assert.Equal(1, editor.ImageLayerCountForTests);
 
                     using var secondImage = new Bitmap(96, 64);
                     using (var g = Graphics.FromImage(secondImage))
@@ -632,14 +566,14 @@ namespace Screenzap.ViewportTests
                         g.Clear(Color.LightSalmon);
                     }
 
-                    var second = kit.Host.HistoryStore.AddObservedImage(secondImage);
-                    Assert.True(kit.ClickHistoryThumbnail(second));
-                    Assert.Same(second, kit.Host.HistoryStore.ActiveItem);
-                    Assert.Equal(0, kit.Editor.ImageLayerCountForTests);
+                    var second = host.HistoryStore.AddObservedImage(secondImage);
+                    Assert.True(host.ActivateHistoryItem(second));
+                    Assert.Same(second, host.HistoryStore.ActiveItem);
+                    Assert.Equal(0, editor.ImageLayerCountForTests);
 
-                    Assert.True(kit.ClickHistoryThumbnail(first));
-                    Assert.Same(first, kit.Host.HistoryStore.ActiveItem);
-                    Assert.Equal(1, kit.Editor.ImageLayerCountForTests);
+                    Assert.True(host.ActivateHistoryItem(first));
+                    Assert.Same(first, host.HistoryStore.ActiveItem);
+                    Assert.Equal(1, editor.ImageLayerCountForTests);
                 }
                 catch (Exception ex)
                 {

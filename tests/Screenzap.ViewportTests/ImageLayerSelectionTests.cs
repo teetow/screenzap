@@ -6,7 +6,7 @@ namespace Screenzap.ViewportTests
 {
     public class ImageLayerSelectionTests
     {
-        private static screenzap.ImageEditor PrepareEditorWithCenteredLayer(out RectangleF frame)
+        private static screenzap.ImageDocumentEditor PrepareEditorWithCenteredLayer(out RectangleF frame)
         {
             var editor = EditorFixture.WithCanvas(80, 60);
 
@@ -119,7 +119,7 @@ namespace Screenzap.ViewportTests
 
                 var outside = new Point(2, 2);
                 Assert.False(editor.BeginLayerInteractionForTests(outside));
-                // The empty-click branch in pictureBox1_MouseDown calls DeselectImageLayerIfAny;
+                // The empty-click branch in ViewportMouseDown calls DeselectImageLayerIfAny;
                 // the test-input partial bypasses that cascade so simulate the deselect directly.
                 editor.SetSelectedLayerForTests(-1);
                 Assert.Equal(-1, editor.SelectedLayerIndexForTests);

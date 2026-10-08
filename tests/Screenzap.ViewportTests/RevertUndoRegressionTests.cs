@@ -187,13 +187,8 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
-                using var host = new ClipboardEditorHostForm(true, editor)
-                {
-                    SuppressActivation = true,
-                    ShowInTaskbar = false,
-                    Opacity = 0
-                };
+                using var editor = new screenzap.ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
 
                 host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
                 using var source = new Bitmap(40, 30);
@@ -203,7 +198,6 @@ namespace Screenzap.ViewportTests
                 }
                 var item = host.HistoryStore.AddObservedImage(source);
 
-                host.Show();
                 Application.DoEvents();
 
                 // Activate through the host so the presenter is loaded and host services attach.

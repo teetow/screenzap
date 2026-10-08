@@ -15,7 +15,7 @@ public class ExternalSurfaceTests
         StaTest.Run(() =>
         {
             using var editor = EditorFixture.WithCanvas(400, 300);
-            editor.AttachExternalSurface();
+
             editor.ResizeSurface(new Size(640, 480));
             ((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.TextTool);
             Assert.Equal(new Size(640, 480), editor.TestViewportMetrics.ClientSize);
@@ -34,7 +34,7 @@ public class ExternalSurfaceTests
         StaTest.Run(() =>
         {
             using var editor = EditorFixture.WithCanvas(400, 300);
-            editor.AttachExternalSurface(); editor.ResizeSurface(new Size(640, 480));
+             editor.ResizeSurface(new Size(640, 480));
             ((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.RectangleTool);
             editor.SurfacePointer(0, new Point(150, 120), MouseButtons.Left);
             editor.SurfacePointer(1, new Point(220, 180), MouseButtons.Left);
@@ -50,8 +50,8 @@ public class ExternalSurfaceTests
     {
         StaTest.Run(() =>
         {
-            using var editor = new ImageEditor(); editor.AttachExternalSurface();
-            using var host = new ClipboardEditorHostForm(true, editor);
+            using var editor = new ImageDocumentEditor();
+            using var host = new ClipboardDocumentHost(true, editor);
             int activations = 0; host.ExternalActivateRequested = () => activations++;
             using var image = new Bitmap(800, 600);
             host.ActivateHistoryItem(host.HistoryStore.AddObservedImage(image));
@@ -77,7 +77,7 @@ public class ExternalSurfaceTests
             Assert.Equal(tool, editor.CurrentTool);
             Assert.Equal(new Rectangle(40, 30, 80, 60), editor.SelectionDiagnostics.Selection);
             Assert.True(host.CanExecuteHostCommand(EditorCommandId.Undo));
-            host.ShowAndActivate(); Assert.Equal(1, activations); Assert.False(host.Visible);
+            host.ShowAndActivate(); Assert.Equal(1, activations);
         });
     }
 
@@ -87,14 +87,14 @@ public class ExternalSurfaceTests
         StaTest.Run(() =>
         {
             using var editor = EditorFixture.WithCanvas(100, 100);
-            editor.AttachExternalSurface(); editor.ResizeSurface(new Size(200, 200));
+             editor.ResizeSurface(new Size(200, 200));
             ((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.RectangleTool);
             editor.SurfacePointer(0, new Point(60, 60), MouseButtons.Left);
             editor.SurfacePointer(1, new Point(130, 130), MouseButtons.Left);
             editor.SurfacePointer(2, new Point(130, 130), MouseButtons.Left);
             using var frame = new Bitmap(200, 200); using var graphics = Graphics.FromImage(frame);
             editor.RenderSurface(graphics);
-            Assert.False(editor.Visible);
+
             Assert.True(frame.GetPixel(60, 80).R > frame.GetPixel(60, 80).B);
         });
     }
@@ -107,8 +107,8 @@ public class ExternalSurfaceTextTests
     {
         StaTest.Run(() =>
         {
-            using var editor = new ImageEditor(); editor.AttachExternalSurface();
-            using var host = new ClipboardEditorHostForm(true, editor);
+            using var editor = new ImageDocumentEditor();
+            using var host = new ClipboardDocumentHost(true, editor);
             host.ExternalActivateRequested = () => { };
             using var image = new Bitmap(400, 300);
             host.ActivateHistoryItem(host.HistoryStore.AddObservedImage(image));
@@ -135,7 +135,7 @@ public class ExternalSurfaceTextTests
         StaTest.Run(() =>
         {
             using var editor = EditorFixture.WithCanvas(200, 150);
-            editor.AttachExternalSurface(); editor.ResizeSurface(new Size(400, 300));
+             editor.ResizeSurface(new Size(400, 300));
             ((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.TextTool);
             editor.SurfacePointer(0, new Point(120, 110), MouseButtons.Left);
             editor.SurfacePointer(2, new Point(120, 110), MouseButtons.Left);
@@ -153,7 +153,7 @@ public class ExternalSurfaceTextTests
         StaTest.Run(() =>
         {
             using var editor = EditorFixture.WithCanvas(400, 300);
-            editor.AttachExternalSurface(); editor.ResizeSurface(new Size(640, 480));
+             editor.ResizeSurface(new Size(640, 480));
             using var paste = new Bitmap(40, 30);
             Assert.True(editor.SurfaceDropImage(paste, new Point(200, 180)));
             Assert.Equal("Layer", editor.SurfaceInspectorKind);
@@ -186,9 +186,9 @@ public class ExternalSurfaceColorTests
     {
         StaTest.Run(() =>
         {
-            using var editor = new ImageEditor();
-            editor.AttachExternalSurface();
-            using var host = new ClipboardEditorHostForm(true, editor);
+            using var editor = new ImageDocumentEditor();
+
+            using var host = new ClipboardDocumentHost(true, editor);
             host.ExternalActivateRequested = () => { };
             using var source = new Bitmap(200, 150);
             using (var graphics = Graphics.FromImage(source)) graphics.Clear(Color.FromArgb(40, 60, 80));
@@ -215,8 +215,8 @@ public class ExternalSurfaceDeleteTests
     {
         StaTest.Run(() =>
         {
-            using var editor = new ImageEditor();
-            editor.AttachExternalSurface();
+            using var editor = new ImageDocumentEditor();
+
             using var image = new Bitmap(100, 80, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
             using (var g = Graphics.FromImage(image)) g.Clear(Color.Red);
             editor.LoadImage(image);
@@ -249,7 +249,7 @@ public class ExternalSurfaceDeleteTests
         StaTest.Run(() =>
         {
             using var editor = EditorFixture.WithCanvas(40, 30);
-            editor.AttachExternalSurface();
+
             Assert.True(editor.SurfaceKey(Keys.Delete));
             using var cleared = editor.CloneBaseBitmapForTests();
             Assert.Equal(0, cleared!.GetPixel(20, 15).A);

@@ -14,7 +14,7 @@ namespace Screenzap.ViewportTests
     public class SelectionStampCloneGestureTests
     {
         /// <summary>White canvas with a red block; the marquee starts on the block.</summary>
-        private static screenzap.ImageEditor PrepareEditor(Size canvasSize, Rectangle redBlock)
+        private static screenzap.ImageDocumentEditor PrepareEditor(Size canvasSize, Rectangle redBlock)
         {
             var editor = EditorFixture.WithCanvas(canvasSize, g =>
             {
@@ -27,7 +27,7 @@ namespace Screenzap.ViewportTests
 
         private static int Argb(Color color) => color.ToArgb();
 
-        private static int PixelAt(screenzap.ImageEditor editor, int x, int y)
+        private static int PixelAt(screenzap.ImageDocumentEditor editor, int x, int y)
         {
             using var bitmap = editor.CloneBaseBitmapForTests()!;
             return bitmap.GetPixel(x, y).ToArgb();

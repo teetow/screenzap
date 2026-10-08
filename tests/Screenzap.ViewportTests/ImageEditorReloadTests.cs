@@ -13,7 +13,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var imageEditor = new screenzap.ImageEditor();
+                using var imageEditor = new screenzap.ImageDocumentEditor();
                 using var image = new Bitmap(48, 32);
                 using (var graphics = Graphics.FromImage(image))
                 {
@@ -50,20 +50,14 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var imageEditor = new screenzap.ImageEditor();
-                using var host = new ClipboardEditorHostForm(true, imageEditor)
-                {
-                    SuppressActivation = true,
-                    ShowInTaskbar = false
-                };
-
-                host.CreateControl();
+                using var imageEditor = new screenzap.ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, imageEditor);
 
                 using var initialImage = new Bitmap(20, 10);
                 var imageData = new DataObject();
                 imageData.SetData(DataFormats.Bitmap, true, initialImage);
-                Assert.True(host.TryShowClipboardData(imageData));
-                Assert.IsType<screenzap.ImageEditor>(host.ActivePresenter);
+                Assert.True(host.ActivateHistoryItem(host.HistoryStore.AddObservedImage(initialImage)));
+                Assert.IsType<screenzap.ImageDocumentEditor>(host.ActivePresenter);
 
                 imageEditor.SetPendingReloadForDiagnostics(hasPendingReload: true, useTextTarget: false);
                 Assert.True(host.HasPendingReloadIndicator);

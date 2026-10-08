@@ -86,7 +86,7 @@ public class DeJpegTests
     {
         StaTest.Run(() =>
         {
-            using var editor = new ImageEditor();
+            using var editor = new ImageDocumentEditor();
             using var source = new Bitmap(48, 32);
             using (var g = Graphics.FromImage(source)) g.Clear(Color.Red);
             editor.LoadImage(source);
@@ -117,62 +117,11 @@ public class DeJpegTests
         });
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void DialogDiscardsLateResultAfterDocumentChangeOrDisposal(bool dispose)
-    {
-        StaTest.Run(() =>
-        {
-            using var source = new Bitmap(32, 32);
-            var backend = new DelayedBackend();
-            bool current = true;
-            using var dialog = new DeJpegDialog(source, () => current, () => backend);
-            dialog.CreateControl();
-            var task = dialog.CleanAsync();
-            PumpUntil(() => backend.Started.Task.IsCompleted);
-            current = false;
-            if (dispose) dialog.Dispose();
-            backend.Complete.TrySetResult(Png(source));
-            PumpUntil(() => task.IsCompleted);
-            task.GetAwaiter().GetResult();
-            Assert.Null(dialog.Result);
-        });
-    }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void DialogStartsAutomaticallyAndCompletesOrCancels(bool cancel)
-    {
-        StaTest.Run(() =>
-        {
-            using var source = new Bitmap(47, 31);
-            var backend = new DelayedBackend();
-            using var dialog = new DeJpegDialog(source, () => true, () => backend);
-            using var timer = new System.Windows.Forms.Timer { Interval = 20 };
-            timer.Tick += (_, _) =>
-            {
-                if (!backend.Started.Task.IsCompleted) return;
-                timer.Stop();
-                if (cancel) dialog.Close();
-                backend.Complete.SetResult(Png(source));
-            };
-            timer.Start();
-            var outcome = dialog.ShowDialog();
-            PumpUntil(() => dialog.FinishedForDiagnostics);
-            Assert.Equal(cancel ? DialogResult.Cancel : DialogResult.OK, outcome);
-            if (cancel) Assert.Null(dialog.Result);
-            else Assert.NotNull(dialog.Result);
-        });
-    }
 
-    private static void PumpUntil(Func<bool> ready)
-    {
-        var limit = DateTime.UtcNow.AddSeconds(10);
-        while (!ready() && DateTime.UtcNow < limit) { Application.DoEvents(); Thread.Sleep(5); }
-        Assert.True(ready(), "UI operation timed out");
-    }
+
+
+
     private sealed class DelayedBackend : IDeJpegFilter
     {
         internal TaskCompletionSource<bool> Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -180,7 +129,7 @@ public class DeJpegTests
         public Task<byte[]> CleanAsync(byte[] png, IProgress<string>? progress, CancellationToken cancellation)
         { Started.TrySetResult(true); return Complete.Task; }
     }
-    private static void AssertPixel(ImageEditor editor, Color color)
+    private static void AssertPixel(ImageDocumentEditor editor, Color color)
     { using var image = editor.CloneBaseBitmapForTests(); Assert.Equal(color.ToArgb(), image!.GetPixel(10, 10).ToArgb()); }
     private static byte[] Png(Image image)
     { using var stream = new MemoryStream(); image.Save(stream, ImageFormat.Png); return stream.ToArray(); }

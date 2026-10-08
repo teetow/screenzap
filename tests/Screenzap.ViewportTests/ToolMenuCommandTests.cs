@@ -11,7 +11,7 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class ToolMenuCommandTests
     {
-        private static ImageEditor EditorWithImage(int w = 80, int h = 60)
+        private static ImageDocumentEditor EditorWithImage(int w = 80, int h = 60)
         {
             var editor = EditorFixture.WithCanvas(w, h);
             return editor;
@@ -22,7 +22,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var empty = new ImageEditor();
+                using var empty = new ImageDocumentEditor();
                 var emptyPresenter = (IClipboardDocumentPresenter)empty;
                 Assert.False(emptyPresenter.CanExecute(EditorCommandId.CropTool));
                 Assert.False(emptyPresenter.CanExecute(EditorCommandId.FreeRotateTool));

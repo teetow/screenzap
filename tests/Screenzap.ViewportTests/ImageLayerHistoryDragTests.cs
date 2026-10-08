@@ -80,7 +80,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(40, 30);
                 editor.LoadImage(canvas);
 

@@ -21,32 +21,21 @@ namespace Screenzap.ViewportTests
         /// Runs over the white fill, for suites needing recognisable content (a coloured block to
         /// stamp, clone, or crop).
         /// </param>
-        /// <param name="createControl">
-        /// Force the handle up BEFORE the image is loaded, for suites that assert on layout or
-        /// drive ProcessCmdKey. Order matters — LoadImage centres against the viewport it can see
-        /// at the time — so this is a parameter rather than something a caller bolts on after.
-        /// </param>
-        /// <param name="formSize">Client size to apply once the handle exists.</param>
-        internal static screenzap.ImageEditor WithCanvas(
+        /// <param name="viewportSize">Viewport dimensions to set before loading the image.</param>
+        internal static screenzap.ImageDocumentEditor WithCanvas(
             int width,
             int height,
             Action<Graphics>? paint = null,
-            bool createControl = false,
-            Size? formSize = null)
+            Size? viewportSize = null)
         {
-            var editor = new screenzap.ImageEditor();
+            var editor = new screenzap.ImageDocumentEditor();
             try
             {
                 PinModifiers(editor);
 
-                if (createControl || formSize.HasValue)
+                if (viewportSize.HasValue)
                 {
-                    editor.CreateControl();
-                }
-
-                if (formSize.HasValue)
-                {
-                    editor.TestSetSize(formSize.Value.Width, formSize.Value.Height);
+                    editor.TestSetSize(viewportSize.Value.Width, viewportSize.Value.Height);
                 }
 
                 using var canvas = new Bitmap(width, height);
@@ -67,19 +56,18 @@ namespace Screenzap.ViewportTests
             }
         }
 
-        internal static screenzap.ImageEditor WithCanvas(
+        internal static screenzap.ImageDocumentEditor WithCanvas(
             Size size,
             Action<Graphics>? paint = null,
-            bool createControl = false,
-            Size? formSize = null)
-            => WithCanvas(size.Width, size.Height, paint, createControl, formSize);
+            Size? viewportSize = null)
+            => WithCanvas(size.Width, size.Height, paint, viewportSize);
 
         /// <summary>
         /// Pin every modifier the editor branches on to "up". Passing false is an assertion that
         /// the key is not held, not a hand-back to the OS — see the tri-state overrides in
-        /// ImageEditor.Annotations.cs.
+        /// ImageDocumentEditor.Annotations.cs.
         /// </summary>
-        internal static void PinModifiers(screenzap.ImageEditor editor)
+        internal static void PinModifiers(screenzap.ImageDocumentEditor editor)
         {
             editor.TestSetMouseButtonsHeld(System.Windows.Forms.MouseButtons.None);
             editor.TestSetShiftHeld(false);

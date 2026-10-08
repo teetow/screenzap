@@ -9,7 +9,7 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void ResetView_CentersImageWithinClient()
         {
-            using var control = new ImageViewportControl
+            using var control = new ImageViewport
             {
                 ClientSize = new Size(400, 300)
             };
@@ -31,7 +31,7 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void ZoomLevel_ClampsToSixtyFourTimes()
         {
-            using var control = new ImageViewportControl { ClientSize = new Size(200, 200) };
+            using var control = new ImageViewport { ClientSize = new Size(200, 200) };
             control.Image = new Bitmap(50, 50);
 
             control.ZoomLevel = 100m;               // request way past the ceiling
@@ -44,14 +44,14 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void PanBy_LargeImageOverscrollsPastEdges_UpToVisibleMargin()
         {
-            using var control = new ImageViewportControl
+            using var control = new ImageViewport
             {
                 ClientSize = new Size(200, 200)
             };
 
             control.Image = new Bitmap(500, 400);
             control.ZoomLevel = 1m;
-            var margin = ImageViewportControl.OverscrollVisibleMargin;
+            var margin = ImageViewport.OverscrollVisibleMargin;
 
             // Panning right/down pulls the image's top-left corner into the viewport
             // (Photoshop-style overscroll), stopping when only the margin remains visible.
@@ -72,13 +72,13 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void PanBy_SmallImageOverpansPastEdges_UpToVisibleMargin()
         {
-            using var control = new ImageViewportControl
+            using var control = new ImageViewport
             {
                 ClientSize = new Size(400, 300)
             };
 
             control.Image = new Bitmap(100, 80);
-            var margin = ImageViewportControl.OverscrollVisibleMargin;
+            var margin = ImageViewport.OverscrollVisibleMargin;
 
             control.PanBy(new Size(5000, 5000));
             var metrics = control.Metrics;
@@ -96,13 +96,13 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void PanBy_ImageNarrowerThanViewportStillOverpansHorizontally()
         {
-            using var control = new ImageViewportControl
+            using var control = new ImageViewport
             {
                 ClientSize = new Size(300, 200)
             };
 
             control.Image = new Bitmap(120, 400);
-            var margin = ImageViewportControl.OverscrollVisibleMargin;
+            var margin = ImageViewport.OverscrollVisibleMargin;
 
             control.PanBy(new Size(5000, 5000));
             var metrics = control.Metrics;

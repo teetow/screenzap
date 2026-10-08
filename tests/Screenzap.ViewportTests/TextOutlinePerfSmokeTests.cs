@@ -11,7 +11,7 @@ namespace Screenzap.ViewportTests
         [Fact]
         public void ThickOutlineRendering_CompletesWithinReasonableBudget()
         {
-            var rendererType = typeof(screenzap.ImageEditor).Assembly.GetType("screenzap.EmojiTextRenderer");
+            var rendererType = typeof(screenzap.ImageDocumentEditor).Assembly.GetType("screenzap.EmojiTextRenderer");
             Assert.NotNull(rendererType);
 
             var method = rendererType!.GetMethod(

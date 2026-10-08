@@ -5,7 +5,7 @@ using Xunit;
 namespace Screenzap.ViewportTests
 {
     /// <summary>
-    /// The editor form runs with KeyPreview, so ImageEditor_KeyDown sees every keystroke before
+    /// The editor form runs with KeyPreview, so HandleKeyDown sees every keystroke before
     /// the thing being typed into does. Any shortcut that answers a character-producing key and
     /// sets SuppressKeyPress kills the WM_CHAR behind it, and the character can never be typed —
     /// which is exactly how the bare-M transparency-grid toggle made "m" untypable in text
@@ -13,7 +13,7 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class TextTypingShortcutConflictTests
     {
-        private static screenzap.ImageEditor PrepareEditorInTextEditMode()
+        private static screenzap.ImageDocumentEditor PrepareEditorInTextEditMode()
         {
             var editor = EditorFixture.WithCanvas(160, 120);
 
@@ -120,7 +120,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(160, 120);
                 editor.LoadImage(canvas);
 

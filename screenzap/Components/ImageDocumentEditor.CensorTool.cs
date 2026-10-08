@@ -11,15 +11,10 @@ using screenzap.lib;
 
 namespace screenzap
 {
-    public partial class ImageEditor
+    public partial class ImageDocumentEditor
     {
         private readonly List<CensorRegion> censorRegions = new List<CensorRegion>();
-        // isCensorToolActive lives on ImageEditor.Tool.cs as a computed accessor.
-        private bool suppressConfidenceEvents;
-        private bool suppressCensorParamEvents;
-        private float currentConfidenceThreshold;
         private Bitmap? censorPreviewBuffer;
-
         private enum CensorDirection
         {
             X = 0,
@@ -30,7 +25,6 @@ namespace screenzap
         private CensorDirection censorDirection = CensorDirection.X;
         private int censorIterations = 30;
         private int censorSmear = 20;
-
         private sealed class CensorRegion
         {
             public CensorRegion(Rectangle bounds, float confidence)
@@ -40,53 +34,27 @@ namespace screenzap
             }
 
             public Rectangle Bounds { get; }
-
             public float Confidence { get; }
-
             public bool Selected { get; set; }
         }
+
         private void ReleaseCensorPreviewBuffer()
         {
             var existing = censorPreviewBuffer;
             censorPreviewBuffer = null;
-            existing?.Dispose();
-        }
-
-        private void ShowCensorProgressIndicator()
-        {
-            UseWaitCursor = true;
-            if (censorProgressBar != null)
-            {
-                censorProgressBar.Visible = true;
-            }
-            Application.DoEvents();
-        }
-
-        private void HideCensorProgressIndicator()
-        {
-            UseWaitCursor = false;
-            if (censorProgressBar != null)
-            {
-                censorProgressBar.Visible = false;
-            }
         }
 
         private bool BuildCensorPreviewBuffer()
         {
             ReleaseCensorPreviewBuffer();
-
-            var sourceImage = pictureBox1.Image;
-            var imageSize = pictureBox1.GetImagePixelSize();
+            var sourceImage = viewport.Image;
+            var imageSize = viewport.GetImagePixelSize();
             if (sourceImage == null || imageSize.IsEmpty || censorRegions.Count == 0)
             {
                 return false;
             }
 
-            using var perf = PerfTrace.Scope(
-                "ImageEditor.BuildCensorPreviewBuffer",
-                () => $"size={imageSize.Width}x{imageSize.Height} regions={censorRegions.Count}",
-                slowMs: 80);
-
+            using var perf = PerfTrace.Scope("ImageDocumentEditor.BuildCensorPreviewBuffer", () => $"size={imageSize.Width}x{imageSize.Height} regions={censorRegions.Count}", slowMs: 80);
             var working = new Bitmap(imageSize.Width, imageSize.Height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(working))
             {
@@ -98,7 +66,6 @@ namespace screenzap
             {
                 bufferGraphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
                 bufferGraphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-
                 foreach (var region in censorRegions)
                 {
                     var clamped = ClampToImage(region.Bounds);
@@ -127,46 +94,40 @@ namespace screenzap
 
         private bool ActivateCensorTool()
         {
-            if (!HasEditableImage || pictureBox1.Image == null)
+            if (!HasEditableImage || viewport.Image == null)
             {
                 return false;
             }
 
-            ShowCensorProgressIndicator();
-            var previousCursor = Cursor.Current;
+            var previousCursor = Cursor;
             var hasSelection = !Selection.IsEmpty;
             var detectionZone = hasSelection ? ClampToImage(Selection) : GetImageBounds();
             if (hasSelection && (detectionZone.Width <= 0 || detectionZone.Height <= 0))
             {
-                HideCensorProgressIndicator();
                 return false;
             }
 
             try
             {
-                Cursor.Current = Cursors.WaitCursor;
-
+                Cursor = EditorCursor.WaitCursor;
                 if (hasSelection)
                 {
                     using var selectionBitmap = CaptureRegion(detectionZone);
                     if (selectionBitmap == null)
                     {
-                        NotifySurface("Failed to capture the selected region.", "Censor Tool", MessageBoxIcon.Error);
+                        NotifySurface("Failed to capture the selected region.", "Censor Tool");
                         censorRegions.Clear();
                         ReleaseCensorPreviewBuffer();
-                        UpdateCensorToolbarState();
                         return false;
                     }
 
                     var detected = TextRegionDetector.FindTextRegionsDetailed(selectionBitmap);
                     Rectangle refinedBounds;
                     float combinedConfidence = 0f;
-
                     if (detected.Count > 0)
                     {
                         refinedBounds = detected[0].Bounds;
                         combinedConfidence = detected[0].Confidence;
-
                         for (int i = 1; i < detected.Count; i++)
                         {
                             refinedBounds = Rectangle.Union(refinedBounds, detected[i].Bounds);
@@ -180,26 +141,19 @@ namespace screenzap
 
                     if (refinedBounds.Width <= 0 || refinedBounds.Height <= 0)
                     {
-                        NotifySurface("No text regions were detected inside the selection.", "Censor Tool", MessageBoxIcon.Information);
+                        NotifySurface("No text regions were detected inside the selection.", "Censor Tool");
                         censorRegions.Clear();
                         ReleaseCensorPreviewBuffer();
-                        UpdateCensorToolbarState();
                         return false;
                     }
 
-                    var translated = new Rectangle(
-                        detectionZone.Left + refinedBounds.Left,
-                        detectionZone.Top + refinedBounds.Top,
-                        refinedBounds.Width,
-                        refinedBounds.Height);
-
+                    var translated = new Rectangle(detectionZone.Left + refinedBounds.Left, detectionZone.Top + refinedBounds.Top, refinedBounds.Width, refinedBounds.Height);
                     translated = ClampToImage(translated);
                     if (translated.Width <= 0 || translated.Height <= 0)
                     {
-                        NotifySurface("No text regions were detected inside the selection.", "Censor Tool", MessageBoxIcon.Information);
+                        NotifySurface("No text regions were detected inside the selection.", "Censor Tool");
                         censorRegions.Clear();
                         ReleaseCensorPreviewBuffer();
-                        UpdateCensorToolbarState();
                         return false;
                     }
 
@@ -208,15 +162,14 @@ namespace screenzap
                 }
                 else
                 {
-                    using (var detectionSource = new Bitmap(pictureBox1.Image))
+                    using (var detectionSource = new Bitmap(viewport.Image))
                     {
                         var detected = TextRegionDetector.FindTextRegionsDetailed(detectionSource);
                         if (detected.Count == 0)
                         {
-                            NotifySurface("No text regions were detected.", "Censor Tool", MessageBoxIcon.Information);
+                            NotifySurface("No text regions were detected.", "Censor Tool");
                             censorRegions.Clear();
                             ReleaseCensorPreviewBuffer();
-                            UpdateCensorToolbarState();
                             return false;
                         }
 
@@ -233,16 +186,14 @@ namespace screenzap
             }
             catch (Exception ex)
             {
-                NotifySurface($"Failed to detect text regions.\n{ex.Message}", "Censor Tool", MessageBoxIcon.Error);
+                NotifySurface($"Failed to detect text regions.\n{ex.Message}", "Censor Tool");
                 censorRegions.Clear();
                 ReleaseCensorPreviewBuffer();
-                UpdateCensorToolbarState();
                 return false;
             }
             finally
             {
-                HideCensorProgressIndicator();
-                Cursor.Current = previousCursor;
+                Cursor = previousCursor;
             }
 
             foreach (var region in censorRegions)
@@ -251,82 +202,29 @@ namespace screenzap
             }
 
             isCensorToolActive = true;
-            if (censorToolStripButton != null)
-            {
-                censorToolStripButton.Checked = true;
-            }
-            SyncCensorParamControlsFromState();
-            currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Maximum ?? 100);
-            suppressConfidenceEvents = true;
-
-            if (confidenceTrackBar != null)
-            {
-                confidenceTrackBar.Value = confidenceTrackBar.Maximum;
-                currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar.Value);
-            }
-
-            suppressConfidenceEvents = false;
-
-            if (censorToolStrip != null)
-            {
-                censorToolStrip.Visible = true;
-                PositionOverlayToolStrips();
-            }
-
-            if (confidenceTrackBar != null)
-            {
-                confidenceTrackBar_ValueChanged(confidenceTrackBar, EventArgs.Empty);
-            }
-
-            UpdateCensorToolbarState();
             ClearSelection();
-            pictureBox1.Invalidate();
+            viewport.Invalidate();
             return true;
         }
 
         private void DeactivateCensorTool(bool applySelections)
         {
-            HideCensorProgressIndicator();
-
             if (applySelections && isCensorToolActive)
             {
                 ApplyCensorRegions();
             }
 
             isCensorToolActive = false;
-            if (censorToolStripButton != null)
-            {
-                censorToolStripButton.Checked = false;
-            }
             censorRegions.Clear();
             ReleaseCensorPreviewBuffer();
-            currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar?.Maximum ?? 100);
-            Cursor = Cursors.Default;
-
-            suppressConfidenceEvents = true;
-            if (confidenceTrackBar != null)
-            {
-                confidenceTrackBar.Value = confidenceTrackBar.Maximum;
-                currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar.Value);
-                confidenceTrackBar.Enabled = false;
-            }
-            suppressConfidenceEvents = false;
-
-            if (censorToolStrip != null)
-            {
-                censorToolStrip.Visible = false;
-                PositionOverlayToolStrips();
-            }
-
-            UpdateCensorToolbarState();
+            Cursor = EditorCursor.Default;
             ClearSelection();
-            pictureBox1.Invalidate();
-            UpdateCommandUI();
+            viewport.Invalidate();
         }
 
         private void ApplyCensorRegions()
         {
-            if (!HasEditableImage || pictureBox1.Image == null)
+            if (!HasEditableImage || viewport.Image == null)
             {
                 return;
             }
@@ -347,7 +245,6 @@ namespace screenzap
             }
 
             var previousSelection = Selection;
-
             Rectangle combinedRegion = selectedRegions[0];
             for (int i = 1; i < selectedRegions.Count; i++)
             {
@@ -362,13 +259,11 @@ namespace screenzap
             }
 
             Bitmap? afterSnapshot = null;
-
             try
             {
-                var canvas = pictureBox1.Image;
+                var canvas = viewport.Image;
                 if (canvas == null)
                 {
-                    beforeSnapshot.Dispose();
                     return;
                 }
 
@@ -377,7 +272,6 @@ namespace screenzap
                     gImg.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
                     gImg.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
                     gImg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-
                     if (censorPreviewBuffer != null)
                     {
                         foreach (var regionBounds in selectedRegions)
@@ -409,16 +303,13 @@ namespace screenzap
 
                 Selection = previousSelection;
                 PushUndoStep(combinedRegion, beforeSnapshot, afterSnapshot, previousSelection, Selection);
-                pictureBox1.Invalidate();
-                UpdateCommandUI();
+                viewport.Invalidate();
                 beforeSnapshot = null;
                 afterSnapshot = null;
             }
             finally
             {
                 Selection = previousSelection;
-                beforeSnapshot?.Dispose();
-                afterSnapshot?.Dispose();
             }
         }
 
@@ -428,105 +319,6 @@ namespace screenzap
             return 1f - normalized;
         }
 
-        private void UpdateCensorToolbarState()
-        {
-            int sliderValue = confidenceTrackBar?.Value ?? 0;
-            var threshold = CalculateConfidenceThreshold(sliderValue);
-            if (confidenceValueLabel != null)
-            {
-                int thresholdPercent = (int)Math.Round(threshold * 100f, MidpointRounding.AwayFromZero);
-                confidenceValueLabel.Text = "≥ " + thresholdPercent.ToString(CultureInfo.InvariantCulture) + "%";
-            }
-
-            if (iterationsValueLabel != null)
-            {
-                iterationsValueLabel.Text = censorIterations.ToString(CultureInfo.InvariantCulture);
-            }
-
-            if (smearValueLabel != null)
-            {
-                smearValueLabel.Text = censorSmear.ToString(CultureInfo.InvariantCulture);
-            }
-
-            bool anyRegions = censorRegions.Count > 0;
-            bool anySelected = censorRegions.Any(r => r.Selected);
-
-            if (selectAllToolStripButton != null)
-            {
-                selectAllToolStripButton.Enabled = anyRegions;
-            }
-
-            if (selectNoneToolStripButton != null)
-            {
-                selectNoneToolStripButton.Enabled = anyRegions;
-            }
-
-            if (applyCensorToolStripButton != null)
-            {
-                applyCensorToolStripButton.Enabled = anySelected;
-            }
-
-            if (confidenceTrackBar != null)
-            {
-                confidenceTrackBar.Enabled = isCensorToolActive && anyRegions;
-            }
-
-            if (confidenceToolStripHost != null)
-            {
-                confidenceToolStripHost.Enabled = isCensorToolActive && anyRegions;
-            }
-
-            bool paramsEnabled = isCensorToolActive && anyRegions;
-            if (directionToolStripCombo != null)
-            {
-                directionToolStripCombo.Enabled = paramsEnabled;
-            }
-            if (iterationsToolStripHost != null)
-            {
-                iterationsToolStripHost.Enabled = paramsEnabled;
-            }
-            if (iterationsTrackBar != null)
-            {
-                iterationsTrackBar.Enabled = paramsEnabled;
-            }
-            if (smearToolStripHost != null)
-            {
-                smearToolStripHost.Enabled = paramsEnabled;
-            }
-            if (smearTrackBar != null)
-            {
-                smearTrackBar.Enabled = paramsEnabled;
-            }
-        }
-
-        private void SyncCensorParamControlsFromState()
-        {
-            suppressCensorParamEvents = true;
-            try
-            {
-                if (directionToolStripCombo != null)
-                {
-                    directionToolStripCombo.SelectedIndex = (int)censorDirection;
-                }
-                if (iterationsTrackBar != null)
-                {
-                    int value = Math.Clamp(censorIterations, iterationsTrackBar.Minimum, iterationsTrackBar.Maximum);
-                    iterationsTrackBar.Value = value;
-                    censorIterations = value;
-                }
-                if (smearTrackBar != null)
-                {
-                    int value = Math.Clamp(censorSmear, smearTrackBar.Minimum, smearTrackBar.Maximum);
-                    smearTrackBar.Value = value;
-                    censorSmear = value;
-                }
-            }
-            finally
-            {
-                suppressCensorParamEvents = false;
-            }
-        }
-
         private void RebuildCensorPreviewAfterParamChange()
         {
             if (!isCensorToolActive || censorRegions.Count == 0)
@@ -534,86 +326,15 @@ namespace screenzap
                 return;
             }
 
-            ShowCensorProgressIndicator();
             try
             {
                 BuildCensorPreviewBuffer();
             }
             finally
             {
-                HideCensorProgressIndicator();
             }
 
-            pictureBox1.Invalidate();
-        }
-
-        private void directionToolStripCombo_SelectedIndexChanged(object? sender, EventArgs e)
-        {
-            if (directionToolStripCombo == null || suppressCensorParamEvents)
-            {
-                return;
-            }
-
-            int index = directionToolStripCombo.SelectedIndex;
-            if (index < 0)
-            {
-                return;
-            }
-
-            var next = (CensorDirection)index;
-            if (next == censorDirection)
-            {
-                return;
-            }
-
-            censorDirection = next;
-            RebuildCensorPreviewAfterParamChange();
-        }
-
-        private void iterationsTrackBar_ValueChanged(object? sender, EventArgs e)
-        {
-            if (iterationsTrackBar == null)
-            {
-                return;
-            }
-
-            int value = iterationsTrackBar.Value;
-            if (iterationsValueLabel != null)
-            {
-                iterationsValueLabel.Text = value.ToString(CultureInfo.InvariantCulture);
-            }
-
-            if (suppressCensorParamEvents || value == censorIterations)
-            {
-                censorIterations = value;
-                return;
-            }
-
-            censorIterations = value;
-            RebuildCensorPreviewAfterParamChange();
-        }
-
-        private void smearTrackBar_ValueChanged(object? sender, EventArgs e)
-        {
-            if (smearTrackBar == null)
-            {
-                return;
-            }
-
-            int value = smearTrackBar.Value;
-            if (smearValueLabel != null)
-            {
-                smearValueLabel.Text = value.ToString(CultureInfo.InvariantCulture);
-            }
-
-            if (suppressCensorParamEvents || value == censorSmear)
-            {
-                censorSmear = value;
-                return;
-            }
-
-            censorSmear = value;
-            RebuildCensorPreviewAfterParamChange();
+            viewport.Invalidate();
         }
 
         private CensorRegion? FindRegionAtPixel(Point pixel)
@@ -629,47 +350,7 @@ namespace screenzap
             return null;
         }
 
-        private void confidenceTrackBar_ValueChanged(object? sender, EventArgs e)
-        {
-            if (confidenceTrackBar == null)
-            {
-                return;
-            }
-
-            if (suppressConfidenceEvents)
-            {
-                currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar.Value);
-                UpdateCensorToolbarState();
-                return;
-            }
-
-            if (!isCensorToolActive)
-            {
-                currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar.Value);
-                UpdateCensorToolbarState();
-                return;
-            }
-
-            currentConfidenceThreshold = CalculateConfidenceThreshold(confidenceTrackBar.Value);
-
-            foreach (var region in censorRegions)
-            {
-                float confidence = float.IsNaN(region.Confidence) ? 0f : region.Confidence;
-                bool meetsThreshold = confidence >= currentConfidenceThreshold;
-
-                if (confidence <= 0f && currentConfidenceThreshold <= 0f)
-                {
-                    meetsThreshold = true;
-                }
-
-                region.Selected = meetsThreshold;
-            }
-
-            UpdateCensorToolbarState();
-            pictureBox1.Invalidate();
-        }
-
-        private void selectAllToolStripButton_Click(object? sender, EventArgs e)
+        private void SelectAllCensorRegions()
         {
             if (!isCensorToolActive)
             {
@@ -681,11 +362,10 @@ namespace screenzap
                 region.Selected = true;
             }
 
-            UpdateCensorToolbarState();
-            pictureBox1.Invalidate();
+            viewport.Invalidate();
         }
 
-        private void selectNoneToolStripButton_Click(object? sender, EventArgs e)
+        private void DeselectCensorRegions()
         {
             if (!isCensorToolActive)
             {
@@ -697,23 +377,12 @@ namespace screenzap
                 region.Selected = false;
             }
 
-            UpdateCensorToolbarState();
-            pictureBox1.Invalidate();
-        }
-
-        private void applyCensorToolStripButton_Click(object? sender, EventArgs e)
-        {
-            DeactivateCensorTool(true);
-        }
-
-        private void cancelCensorToolStripButton_Click(object? sender, EventArgs e)
-        {
-            DeactivateCensorTool(false);
+            viewport.Invalidate();
         }
 
         private Bitmap? CaptureRegion(Rectangle region)
         {
-            if (pictureBox1.Image == null || region.Width <= 0 || region.Height <= 0)
+            if (viewport.Image == null || region.Width <= 0 || region.Height <= 0)
             {
                 return null;
             }
@@ -722,7 +391,7 @@ namespace screenzap
             using (var g = Graphics.FromImage(snapshot))
             {
                 g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                g.DrawImage(pictureBox1.Image, new Rectangle(Point.Empty, region.Size), region, GraphicsUnit.Pixel);
+                g.DrawImage(viewport.Image, new Rectangle(Point.Empty, region.Size), region, GraphicsUnit.Pixel);
             }
 
             return snapshot;
@@ -734,11 +403,8 @@ namespace screenzap
             bool hasShapeChange = shapesBefore != null && shapesAfter != null;
             bool hasTextChange = textsBefore != null && textsAfter != null;
             bool hasLayerChange = layersBefore != null && layersAfter != null;
-
             if (!hasBitmapChange && !hasShapeChange && !hasTextChange && !hasLayerChange)
             {
-                before?.Dispose();
-                after?.Dispose();
                 DisposeOrphanedLayers(layersBefore);
                 DisposeOrphanedLayers(layersAfter);
                 return;
@@ -746,8 +412,6 @@ namespace screenzap
 
             if (hasBitmapChange && !replacesImage && (region.Width <= 0 || region.Height <= 0))
             {
-                before?.Dispose();
-                after?.Dispose();
                 DisposeOrphanedLayers(layersBefore);
                 DisposeOrphanedLayers(layersAfter);
                 return;
@@ -759,10 +423,10 @@ namespace screenzap
 
         private static void DisposeOrphanedLayers(List<ImageLayer>? layers)
         {
-            if (layers == null) return;
+            if (layers == null)
+                return;
             foreach (var layer in layers)
             {
-                layer.Dispose();
             }
         }
 
@@ -777,7 +441,7 @@ namespace screenzap
             {
                 var textState = applyAfterState ? textStep.After : textStep.Before;
                 ApplyTextAnnotationState(textState);
-                pictureBox1?.Invalidate();
+                viewport?.Invalidate();
             }
             else if (step is ImageUndoStep imageStep)
             {
@@ -804,10 +468,9 @@ namespace screenzap
             var source = applyAfterState ? step.After : step.Before;
             var shapeState = applyAfterState ? step.ShapesAfter : step.ShapesBefore;
             var textState = applyAfterState ? step.TextsAfter : step.TextsBefore;
-
             if (source != null)
             {
-                if (pictureBox1.Image == null)
+                if (viewport.Image == null)
                 {
                     return;
                 }
@@ -816,12 +479,10 @@ namespace screenzap
                 {
                     var replacement = new Bitmap(source);
                     var currentZoom = ZoomLevel;
-                    pictureBox1.Image?.Dispose();
-                    pictureBox1.Image = replacement;
+                    viewport.Image = replacement;
                     ZoomLevel = currentZoom;
-                    pictureBox1.ClampPan();
+                    viewport.ClampPan();
                     RecenterViewportAfterImageChange(resizeWindow: true);
-                    UpdateStatusBar();
                 }
                 else
                 {
@@ -831,7 +492,7 @@ namespace screenzap
                         return;
                     }
 
-                    var canvas = pictureBox1.Image;
+                    var canvas = viewport.Image;
                     if (canvas == null)
                     {
                         return;
@@ -849,14 +510,10 @@ namespace screenzap
             Selection = applyAfterState ? step.SelectionAfter : step.SelectionBefore;
             ApplyAnnotationState(shapeState);
             ApplyTextAnnotationState(textState);
-
             var layerState = applyAfterState ? step.LayersAfter : step.LayersBefore;
             ApplyLayerState(layerState);
-
-            UpdateCommandUI();
-            pictureBox1.Invalidate();
+            viewport.Invalidate();
         }
-
 
         private bool CensorSelection()
         {
@@ -879,16 +536,12 @@ namespace screenzap
             }
 
             Bitmap? after = null;
-
             try
             {
                 after = GenerateCensoredBitmap(before, clampedSelection);
-
-                var canvas = pictureBox1.Image;
+                var canvas = viewport.Image;
                 if (canvas == null)
                 {
-                    before.Dispose();
-                    after?.Dispose();
                     return false;
                 }
 
@@ -901,49 +554,33 @@ namespace screenzap
                 }
 
                 PushUndoStep(clampedSelection, before, after, selectionBefore, Selection);
-                pictureBox1.Invalidate();
-                UpdateCommandUI();
+                viewport.Invalidate();
                 return true;
             }
             catch
             {
-                before.Dispose();
-                after?.Dispose();
                 throw;
             }
         }
 
         private Bitmap GenerateCensoredBitmap(Bitmap source, Rectangle selectionBounds)
         {
-            using var perf = PerfTrace.Scope(
-                "ImageEditor.GenerateCensoredBitmap",
-                () => $"size={source.Width}x{source.Height} dir={censorDirection} iter={censorIterations} smear={censorSmear}",
-                slowMs: 40);
-
+            using var perf = PerfTrace.Scope("ImageDocumentEditor.GenerateCensoredBitmap", () => $"size={source.Width}x{source.Height} dir={censorDirection} iter={censorIterations} smear={censorSmear}", slowMs: 40);
             var target = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
             var lockRect = new Rectangle(0, 0, source.Width, source.Height);
-
             var sourceData = source.LockBits(lockRect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
             var targetData = target.LockBits(lockRect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
-
             try
             {
                 int stride = sourceData.Stride / 4;
                 int width = source.Width;
                 int height = source.Height;
                 int totalPixels = stride * height;
-
                 int[] pixels = new int[totalPixels];
                 Marshal.Copy(sourceData.Scan0, pixels, 0, totalPixels);
-
-                int rngSeed = HashCode.Combine(
-                    selectionBounds.Left, selectionBounds.Top,
-                    selectionBounds.Width, selectionBounds.Height,
-                    (int)censorDirection, censorIterations, censorSmear);
+                int rngSeed = HashCode.Combine(selectionBounds.Left, selectionBounds.Top, selectionBounds.Width, selectionBounds.Height, (int)censorDirection, censorIterations, censorSmear);
                 var rng = new Random(rngSeed);
-
                 ScrambleByNeighborSwap(pixels, width, height, stride, censorDirection, censorIterations, rng);
-
                 if (censorSmear > 0)
                 {
                     ApplyDirectionalSmear(pixels, width, height, stride, censorDirection, censorSmear);
@@ -998,7 +635,6 @@ namespace screenzap
                 CensorDirection.Y => height,
                 _ => Math.Max(width, height),
             };
-
             int radius = ComputeScrambleRadius(sliderValue, dim);
             if (radius <= 0)
             {
@@ -1015,7 +651,6 @@ namespace screenzap
                     {
                         int dx = 0;
                         int dy = 0;
-
                         switch (direction)
                         {
                             case CensorDirection.X:
@@ -1034,7 +669,6 @@ namespace screenzap
                         int ny = Math.Clamp(y + dy, 0, height - 1);
                         int idx = rowOffset + x;
                         int neighborIdx = ny * stride + nx;
-
                         int tmp = pixels[idx];
                         pixels[idx] = pixels[neighborIdx];
                         pixels[neighborIdx] = tmp;
@@ -1078,6 +712,7 @@ namespace screenzap
                 {
                     rowAverage[y] = ComputeRangeAverage(pixels, y * stride, width, 1);
                 }
+
                 for (int y = 0; y < height; y++)
                 {
                     int rowStart = y * stride;
@@ -1087,17 +722,16 @@ namespace screenzap
                         pixels[rowStart + x] = avg;
                     }
                 }
+
                 return;
             }
 
             int windowSize = 2 * radius + 1;
             int[] rowBuffer = new int[width];
-
             for (int y = 0; y < height; y++)
             {
                 int rowStart = y * stride;
                 Array.Copy(pixels, rowStart, rowBuffer, 0, width);
-
                 long sumA = 0, sumR = 0, sumG = 0, sumB = 0;
                 for (int k = -radius; k <= radius; k++)
                 {
@@ -1116,12 +750,10 @@ namespace screenzap
                     int g = (int)(sumG / windowSize);
                     int b = (int)(sumB / windowSize);
                     pixels[rowStart + x] = (a << 24) | (r << 16) | (g << 8) | b;
-
                     int leavingX = Math.Clamp(x - radius, 0, width - 1);
                     int enteringX = Math.Clamp(x + radius + 1, 0, width - 1);
                     int leaving = rowBuffer[leavingX];
                     int entering = rowBuffer[enteringX];
-
                     sumA += ((entering >> 24) & 0xFF) - ((leaving >> 24) & 0xFF);
                     sumR += ((entering >> 16) & 0xFF) - ((leaving >> 16) & 0xFF);
                     sumG += ((entering >> 8) & 0xFF) - ((leaving >> 8) & 0xFF);
@@ -1139,6 +771,7 @@ namespace screenzap
                 {
                     colAverage[x] = ComputeRangeAverage(pixels, x, height, stride);
                 }
+
                 for (int y = 0; y < height; y++)
                 {
                     int rowStart = y * stride;
@@ -1147,12 +780,12 @@ namespace screenzap
                         pixels[rowStart + x] = colAverage[x];
                     }
                 }
+
                 return;
             }
 
             int windowSize = 2 * radius + 1;
             int[] colBuffer = new int[height];
-
             for (int x = 0; x < width; x++)
             {
                 for (int y = 0; y < height; y++)
@@ -1178,12 +811,10 @@ namespace screenzap
                     int g = (int)(sumG / windowSize);
                     int b = (int)(sumB / windowSize);
                     pixels[y * stride + x] = (a << 24) | (r << 16) | (g << 8) | b;
-
                     int leavingY = Math.Clamp(y - radius, 0, height - 1);
                     int enteringY = Math.Clamp(y + radius + 1, 0, height - 1);
                     int leaving = colBuffer[leavingY];
                     int entering = colBuffer[enteringY];
-
                     sumA += ((entering >> 24) & 0xFF) - ((leaving >> 24) & 0xFF);
                     sumR += ((entering >> 16) & 0xFF) - ((leaving >> 16) & 0xFF);
                     sumG += ((entering >> 8) & 0xFF) - ((leaving >> 8) & 0xFF);
@@ -1215,7 +846,5 @@ namespace screenzap
             int b = (int)(sumB / count);
             return (a << 24) | (r << 16) | (g << 8) | b;
         }
-
-
     }
 }

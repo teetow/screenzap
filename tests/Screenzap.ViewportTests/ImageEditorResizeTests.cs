@@ -9,58 +9,24 @@ namespace Screenzap.ViewportTests
 {
     public class ImageEditorResizeTests
     {
-        [Fact]
-        public void ResizeDialog_ConstrainedTyping_RecalculatesOppositeDimensionLive()
-        {
-            StaTest.Run(() =>
-            {
-                using var dialog = new screenzap.ResizeImageDialog(new Size(100, 50));
 
-                dialog.SetWidthTextForTests("200");
 
-                Assert.Equal(200m, dialog.WidthValueForTests);
-                Assert.Equal(100m, dialog.HeightValueForTests);
-                Assert.Equal(new Size(200, 100), dialog.TargetSize);
 
-                dialog.SetHeightTextForTests("25");
 
-                Assert.Equal(50m, dialog.WidthValueForTests);
-                Assert.Equal(25m, dialog.HeightValueForTests);
-                Assert.Equal(new Size(50, 25), dialog.TargetSize);
-            });
-        }
-
-        [Fact]
-        public void ResizeDialog_ReEnablingConstraint_ReconcilesLastEditedDimension()
-        {
-            StaTest.Run(() =>
-            {
-                using var dialog = new screenzap.ResizeImageDialog(new Size(100, 50));
-                dialog.ConstrainProportionsForTests = false;
-                dialog.SetWidthTextForTests("300");
-
-                Assert.Equal(50m, dialog.HeightValueForTests);
-
-                dialog.ConstrainProportionsForTests = true;
-
-                Assert.Equal(150m, dialog.HeightValueForTests);
-                Assert.Equal(new Size(300, 150), dialog.TargetSize);
-            });
-        }
 
         [Fact]
         public void ResizeImage_ScalesFullCanvasSelection_AndSupportsUndoRedo()
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var source = new Bitmap(4, 2);
                 source.SetPixel(0, 0, Color.Red);
                 source.SetPixel(3, 1, Color.Blue);
                 editor.LoadImage(source);
                 editor.SetSelectionForDiagnostics(new Rectangle(1, 0, 2, 2));
 
-                Assert.True(editor.ResizeImageCommandAvailableForTests);
+                Assert.True(((IClipboardDocumentPresenter)editor).CanExecute(EditorCommandId.ResizeImage));
                 Assert.True(editor.ExecuteResizeImageForDiagnostics(
                     new Size(8, 4),
                     InterpolationMode.NearestNeighbor));
@@ -94,7 +60,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(80, 60);
                 editor.LoadImage(canvas);
 
@@ -122,7 +88,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 using var canvas = new Bitmap(100, 50);
                 editor.LoadImage(canvas);
 
@@ -166,9 +132,9 @@ namespace Screenzap.ViewportTests
             });
         }
 
-        private static List<T> GetPrivateList<T>(screenzap.ImageEditor editor, string fieldName)
+        private static List<T> GetPrivateList<T>(screenzap.ImageDocumentEditor editor, string fieldName)
         {
-            var field = typeof(screenzap.ImageEditor).GetField(
+            var field = typeof(screenzap.ImageDocumentEditor).GetField(
                 fieldName,
                 BindingFlags.Instance | BindingFlags.NonPublic);
             return Assert.IsType<List<T>>(field?.GetValue(editor));

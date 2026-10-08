@@ -56,7 +56,7 @@ public class EmojiToolTests
         StaTest.Run(() =>
         {
             using var scope = new RecentScope();
-            using var editor = EditorFixture.WithCanvas(300, 200, createControl: true);
+            using var editor = EditorFixture.WithCanvas(300, 200);
             editor.TestSetEmojiRecentStore(scope.Store);
             Assert.True(editor.AddEmojiAtClientPoint("😀", editor.TestImagePixelToClient(new Point(150, 100))));
             using var composite = editor.BuildCompositeImageForTests();
@@ -90,19 +90,12 @@ public class EmojiToolTests
         StaTest.Run(() =>
         {
             using var scope = new RecentScope();
-            using var editor = EditorFixture.WithCanvas(1200, 900, createControl: true);
+            using var editor = EditorFixture.WithCanvas(1200, 900);
             editor.TestSetEmojiRecentStore(scope.Store);
             editor.TestSetZoom(2m);
             editor.TestPanViewportBy(new Size(-180, -110));
-            var viewport = (Control)typeof(ImageEditor).GetField("pictureBox1", Private)!.GetValue(editor)!;
             var point = new Point(160, 140);
-            var data = new DataObject();
-            data.SetData(EmojiFlyout.DragFormat, "👍🏽");
-            var screenPoint = viewport.PointToScreen(point);
-            var drag = new DragEventArgs(data, 0, screenPoint.X, screenPoint.Y, DragDropEffects.Copy, DragDropEffects.None);
-            typeof(ImageEditor).GetMethod("EmojiDragEnter", Private)!.Invoke(editor, new object?[] { viewport, drag });
-            Assert.Equal(DragDropEffects.Copy, drag.Effect);
-            typeof(ImageEditor).GetMethod("EmojiDragDrop", Private)!.Invoke(editor, new object?[] { viewport, drag });
+            Assert.True(editor.SurfaceDropEmoji("👍🏽", point));
             var annotation = Assert.Single(editor.TestTextAnnotations);
             Assert.Equal("👍🏽", annotation.Text);
             Assert.Equal(72f, annotation.FontSize);
@@ -128,94 +121,40 @@ public class EmojiToolTests
         StaTest.Run(() =>
         {
             using var scope = new RecentScope();
-            using var editor = EditorFixture.WithCanvas(2400, 1600, createControl: true);
+            using var editor = EditorFixture.WithCanvas(2400, 1600);
             editor.TestSetEmojiRecentStore(scope.Store);
             editor.TestSetSize(800, 600);
             editor.TestSetZoom(3m);
             editor.TestPanViewportBy(new Size(-350, 200));
-            Assert.True(editor.TestBeginEmojiPickerCapture());
-            editor.TestSetEmojiPickerInput("👩🏽‍💻");
-            editor.CommitEmojiPickerInput();
+            editor.SurfaceAddEmoji("👩🏽‍💻");
             var annotation = Assert.Single(editor.TestTextAnnotations);
             Assert.Equal("👩🏽‍💻", annotation.Text);
-            var viewport = (Control)typeof(ImageEditor).GetField("pictureBox1", Private)!.GetValue(editor)!;
+            var viewport = (screenzap.Components.Shared.ImageViewport)typeof(ImageDocumentEditor).GetField("viewport", Private)!.GetValue(editor)!;
             AssertCentered(editor, annotation, new Point(viewport.ClientSize.Width / 2, viewport.ClientSize.Height / 2));
             Assert.Equal("👩🏽‍💻", scope.Store.Tiles[0]);
-            editor.CommitEmojiPickerInput();
+
             Assert.Single(editor.TestTextAnnotations);
         });
     }
 
-    [Fact]
-    public void CancelledPickerAndSearchText_DoNotChangeDocumentOrRecents()
-    {
-        StaTest.Run(() =>
-        {
-            using var scope = new RecentScope();
-            using var editor = EditorFixture.WithCanvas(300, 200, createControl: true);
-            editor.TestSetEmojiRecentStore(scope.Store);
-            editor.TestAddTextAnnotation(new Point(10, 10), "Keep me");
-            var before = editor.TestDescribeTextAnnotations();
-            var undoBefore = editor.TestDescribeUndoStack();
-            Assert.True(editor.TestBeginEmojiPickerCapture());
-            editor.TestSetEmojiPickerInput("smile");
-            editor.CommitEmojiPickerInput();
-            editor.TestEndEmojiPickerCapture();
-            Assert.Equal(before, editor.TestDescribeTextAnnotations());
-            Assert.Equal(undoBefore, editor.TestDescribeUndoStack());
-            Assert.False(File.Exists(scope.Path));
-        });
-    }
+
+
+
 
     [Fact]
-    public void Flyout_HasNineLargeTilesAndStaysOpenAfterInsertion()
-    {
-        StaTest.Run(() =>
-        {
-            using var scope = new RecentScope();
-            using var editor = EditorFixture.WithCanvas(400, 300, createControl: true);
-            editor.TestSetEmojiRecentStore(scope.Store);
-            using var owner = new Form();
-            owner.Controls.Add(editor);
-            owner.Show();
-            editor.Show();
-            var button = (ToolStripButton)typeof(ImageEditor).GetField("emojiToolStripButton", Private)!.GetValue(editor)!;
-            Assert.Equal(ToolStripItemDisplayStyle.Image, button.DisplayStyle);
-            Assert.Equal(new Size(32, 32), button.Size);
-            Assert.Equal("textToolStripButton", button.Owner!.Items[button.Owner.Items.IndexOf(button) - 1].Name);
-            button.PerformClick();
-            var flyout = (Form)typeof(ImageEditor).GetField("emojiFlyout", Private)!.GetValue(editor)!;
-            Assert.True(flyout.Visible);
-            var grid = Assert.IsType<TableLayoutPanel>(flyout.Controls[0]);
-            Assert.Equal(9, grid.Controls.Count);
-            Assert.All(grid.Controls.Cast<Control>(), tile => Assert.True(tile.Width >= 64 && tile.Height >= 64));
-            Assert.True(editor.AddEmojiAtClientPoint("🎉", new Point(200, 150)));
-            Assert.True(flyout.Visible);
-            button.PerformClick();
-            Assert.False(flyout.Visible);
-        });
+    public void Placeholder_RejectsEmoji() {
+        using var editor = new ImageDocumentEditor();
+        Assert.False(editor.AddEmojiAtClientPoint("😀", Point.Empty));
+        Assert.False(((IClipboardDocumentPresenter)editor).CanExecute(EditorCommandId.EmojiTool));
     }
 
-    [Fact]
-    public void Placeholder_RejectsEmojiAndDisablesToolbar()
+    private static void AssertCentered(ImageDocumentEditor editor, TextAnnotation annotation, Point clientPoint)
     {
-        StaTest.Run(() =>
-        {
-            using var editor = new ImageEditor();
-            Assert.False(editor.AddEmojiAtClientPoint("😀", Point.Empty));
-            Assert.False(editor.TestBeginEmojiPickerCapture());
-            var button = (ToolStripButton)typeof(ImageEditor).GetField("emojiToolStripButton", Private)!.GetValue(editor)!;
-            Assert.False(button.Enabled);
-        });
-    }
-
-    private static void AssertCentered(ImageEditor editor, TextAnnotation annotation, Point clientPoint)
-    {
-        var viewport = (Control)typeof(ImageEditor).GetField("pictureBox1", Private)!.GetValue(editor)!;
+        var viewport = (screenzap.Components.Shared.ImageViewport)typeof(ImageDocumentEditor).GetField("viewport", Private)!.GetValue(editor)!;
         using var graphics = viewport.CreateGraphics();
         var bounds = annotation.GetBounds(graphics);
         var metrics = editor.ViewportDiagnostics;
-        var zoom = (double)((screenzap.Components.Shared.ImageViewportControl)viewport).ZoomLevel;
+        var zoom = (double)((screenzap.Components.Shared.ImageViewport)viewport).ZoomLevel;
         var x = (bounds.Left + bounds.Width / 2) * zoom + metrics.PanOffset.X;
         var y = (bounds.Top + bounds.Height / 2) * zoom + metrics.PanOffset.Y;
         Assert.InRange(x, clientPoint.X - zoom, clientPoint.X + zoom);

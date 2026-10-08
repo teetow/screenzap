@@ -11,12 +11,18 @@ private Win32 tray, hotkey, capture and clipboard service. Opening the editor cr
 `WinUI/EditorWindow`; closing its window hides it back to the tray. Quit disposes the
 background services and exits the XAML application.
 
-`Components/ImageEditor.Surface.cs` is the production input/render/settings boundary.
-The existing editor retains document algorithms, selection, annotations, text editing,
-image layers and undo. Its WinForms controls remain private compatibility state and are
-never embedded in the WinUI window. The old presentation remains available to the existing
-regression harness. This migration does **not** claim to remove GDI+, System.Drawing, or all
-WinForms dependencies.
+`Components/ImageDocumentEditor.Surface.cs` is the input/render/settings boundary.
+`ImageDocumentEditor` is a plain disposable document editor. It owns image operations,
+selection, annotations, text editing, floating image layers and undo. `ImageViewport` owns
+view geometry and GDI rendering; it is not a control and has no window handle.
+`ClipboardDocumentHost` coordinates clipboard history, exports and persistence without
+creating a window. The WinForms editor, designer, toolbars, history panel, dialogs and
+compatibility UI harness have been deleted.
+
+GDI+, System.Drawing and Windows Forms remain dependencies of Windows platform services
+such as tray, capture and clipboard interop. Shortcut and transparency settings use native
+WinUI dialogs. They no longer supply
+an alternate editor presentation.
 
 The editor renders its image and overlays into an offscreen bitmap. Win2D presents BGRA
 pixels using a reusable texture. Pointer coordinates are converted from XAML DIPs to device
@@ -25,10 +31,11 @@ capture, cursor, menus, popups and dialogs belong to XAML. Startup explicitly in
 OLE before the XAML dispatcher for clipboard and desktop drag/drop interoperability. A final pointer-release position
 is applied before finishing a drag because Windows can coalesce its final move.
 
-The clipboard host retains its history coordinator and persistence behavior. Its external
-activation hook replaces showing the legacy host window. Both Commit and its native
-`Ctrl+Enter` shortcut use the existing host transaction: preserve view and undo, flatten for
-the clipboard, mark clean, and suppress the resulting clipboard notification.
+The clipboard host retains its history coordinator and persistence behavior. Its activation
+hook opens the sole WinUI editor window. Both Commit and its native
+`Ctrl+Enter` shortcut use the existing host transaction: preserve view, editable objects and undo/redo, render a flat image for
+the clipboard, record the exported document revision as clean, and suppress the resulting
+clipboard notification. Undo/redo returning to that revision restores the clean state.
 
 ## UI organization
 
@@ -71,8 +78,6 @@ Use a Windows .NET 9 SDK with the Windows SDK build tools (restored through NuGe
 ```powershell
 dotnet build screenzap/Screenzap.csproj -nr:false -m:1 -p:UseSharedCompilation=false
 powershell -NoProfile -File tools/test-regressions.ps1
-powershell -NoProfile -File tools/test-winui.ps1
-powershell -NoProfile -File tools/test-winui-qa.ps1
 dotnet publish screenzap/Screenzap.csproj -c Release -nr:false -m:1 -p:UseSharedCompilation=false -o "$env:LOCALAPPDATA\Programs\Screenzap"
 ```
 
@@ -85,18 +90,20 @@ the rest of the UI is constructed in C#.
 start tray services, restore or save clipboard history, or write committed edits to the
 system clipboard. It bypasses the single-instance mutex so UI automation can run beside
 the installed application. `--open-editor` opens the production editor at startup.
-The existing `--editor-harness` and `--ui-capture` diagnostics retain their compatibility
-presentation so their tests remain available during further backend extraction.
+The obsolete `--editor-harness` and `--ui-capture` entry points have been removed.
 
-The external-surface regression tests cover native input, tool changes, exact viewport
-size, rendering without visible legacy controls, and Commit preserving zoom, pan and undo.
-The full existing document regression suite also remains required. Run it through
-`tools/test-regressions.ps1`: its WinForms compatibility fixtures get real windows on a
-separate hidden Windows desktop, so fitting or showing a test window cannot interrupt the
-user's desktop. Output is written to ignored `local/regressions.log` by default.
+Document regression tests drive the same input/render/settings boundary as WinUI, without
+constructing an editor window or toolbar. They cover exact viewport geometry, editing,
+rendering, history, persistence and non-destructive clipboard exports. The regression runner
+still isolates the suite on a hidden Windows desktop for platform interop fixtures; it never
+switches the user's desktop. Output defaults to ignored `local/regressions.log`.
 Actual-window tests
 must exercise native menus, pointer capture, typing, dialogs, history and resizing; a
 successful compile cannot validate those interactions.
+
+Foreground UI automation takes control of the desktop. Run the scripts below only when
+the user explicitly requests desktop automation. The default verification is the isolated
+regression runner above.
 
 `tools/test-winui.ps1` launches the isolated editor and tests its real native window through
 Windows UI Automation plus pointer and keyboard input. Run it in an interactive desktop

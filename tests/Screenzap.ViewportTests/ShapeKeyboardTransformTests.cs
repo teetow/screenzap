@@ -9,16 +9,16 @@ namespace Screenzap.ViewportTests
     /// Keyboard positioning/sizing of annotation objects, the Shift-square rectangle draft, and
     /// the arrow-key ownership split between text EDITING (caret) and text OBJECT selection
     /// (nudge). Everything is driven through the real input pipeline — ProcessCmdKey for arrows
-    /// (they never reach KeyDown), pictureBox1_Mouse* for gestures.
+    /// (they never reach KeyDown), ViewportMouse* for gestures.
     /// </summary>
     public class ShapeKeyboardTransformTests
     {
-        private static screenzap.ImageEditor NewEditor(int width = 200, int height = 160)
-            => EditorFixture.WithCanvas(width, height, createControl: true);
+        private static screenzap.ImageDocumentEditor NewEditor(int width = 200, int height = 160)
+            => EditorFixture.WithCanvas(width, height);
 
         /// <summary>Draw a rectangle from start to end with the rect tool, then drop to Move mode.</summary>
         private static screenzap.AnnotationShape DrawRectangle(
-            screenzap.ImageEditor editor, Point start, Point end, bool shiftHeld = false)
+            screenzap.ImageDocumentEditor editor, Point start, Point end, bool shiftHeld = false)
         {
             editor.TestToggleRectTool();
             editor.TestSetShiftHeld(shiftHeld);
@@ -287,7 +287,7 @@ namespace Screenzap.ViewportTests
 
         /// <summary>Grab a corner handle in Move mode and drag it, optionally with Shift held.</summary>
         private static void DragCornerHandle(
-            screenzap.ImageEditor editor, Point handlePixel, Point toPixel, bool shiftHeld)
+            screenzap.ImageDocumentEditor editor, Point handlePixel, Point toPixel, bool shiftHeld)
         {
             editor.TestFireMouseDownAtImagePixel(handlePixel, MouseButtons.Left);
             editor.TestSetShiftHeld(shiftHeld);

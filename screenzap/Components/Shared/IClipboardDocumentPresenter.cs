@@ -5,42 +5,14 @@ using screenzap.Components;
 
 namespace screenzap.Components.Shared
 {
-    /// <summary>
-    /// A presenter's natural size, with the part that can be scaled down to fit (an image's pixel
-    /// dimensions) kept apart from the part that cannot (the rails and strips the presenter draws
-    /// around it). The host needs them separately because it often cannot grant the full size: when
-    /// it caps the window at a share of the screen, only <see cref="Content"/> gives, so sizing the
-    /// other axis for the unscaled content would wrap the picture in a band of empty canvas.
-    /// </summary>
-    internal readonly struct PresenterContentSize
-    {
-        public PresenterContentSize(Size content, Size chrome)
-        {
-            Content = content;
-            Chrome = chrome;
-        }
-
-        /// <summary>The scalable content, in its own pixels.</summary>
-        public Size Content { get; }
-
-        /// <summary>Fixed furniture the presenter puts around the content, in client pixels.</summary>
-        public Size Chrome { get; }
-
-        /// <summary>Client size that shows <see cref="Content"/> at 1:1.</summary>
-        public Size Total => new Size(Content.Width + Chrome.Width, Content.Height + Chrome.Height);
-    }
-
     internal interface IClipboardDocumentPresenter : IDisposable
     {
-        Control View { get; }
         string DisplayName { get; }
         void AttachHostServices(EditorHostServices services);
         bool CanHandleClipboard(IDataObject dataObject);
         void LoadFromClipboard(IDataObject dataObject);
         bool CanExecute(EditorCommandId commandId);
         bool TryExecute(EditorCommandId commandId);
-        void OnActivated();
-        void OnDeactivated();
 
         /// <summary>True if this presenter handles the given history item's content kind.</summary>
         bool CanPresent(ClipboardHistoryItem item);
@@ -69,20 +41,7 @@ namespace screenzap.Components.Shared
         /// <summary>The current content rendered by the presenter, or null if nothing is loaded. Caller owns the returned bitmap (for images).</summary>
         object? GetCurrentContent();
 
-        /// <summary>
-        /// What the presenter would like to be shown at, or null when it has no opinion (e.g. text
-        /// content), in which case the host should leave its size alone.
-        /// </summary>
-        PresenterContentSize? GetNaturalContentSize();
-
-        /// <summary>
-        /// Scale the content down until all of it is visible in the view the presenter currently
-        /// has. Only ever zooms out — content that already fits is left at 1:1 rather than being
-        /// blown up to fill the view. The host calls this whenever the view's size or its content
-        /// changes, because <see cref="GetNaturalContentSize"/> is a request the host is free to
-        /// refuse: the window is capped at a share of the screen, and a window the user has sized
-        /// themselves is not resized at all. Presenters with nothing to scale leave it a no-op.
-        /// </summary>
+        /// <summary>Fit the image to the current viewport without enlarging it beyond 1:1.</summary>
         void FitContentToView()
         {
         }

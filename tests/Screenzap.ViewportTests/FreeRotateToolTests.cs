@@ -12,11 +12,11 @@ namespace Screenzap.ViewportTests
     /// </summary>
     public class FreeRotateToolTests
     {
-        private static screenzap.ImageEditor PrepareEditor(int width = 160, int height = 120)
+        private static screenzap.ImageDocumentEditor PrepareEditor(int width = 160, int height = 120)
             => EditorFixture.WithCanvas(width, height);
 
         /// <summary>Drags the handle from rest to a client point 90° around the target's center.</summary>
-        private static void DragHandleToRightOfCenter(screenzap.ImageEditor editor)
+        private static void DragHandleToRightOfCenter(screenzap.ImageDocumentEditor editor)
         {
             var handleStart = editor.TestImagePixelToClient(editor.TestFreeRotateHandleImagePoint);
             editor.TestFireMouseDownAtClientPoint(handleStart, MouseButtons.Left);
@@ -33,7 +33,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 editor.TestClickFreeRotateToolButton();
                 Assert.False(editor.TestIsFreeRotateToolActive);
             });
@@ -170,7 +170,7 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 const int n = 40;
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
                 var canvas = new Bitmap(n, n);
                 using (var g = Graphics.FromImage(canvas))
                 {

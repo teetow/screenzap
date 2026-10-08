@@ -204,18 +204,13 @@ namespace Screenzap.ViewportTests
 
                 StaTest.Run(() =>
                 {
-                    using var editor = new screenzap.ImageEditor();
-                    using var host = new ClipboardEditorHostForm(
+                    using var editor = new screenzap.ImageDocumentEditor();
+                    using var host = new ClipboardDocumentHost(
                         new IClipboardDocumentPresenter[] { editor },
                         persistence,
                         restorePersistedHistory: false,
                         persistHistoryChanges: true,
-                        allowSystemClipboardWrites: false)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false,
-                    };
-                    host.CreateControl();
+                        allowSystemClipboardWrites: false);
 
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
                     ClipboardHistoryItem seeded;
@@ -224,7 +219,6 @@ namespace Screenzap.ViewportTests
                         seeded = host.HistoryStore.AddObservedImage(canvas);
                     }
 
-                    host.Show();
                     Application.DoEvents();
 
                     // Activate through the host so the presenter loads and host services attach.
@@ -241,7 +235,7 @@ namespace Screenzap.ViewportTests
                     editor.SetSelectedLayerYForTests(7f);
                     Assert.Equal(1, editor.ImageLayerCountForTests);
 
-                    host.Close();
+                    host.Dispose();
                 });
 
                 var restored = new ClipboardHistoryPersistence(root).Load();
@@ -280,18 +274,14 @@ namespace Screenzap.ViewportTests
 
                 StaTest.Run(() =>
                 {
-                    using var editor = new screenzap.ImageEditor();
-                    using var host = new ClipboardEditorHostForm(
+                    using var editor = new screenzap.ImageDocumentEditor();
+                    using var host = new ClipboardDocumentHost(
                         new IClipboardDocumentPresenter[] { editor },
                         persistence,
                         restorePersistedHistory: false,
                         persistHistoryChanges: true,
-                        allowSystemClipboardWrites: false)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false,
-                    };
-                    host.CreateControl();
+                        allowSystemClipboardWrites: false);
+
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                     ClipboardHistoryItem seeded;
@@ -300,7 +290,6 @@ namespace Screenzap.ViewportTests
                         seeded = host.HistoryStore.AddObservedImage(canvas);
                     }
 
-                    host.Show();
                     Application.DoEvents();
                     Assert.True(host.ActivateHistoryItem(seeded));
                     Application.DoEvents();
@@ -352,18 +341,14 @@ namespace Screenzap.ViewportTests
                 {
                     // An idle session must not re-encode and rewrite the base image every tick.
                     var persistence = new ClipboardHistoryPersistence(root);
-                    using var editor = new screenzap.ImageEditor();
-                    using var host = new ClipboardEditorHostForm(
+                    using var editor = new screenzap.ImageDocumentEditor();
+                    using var host = new ClipboardDocumentHost(
                         new IClipboardDocumentPresenter[] { editor },
                         persistence,
                         restorePersistedHistory: false,
                         persistHistoryChanges: true,
-                        allowSystemClipboardWrites: false)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false,
-                    };
-                    host.CreateControl();
+                        allowSystemClipboardWrites: false);
+
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                     ClipboardHistoryItem seeded;
@@ -372,7 +357,6 @@ namespace Screenzap.ViewportTests
                         seeded = host.HistoryStore.AddObservedImage(canvas);
                     }
 
-                    host.Show();
                     Application.DoEvents();
                     Assert.True(host.ActivateHistoryItem(seeded));
                     Application.DoEvents();
@@ -400,18 +384,14 @@ namespace Screenzap.ViewportTests
                     // It still has to reach the panel, and the signal that carries it must not
                     // be the one that means "persist me" — that would schedule a save from
                     // inside the save that produced it.
-                    using var editor = new screenzap.ImageEditor();
-                    using var host = new ClipboardEditorHostForm(
+                    using var editor = new screenzap.ImageDocumentEditor();
+                    using var host = new ClipboardDocumentHost(
                         new IClipboardDocumentPresenter[] { editor },
                         new ClipboardHistoryPersistence(root),
                         restorePersistedHistory: false,
                         persistHistoryChanges: true,
-                        allowSystemClipboardWrites: false)
-                    {
-                        SuppressActivation = true,
-                        ShowInTaskbar = false,
-                    };
-                    host.CreateControl();
+                        allowSystemClipboardWrites: false);
+
                     host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                     ClipboardHistoryItem seeded;
@@ -420,7 +400,6 @@ namespace Screenzap.ViewportTests
                         seeded = host.HistoryStore.AddObservedImage(canvas);
                     }
 
-                    host.Show();
                     Application.DoEvents();
                     Assert.True(host.ActivateHistoryItem(seeded));
                     Application.DoEvents();
@@ -460,13 +439,9 @@ namespace Screenzap.ViewportTests
             {
                 // Tracking the editor is not a persistence concern: with saving switched off the
                 // item still has to follow what is on screen, or the thumbnail goes stale.
-                using var editor = new screenzap.ImageEditor();
-                using var host = new ClipboardEditorHostForm(true, editor)
-                {
-                    SuppressActivation = true,
-                    ShowInTaskbar = false,
-                };
-                host.CreateControl();
+                using var editor = new screenzap.ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
+
                 host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
 
                 ClipboardHistoryItem seeded;
@@ -475,7 +450,6 @@ namespace Screenzap.ViewportTests
                     seeded = host.HistoryStore.AddObservedImage(canvas);
                 }
 
-                host.Show();
                 Application.DoEvents();
                 Assert.True(host.ActivateHistoryItem(seeded));
                 Application.DoEvents();
@@ -532,7 +506,7 @@ namespace Screenzap.ViewportTests
 
                     Assert.Equal(
                         new[] { "Paste 3", "Paste 2", "Paste 1", "Background" },
-                        editor.LayersPanelCaptionsForTests);
+                        Enumerable.Range(0, editor.SurfaceLayerCount).Select(editor.SurfaceLayerAt).Reverse().Select(l => l.Name).Append("Background").ToArray());
                 }
                 finally
                 {

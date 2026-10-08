@@ -15,14 +15,14 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = new screenzap.ImageEditor();
+                using var editor = new screenzap.ImageDocumentEditor();
 
                 Assert.False(editor.FontChoicesLoadedForDiagnostics);
 
                 editor.LoadFontChoicesForDiagnostics();
 
                 Assert.True(editor.FontChoicesLoadedForDiagnostics);
-                Assert.NotEmpty(GetPrivateField<ToolStripComboBox>(editor, "fontComboBox").Items);
+                Assert.NotEmpty(editor.SurfaceFontChoices);
             });
         }
 
@@ -31,21 +31,9 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
+                using var editor = EditorFixture.WithCanvas(120, 80);
 
-                var fontCombo = GetPrivateField<ToolStripComboBox>(editor, "fontComboBox");
-                var sizeCombo = GetPrivateField<ToolStripComboBox>(editor, "fontSizeComboBox");
-                var boldButton = GetPrivateField<ToolStripButton>(editor, "boldButton");
-                var italicButton = GetPrivateField<ToolStripButton>(editor, "italicButton");
-                var underlineButton = GetPrivateField<ToolStripButton>(editor, "underlineButton");
-                var textColorButton = GetPrivateField<ToolStripButton>(editor, "textColorButton");
-                var outlineColorButton = GetPrivateField<ToolStripButton>(editor, "outlineColorButton");
-                var outlineThicknessCombo = GetPrivateField<ToolStripComboBox>(editor, "outlineThicknessComboBox");
-
-                string distinctFont = fontCombo.Items.Cast<object>()
-                    .Select(item => item?.ToString())
-                    .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name) && !string.Equals(name, fontCombo.Text, StringComparison.OrdinalIgnoreCase))
-                    ?? "Segoe UI";
+                string distinctFont = editor.SurfaceFontChoices.FirstOrDefault(name => name != editor.SurfaceFont) ?? "Segoe UI";
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -65,14 +53,12 @@ namespace Screenzap.ViewportTests
                 var handled = editor.TestHandleTextToolMouseDown(pixelPoint);
 
                 Assert.True(handled);
-                Assert.Equal(distinctFont, fontCombo.Text);
-                Assert.Equal(annotation.FontSize, float.Parse(sizeCombo.Text));
-                Assert.True(boldButton.Checked);
-                Assert.True(italicButton.Checked);
-                Assert.True(underlineButton.Checked);
-                Assert.Equal(annotation.TextColor.ToArgb(), textColorButton.BackColor.ToArgb());
-                Assert.Equal(annotation.OutlineColor.ToArgb(), outlineColorButton.BackColor.ToArgb());
-                Assert.Equal("4", outlineThicknessCombo.Text);
+                Assert.Equal(distinctFont, editor.SurfaceFont);
+                Assert.Equal(annotation.FontSize, editor.SurfaceFontSize);
+                Assert.Equal(annotation.FontStyle, editor.SurfaceFontStyle);
+                Assert.Equal(annotation.TextColor.ToArgb(), editor.SurfaceColor.ToArgb());
+                Assert.Equal(annotation.OutlineColor.ToArgb(), editor.SurfaceOutlineColor.ToArgb());
+                Assert.Equal(4f, editor.SurfaceOutline);
             });
         }
 
@@ -81,7 +67,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
+                using var editor = EditorFixture.WithCanvas(120, 80);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -114,7 +100,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
+                using var editor = EditorFixture.WithCanvas(120, 80);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -148,7 +134,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = EditorFixture.WithCanvas(120, 80, createControl: true);
+                using var editor = EditorFixture.WithCanvas(120, 80);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -184,7 +170,7 @@ namespace Screenzap.ViewportTests
         {
             StaTest.Run(() =>
             {
-                using var editor = EditorFixture.WithCanvas(200, 120, createControl: true);
+                using var editor = EditorFixture.WithCanvas(200, 120);
 
                 var annotation = new screenzap.TextAnnotation
                 {
@@ -205,9 +191,6 @@ namespace Screenzap.ViewportTests
                 Assert.True(editor.TestHandleTextToolKeyDown(Keys.Enter));
                 Assert.True(annotation.IsEditing);
 
-                var dummyInput = new TextBox();
-                editor.Controls.Add(dummyInput);
-                dummyInput.Focus();
                 editor.TestSuspendTextEditingForUiFocus();
                 Assert.False(annotation.IsEditing);
 
@@ -272,7 +255,7 @@ namespace Screenzap.ViewportTests
 
         private static SKTypeface? CreateTypeface(string familyName, FontStyle style)
         {
-            var rendererType = typeof(screenzap.ImageEditor).Assembly.GetType("screenzap.EmojiTextRenderer");
+            var rendererType = typeof(screenzap.ImageDocumentEditor).Assembly.GetType("screenzap.EmojiTextRenderer");
             Assert.NotNull(rendererType);
 
             var method = rendererType!.GetMethod("CreateSkTypeface", BindingFlags.NonPublic | BindingFlags.Static);
