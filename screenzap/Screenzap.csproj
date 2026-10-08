@@ -1,10 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <PlatformTarget>x64</PlatformTarget>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
-    <!-- Windows Forms supports tray/capture/clipboard interop; WinUI owns the editor and XAML compilation. -->
+    <!-- WinUI owns presentation; Windows Forms remains only for clipboard and input data interop. -->
     <DefaultXamlRuntime>WinUI</DefaultXamlRuntime>
     <UseWinUI>true</UseWinUI>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
@@ -60,18 +60,12 @@
       <DependentUpon>Settings.settings</DependentUpon>
       <DesignTimeSharedInput>true</DesignTimeSharedInput>
     </Compile>
-    <Compile Update="Screenzap.Designer.cs">
-      <DependentUpon>Screenzap.cs</DependentUpon>
-    </Compile>
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Screenzap.resx">
-      <DependentUpon>Screenzap.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
 

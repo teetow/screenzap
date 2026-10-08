@@ -1,4 +1,4 @@
-﻿using screenzap.lib;
+using screenzap.lib;
 using System;
 using System.Threading;
 using System.Windows.Forms;
@@ -37,7 +37,8 @@ namespace screenzap
             }
             else
             {
-                MessageBox.Show("ScreenZap was launched, but is already running. Don't cross the streams.");
+                // A second tray launch does not need another window or modal prompt.
+                Logger.Log("Screenzap is already running.");
             }
         }
 
@@ -64,10 +65,6 @@ namespace screenzap
             // The XAML dispatcher replaces Application.Run; initialize OLE explicitly for
             // the shared clipboard service and native desktop drag/drop targets.
             _ = Application.OleRequired();
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-            Application.ThreadException += (_, e) => LogUnhandled("UI thread", e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (_, e) => LogUnhandled("AppDomain", e.ExceptionObject as Exception);
             AppDomain.CurrentDomain.ProcessExit += (_, _) => Logger.Log("Process exiting");
         }

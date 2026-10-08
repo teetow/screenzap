@@ -6,8 +6,8 @@ No Store registration, MSIX installation, browser, or WebView is needed.
 
 ## Presentation and document editing
 
-`WinUI/ScreenzapApplication.cs` runs the native XAML dispatcher. `Screenzap` remains a
-private Win32 tray, hotkey, capture and clipboard service. Opening the editor creates
+`WinUI/ScreenzapApplication.cs` runs the native XAML dispatcher. `ScreenzapBackground` is a
+plain disposable coordinator for tray, hotkey, capture and clipboard services. Opening the editor creates
 `WinUI/EditorWindow`; closing its window hides it back to the tray. Quit disposes the
 background services and exits the XAML application.
 
@@ -19,10 +19,18 @@ view geometry and GDI rendering; it is not a control and has no window handle.
 creating a window. The WinForms editor, designer, toolbars, history panel, dialogs and
 compatibility UI harness have been deleted.
 
-GDI+, System.Drawing and Windows Forms remain dependencies of Windows platform services
-such as tray, capture and clipboard interop. Shortcut and transparency settings use native
-WinUI dialogs. They no longer supply
-an alternate editor presentation.
+There are no Windows Forms controls or forms in the application assembly. The tray icon
+and context menu use Shell_NotifyIcon and native Windows menus. The screenshot selector
+uses a buffered Win32 window at the frozen monitor's physical-pixel bounds; its selection
+model preserves Shift/square, Alt/centre, Space/pan and Ctrl/16px-grid gestures. Cancellation,
+focus loss and capture loss close the selector without writing an image. Selection is async
+on the XAML message loop rather than using a modal WinForms loop.
+
+GDI+, System.Drawing and Windows Forms remain dependencies for clipboard data, keyboard
+and pointer event types, monitor queries, hidden interop message windows and a persistence
+timer. They provide no UI presentation. Shortcut and transparency settings use native WinUI
+dialogs. Clipboard-history updates dispatch directly to the XAML thread without a hidden
+WinForms control.
 
 The editor renders its image and overlays into an offscreen bitmap. Win2D presents BGRA
 pixels using a reusable texture. Pointer coordinates are converted from XAML DIPs to device
@@ -48,7 +56,11 @@ clipboard notification. Undo/redo returning to that revision restores the clean 
 - **Inspector:** settings for the active tool or selected annotation/layer. It also exposes
   layer visibility, merging, deletion and stacking. General image actions stay out of it.
 - **History:** a separate resizable bottom filmstrip. History images can be dragged onto the
-  canvas as image layers; refresh, duplicate, revert and delete are direct actions.
+  canvas as image layers; Use as clipboard, refresh, duplicate, revert and delete are direct
+  actions. Use as clipboard is also in each thumbnail's context menu. It exports the live
+  composite, records the clean checkpoint and promotes the same editable item only after a
+  successful write. The divider supports mouse dragging and keyboard arrows, shows a resize
+  cursor, and the drawer remembers its expanded height when collapsed.
 - **Status:** image dimensions, operation status, zoom, fit, actual size and transparency.
 
 Numeric inputs support wheel adjustments without scrolling the inspector. Shift makes fine

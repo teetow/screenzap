@@ -285,7 +285,6 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 var store = new ClipboardHistoryStore();
-                using var host = new Form();
 
                 using var knownImage = CreateSolidBitmap(Color.DarkSlateBlue);
                 var known = store.AddObservedImage(knownImage);
@@ -296,7 +295,7 @@ namespace Screenzap.ViewportTests
 
                 using var service = new SystemClipboardHistoryService(
                     store,
-                    host,
+                    action => action(),
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
                     isInternalWriteWindow: null);
@@ -313,7 +312,6 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 var store = new ClipboardHistoryStore();
-                using var host = new Form();
 
                 using var fallbackImage = CreateSolidBitmap(Color.DarkCyan);
                 var fallback = store.AddObservedImage(fallbackImage);
@@ -325,7 +323,7 @@ namespace Screenzap.ViewportTests
 
                 using var service = new SystemClipboardHistoryService(
                     store,
-                    host,
+                    action => action(),
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
                     isInternalWriteWindow: null);
@@ -348,7 +346,6 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 var store = new ClipboardHistoryStore();
-                using var host = new Form();
 
                 using var localImage = CreateSolidBitmap(Color.MidnightBlue);
                 var localOnly = store.AddObservedImage(localImage);
@@ -359,7 +356,7 @@ namespace Screenzap.ViewportTests
 
                 using var service = new SystemClipboardHistoryService(
                     store,
-                    host,
+                    action => action(),
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
                     isInternalWriteWindow: null);
@@ -382,7 +379,6 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 var store = new ClipboardHistoryStore();
-                using var host = new Form();
 
                 // A "set as active"/committed item: local-only (no SystemHistoryId), not a seeded
                 // fallback, carrying a suppressed old system id. This is the on-disk shape of 539e706c.
@@ -400,7 +396,7 @@ namespace Screenzap.ViewportTests
 
                 using var service = new SystemClipboardHistoryService(
                     store,
-                    host,
+                    action => action(),
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
                     isInternalWriteWindow: null);
@@ -430,7 +426,6 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 var store = new ClipboardHistoryStore();
-                using var host = new Form();
 
                 using var committedImage = CreateSolidBitmap(Color.SteelBlue);
                 var committed = store.AddObservedImage(committedImage);
@@ -444,7 +439,7 @@ namespace Screenzap.ViewportTests
 
                 using var service = new SystemClipboardHistoryService(
                     store,
-                    host,
+                    action => action(),
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
                     isInternalWriteWindow: null);
@@ -467,7 +462,6 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 var store = new ClipboardHistoryStore();
-                using var host = new Form();
 
                 using var oldImage = CreateSolidBitmap(Color.SteelBlue);
                 var old = store.AddObservedImage(oldImage);
@@ -479,7 +473,7 @@ namespace Screenzap.ViewportTests
 
                 using var service = new SystemClipboardHistoryService(
                     store,
-                    host,
+                    action => action(),
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
                     isInternalWriteWindow: null);
@@ -504,7 +498,6 @@ namespace Screenzap.ViewportTests
             StaTest.Run(() =>
             {
                 var store = new ClipboardHistoryStore();
-                using var host = new Form();
 
                 using var image = CreateSolidBitmap(Color.SeaGreen);
                 var original = store.AddObservedImage(image);
@@ -517,7 +510,7 @@ namespace Screenzap.ViewportTests
 
                 using var service = new SystemClipboardHistoryService(
                     store,
-                    host,
+                    action => action(),
                     onItemObserved: null,
                     tryBindPendingCommittedItem: null,
                     isInternalWriteWindow: null);

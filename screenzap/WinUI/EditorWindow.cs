@@ -83,7 +83,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         root.RowDefinitions.Add(new() { Height = new GridLength(40) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new() { Height = new GridLength(5) });
+        root.RowDefinitions.Add(new() { Height = new GridLength(10) });
         root.RowDefinitions.Add(historyRow);
         root.RowDefinitions.Add(new() { Height = new GridLength(34) });
         BuildTitleBar();
@@ -153,7 +153,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         RefreshState();
         canvas.Focus(FocusState.Programmatic);
     }
-    internal void Shutdown() { shuttingDown = true; stateTimer.Stop(); editor.SurfaceInvalidated -= InvalidateCanvas; host.StateChanged -= QueueStateRefresh; host.HistoryStore.Changed -= HistoryChanged; host.HistoryStore.ActiveItemChanged -= ActiveHistoryChanged; host.HistoryStore.ItemUpdated -= HistoryItemUpdated; host.HistoryStore.ItemPreviewRefreshed -= HistoryItemUpdated; canvas.DisposeCursors(); canvas.RemoveFromVisualTree(); texture?.Dispose(); frame?.Dispose(); Close(); }
+    internal void Shutdown() { shuttingDown = true; stateTimer.Stop(); editor.SurfaceInvalidated -= InvalidateCanvas; host.StateChanged -= QueueStateRefresh; host.HistoryStore.Changed -= HistoryChanged; host.HistoryStore.ActiveItemChanged -= ActiveHistoryChanged; host.HistoryStore.ItemUpdated -= HistoryItemUpdated; host.HistoryStore.ItemPreviewRefreshed -= HistoryItemUpdated; historyResizeHandle?.Dispose(); canvas.DisposeCursors(); canvas.RemoveFromVisualTree(); texture?.Dispose(); frame?.Dispose(); Close(); }
     private void HistoryChanged(object? sender, EventArgs args) { historyDirty = true; QueueStateRefresh(); }
     private void ActiveHistoryChanged(object? sender, EventArgs args) { QueueStateRefresh(); InvalidateCanvas(); }
     private void HistoryItemUpdated(object? sender, ClipboardHistoryItem item)
@@ -277,9 +277,16 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
     }
     private void BuildHistory()
     {
-        var splitter = new Border { Background = Brush(45, 47, 51), ManipulationMode = ManipulationModes.TranslateY };
-        splitter.ManipulationDelta += (_, e) => { historyRow.Height = new GridLength(Math.Clamp(historyRow.Height.Value - e.Delta.Translation.Y, 100, 260)); historyDirty = true; RefreshState(); };
-        Place(root, splitter, 3);
+        historyResizeHandle = new HistoryResizeHandle();
+        historyResizeHandle.Dragged += delta =>
+        {
+            double maximum = Math.Max(100, Math.Min(360, root.ActualHeight - 300));
+            historyRow.Height = new GridLength(Math.Clamp(historyRow.Height.Value - delta, 100, maximum));
+            expandedHistoryHeight = historyRow.Height.Value;
+            historyDirty = true;
+            RefreshState();
+        };
+        Place(root, historyResizeHandle, 3);
         var history = new Grid { Background = Brush(28, 30, 33) };
         history.RowDefinitions.Add(new() { Height = new GridLength(34) });
         history.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
@@ -288,13 +295,19 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         Place(header, new TextBlock { Text = "History", FontSize = 12, VerticalAlignment = VerticalAlignment.Center }, 0);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        useHistoryClipboardButton = PlainButton("\uE77F", "Copy selected image to clipboard and move it to the front", () =>
+        {
+            if (host.HistoryStore.ActiveItem is { } item) UseHistoryItemAsClipboard(item);
+        }, "Use as clipboard");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(useHistoryClipboardButton, "UseHistoryItemAsClipboard");
+        actions.Children.Add(useHistoryClipboardButton);
         actions.Children.Add(PlainButton("\uE72C", "Refresh clipboard history", async () => { if (host.RefreshSystemHistoryAsync != null) await host.RefreshSystemHistoryAsync(); }));
         actions.Children.Add(CommandButton(EditorCommandId.Duplicate, "\uE8C8"));
         actions.Children.Add(CommandButton(EditorCommandId.Revert, "\uE777"));
         actions.Children.Add(CommandButton(EditorCommandId.Delete, "\uE74D"));
         Place(header, actions, 0, 1);
         Place(history, header, 0);
-        var historyScroll = new ScrollViewer { Content = filmstrip, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
+        historyScroll = new ScrollViewer { Content = filmstrip, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(historyScroll, "HistoryScroll");
         Place(history, historyScroll, 1);
         Place(root, history, 4);
@@ -306,7 +319,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         bar.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         Place(bar, status, 0);
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        controls.Children.Add(PlainButton("\uE8A4", "Show or hide history", () => historyRow.Height = new GridLength(historyRow.Height.Value <= 34 ? 144 : 34)));
+        controls.Children.Add(PlainButton("\uE8A4", "Show or hide history", ToggleHistory));
         controls.Children.Add(zoomLabel);
         controls.Children.Add(PlainButton("\uE71F", "Zoom out", () => editor.SurfaceSetZoom(Math.Max(.01m, editor.SurfaceZoom / 1.25m))));
         controls.Children.Add(PlainButton("\uE71E", "Zoom in", () => editor.SurfaceSetZoom(Math.Min(32m, editor.SurfaceZoom * 1.25m))));
@@ -339,6 +352,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
                 pair.Value.Foreground = selected ? Accent : NormalForeground;
             }
         }
+        if (useHistoryClipboardButton != null) useHistoryClipboardButton.IsEnabled = item != null;
         RefreshHistorySelection();
         canvas.SetCursor(Enum.Parse<Microsoft.UI.Input.InputSystemCursorShape>(editor.SurfaceCursor));
         var size = editor.SurfaceImageSize;

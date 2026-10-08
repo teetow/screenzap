@@ -94,69 +94,92 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void SetItemAsClipboard_PrefersPreviewComposite_ForImageItems()
+        public void SetItemAsClipboard_ExportsLiveComposite_PromotesWithoutFlattening()
         {
-            Exception? failure = null;
-
             StaTest.Run(() =>
             {
-                try
+                using var editor = new ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
+                using var source = EditorFixture.Canvas(100, 80, Color.DarkBlue);
+                var item = host.HistoryStore.AddObservedImage(source);
+                Assert.True(host.ActivateHistoryItem(item));
+                editor.ResizeSurface(new Size(400, 300));
+                EditorFixture.PinModifiers(editor);
+                editor.TestToggleRectTool();
+                editor.TestFireMouseDownAtImagePixel(new Point(10, 10), MouseButtons.Left);
+                editor.TestFireMouseMoveAtImagePixel(new Point(70, 50), MouseButtons.Left);
+                editor.TestFireMouseUpAtImagePixel(new Point(70, 50), MouseButtons.Left);
+                editor.TestDeactivateDrawingTool();
+                using var expected = editor.BuildCompositeImageForTests();
+                var newer = host.HistoryStore.AddObservedImage(source);
+                item.AssignSystemHistoryId("old-system-entry");
+                host.ClipboardImageWriterForDiagnostics = image =>
                 {
-                    using var imagePresenter = new screenzap.ImageDocumentEditor();
-                    using var host = new ClipboardDocumentHost(true, imagePresenter);
-
-                    host.HistoryStore.ReplaceAll(Array.Empty<ClipboardHistoryItem>());
-
-                    using var baseImage = new Bitmap(10, 10);
-                    using (var g = Graphics.FromImage(baseImage))
-                    {
-                        g.Clear(Color.DarkBlue);
-                    }
-
-                    using var previewComposite = new Bitmap(10, 10);
-                    using (var g = Graphics.FromImage(previewComposite))
-                    {
-                        g.Clear(Color.OrangeRed);
-                    }
-
-                    var item = ClipboardHistoryItem.FromImage(baseImage);
-                    item.SetPreviewComposite(previewComposite);
-                    item.MarkDirtyExternally();
-
-                    host.HistoryStore.ReplaceAll(new[] { item });
-
-                    Bitmap? written = null;
-                    host.ClipboardImageWriterForDiagnostics = image =>
-                    {
-                        written?.Dispose();
-                        written = new Bitmap(image);
-                        return true;
-                    };
-
-                    var setItemMethod = typeof(ClipboardDocumentHost).GetMethod("SetItemAsClipboard", BindingFlags.Instance | BindingFlags.NonPublic);
-                    Assert.NotNull(setItemMethod);
-                    setItemMethod!.Invoke(host, new object[] { item });
-
-                    try
-                    {
-                        Assert.NotNull(written);
-                        Assert.Equal(Color.OrangeRed.ToArgb(), written!.GetPixel(0, 0).ToArgb());
-                    }
-                    finally
-                    {
-                        written?.Dispose();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
+                    var actual = (Bitmap)image;
+                    Assert.Equal(expected.Size, actual.Size);
+                    for (int y = 0; y < actual.Height; y++)
+                        for (int x = 0; x < actual.Width; x++)
+                            Assert.Equal(expected.GetPixel(x, y), actual.GetPixel(x, y));
+                    return true;
+                };
+                Assert.True(host.SetItemAsClipboard(item));
+                Assert.Same(item, host.HistoryStore.TopItem);
+                Assert.Same(item, host.HistoryStore.ActiveItem);
+                Assert.Equal(2, host.HistoryStore.Items.Count);
+                Assert.Same(newer, host.HistoryStore.Items[1]);
+                Assert.False(item.IsDirty);
+                Assert.Null(item.SystemHistoryId);
+                Assert.Equal(1, editor.TestAnnotationShapeCount);
+                using var observed = ClipboardHistoryItem.FromImage(expected);
+                observed.AssignSystemHistoryId("new-system-entry");
+                Assert.Same(item, host.TryBindPendingCommittedSystemItem(observed));
+                Assert.True(host.ExecuteHostCommand(EditorCommandId.Undo));
+                Assert.Equal(0, editor.TestAnnotationShapeCount);
+                Assert.True(item.IsDirty);
             });
+        }
 
-            if (failure != null)
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void SetItemAsClipboard_FailedWrite_DoesNotPromoteOrLoseSystemBinding(bool throws)
+        {
+            StaTest.Run(() =>
             {
-                throw new TargetInvocationException(failure);
-            }
+                using var presenter = new StubImagePresenter();
+                using var host = new ClipboardDocumentHost(true, presenter);
+                var item = AddImage(host.HistoryStore, Color.Red);
+                item.AssignSystemHistoryId("existing-system-entry");
+                item.MarkDirtyExternally();
+                var top = AddImage(host.HistoryStore, Color.Blue);
+                host.ClipboardImageWriterForDiagnostics = _ => throws ? throw new InvalidOperationException("Locked") : false;
+                Assert.False(host.SetItemAsClipboard(item));
+                Assert.Same(top, host.HistoryStore.TopItem);
+                Assert.Equal("existing-system-entry", item.SystemHistoryId);
+                Assert.True(item.IsDirty);
+                Assert.False(host.IsInternalClipboardWriteWindow());
+            });
+        }
+
+        [Fact]
+        public void SetItemAsClipboard_CleanOlderItem_CanBePublishedRepeatedly()
+        {
+            StaTest.Run(() =>
+            {
+                using var editor = new ImageDocumentEditor();
+                using var host = new ClipboardDocumentHost(true, editor);
+                using var image = EditorFixture.Canvas(20, 30, Color.Teal);
+                var item = host.HistoryStore.AddObservedImage(image);
+                host.HistoryStore.AddObservedImage(image);
+                int writes = 0;
+                host.ClipboardImageWriterForDiagnostics = _ => { writes++; return true; };
+                Assert.True(host.SetItemAsClipboard(item));
+                Assert.True(host.SetItemAsClipboard(item));
+                Assert.Equal(2, writes);
+                Assert.Same(item, host.HistoryStore.TopItem);
+                Assert.False(item.IsDirty);
+                Assert.False(host.ExecuteHostCommand(EditorCommandId.Undo));
+            });
         }
 
         [Fact]

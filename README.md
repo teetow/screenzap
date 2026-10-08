@@ -14,9 +14,9 @@ For a stable per-user install path on Windows, prefer publishing to `%LOCALAPPDA
 
 Press the configured shortcut (default is `ctrl-alt-shift-4`), drag to select a screen region, and take your screenshot. It will go on the clipboard.
 
-Double-click the tray icon (or choose **Sanitize Clipboard**) to open the WinUI image editor. Draw and select with the left tool rail, adjust the current tool or selection in the right inspector, and revisit clipboard images in the bottom history strip. Image operations are available directly above the canvas; document actions include Save, Copy, Undo, Redo and **Commit** (`Ctrl+Enter`). Commit accepts edits into the clipboard while retaining zoom, pan and undo.
+Double-click the tray icon (or choose **Edit Clipboard Image**) to open the WinUI image editor. Draw and select with the left tool rail, adjust the current tool or selection in the right inspector, and revisit clipboard images in the bottom history strip. Image operations are available directly above the canvas; document actions include Save, Copy, Undo, Redo and **Commit** (`Ctrl+Enter`). Commit accepts edits into the clipboard while retaining zoom, pan and undo.
 
-History images and emoji can be dragged onto the canvas. Resize, perspective correction, free rotation, OCR censoring, background replacement, color correction, text optimization and De-JPEG use the existing editing algorithms. The View controls below the history provide zoom, Fit, 100% and transparency.
+Drag the divider above History to resize the drawer. **Use as clipboard** copies the selected image and moves it to the front; the same action is available by right-clicking a thumbnail. The document stays editable. History images and emoji can be dragged onto the canvas. Resize, perspective correction, free rotation, OCR censoring, background replacement, color correction, text optimization and De-JPEG use the existing editing algorithms. The View controls below the history provide zoom, Fit, 100% and transparency.
 
 ### Modifier keys
 

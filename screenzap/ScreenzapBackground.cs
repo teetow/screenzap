@@ -1,5 +1,7 @@
 using screenzap.Components;
 using screenzap.lib;
+using screenzap.Native;
+using Microsoft.UI.Dispatching;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -15,8 +17,12 @@ using HotkeyModifierKeys = global::ModifierKeys;
 
 namespace screenzap
 {
-    public partial class Screenzap : Form
+    internal sealed class ScreenzapBackground : IDisposable
     {
+        private readonly DispatcherQueue dispatcher = DispatcherQueue.GetForCurrentThread();
+        private readonly TrayIcon tray;
+        private CaptureOverlay? captureOverlay;
+        internal event Action? Closed;
         private readonly KeyboardHook rectCaptureHook = new KeyboardHook();
         private readonly KeyboardHook seqCaptureHook = new KeyboardHook();
         private readonly string autostartAppName = "Screenzap";
@@ -26,7 +32,7 @@ namespace screenzap
         private bool isCapturing;
         private ImageDocumentEditor? imageEditor;
         private ClipboardDocumentHost? clipboardEditorHost;
-        private System.Windows.Forms.Timer? clipboardEditorWarmupTimer;
+        private DispatcherQueueTimer? clipboardEditorWarmupTimer;
         private bool isShuttingDown;
         private DateTime lastErrorNotificationUtc;
         private readonly List<int> rectCaptureHotkeyIds = new();
@@ -37,11 +43,16 @@ namespace screenzap
         private string? lastQrPayload;
         private DateTime lastQrNotificationUtc;
 
-        public Screenzap()
+        public ScreenzapBackground()
         {
             Logger.StartNewSession(clearExisting: true);
             Logger.Log($"Startup directories: base='{AppContext.BaseDirectory}', current='{Environment.CurrentDirectory}'");
-            InitializeComponent();
+            tray = new TrayIcon
+            {
+                OpenRequested = ShowClipboardEditorForCurrentData,
+                SaveRequested = SaveClipboard,
+                QuitRequested = Close
+            };
 
             AddBuildInfoMenuItem();
 
@@ -52,7 +63,7 @@ namespace screenzap
             updateTooltips(rectCaptureCombo);
             if (Properties.Settings.Default.showBalloon == true)
             {
-                notifyIcon1.ShowBalloonTip(2000, "Screenzap is running!", $"Press {rectCaptureCombo} to take a screenshot.", ToolTipIcon.Info);
+                tray.ShowNotification("Screenzap is running!", $"Press {rectCaptureCombo} to take a screenshot.", TrayNotificationKind.Info);
             }
 
             rectCaptureHook.KeyPressed += new EventHandler<KeyPressedEventArgs>(DoCapture);
@@ -66,19 +77,22 @@ namespace screenzap
             Logger.Log("Screenzap initialized");
         }
 
-        protected override void OnFormClosed(FormClosedEventArgs e)
+        public void Dispose()
         {
+            if (isShuttingDown) return;
             isShuttingDown = true;
+            captureOverlay?.Dispose();
+            captureOverlay = null;
+            rectCaptureHook.Dispose();
+            seqCaptureHook.Dispose();
+            tray.Dispose();
             clipboardEditorWarmupTimer?.Stop();
-            clipboardEditorWarmupTimer?.Dispose();
             clipboardEditorWarmupTimer = null;
             systemHistoryService?.Dispose();
             systemHistoryService = null;
             clipboardEditorHost?.Dispose();
             clipboardEditorHost = null;
             imageEditor = null;
-
-            base.OnFormClosed(e);
 
             if (clipboardMonitor != null)
             {
@@ -183,7 +197,7 @@ namespace screenzap
 
                     try
                     {
-                        BeginInvoke(new Action(() => ShowQrBalloon(payload)));
+                        dispatcher.TryEnqueue(() => { if (!isShuttingDown) ShowQrBalloon(payload); });
                     }
                     catch
                     {
@@ -214,8 +228,7 @@ namespace screenzap
                 message = TruncateForBalloon(uri.ToString(), 200);
             }
 
-            AttachShellLauncher(payload);
-            notifyIcon1.ShowBalloonTip(4000, title, message, ToolTipIcon.Info);
+            tray.ShowNotification(title, message, TrayNotificationKind.Info, () => LaunchQrPayload(payload));
         }
 
         private static string TruncateForBalloon(string value, int maxLength)
@@ -228,40 +241,21 @@ namespace screenzap
             return value.Substring(0, maxLength - 1) + "…";
         }
 
-        private void AttachShellLauncher(string payload)
+        private void LaunchQrPayload(string payload)
         {
-            EventHandler? handler = null;
-
-            handler = (s, ev) =>
+            try { Process.Start(new ProcessStartInfo { FileName = payload, UseShellExecute = true }); }
+            catch (Exception ex)
             {
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = payload,
-                        UseShellExecute = true
-                    };
-                    Process.Start(psi);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"Failed to launch QR payload: {ex.Message}");
-                    notifyIcon1.ShowBalloonTip(3000, "Unable to open", "Could not launch QR code content.", ToolTipIcon.Error);
-                }
-                finally
-                {
-                    notifyIcon1.BalloonTipClicked -= handler;
-                }
-            };
-
-            notifyIcon1.BalloonTipClicked += handler;
+                Logger.Log($"Failed to launch QR payload: {ex.Message}");
+                tray.ShowNotification("Unable to open", "Could not launch QR code content.", TrayNotificationKind.Error);
+            }
         }
 
         private void AddBuildInfoMenuItem()
         {
             try
             {
-                var exePath = Application.ExecutablePath;
+                var exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Screenzap.exe");
                 var lastWriteLocal = File.GetLastWriteTime(exePath);
                 var buildConfiguration = GetBuildConfigurationName();
 
@@ -271,20 +265,7 @@ namespace screenzap
                 var versionText = informational ?? version ?? "unknown";
 
                 var itemText = $"Build ({buildConfiguration}): {lastWriteLocal:yyyy-MM-dd HH:mm:ss}   v{versionText}";
-                var buildInfoItem = new ToolStripMenuItem(itemText)
-                {
-                    Enabled = false
-                };
-
-                var insertIndex = contextMenuStrip1.Items.IndexOf(toolStripSeparator3);
-                if (insertIndex >= 0)
-                {
-                    contextMenuStrip1.Items.Insert(insertIndex + 1, buildInfoItem);
-                }
-                else
-                {
-                    contextMenuStrip1.Items.Add(buildInfoItem);
-                }
+                tray.BuildDescription = itemText;
             }
             catch (Exception ex)
             {
@@ -301,18 +282,9 @@ namespace screenzap
 #endif
         }
 
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
-            Hide();
-            Opacity = 0;
-            ShowInTaskbar = false;
-            ScheduleClipboardEditorWarmup();
-        }
-
         void updateTooltips(KeyCombo keyCombo)
         {
-            notifyIcon1.Text = $"Screenzap is running! \n\nPress {keyCombo}.";
+            tray.Tooltip = $"Screenzap is running! \n\nPress {keyCombo}.";
         }
 
 
@@ -322,7 +294,7 @@ namespace screenzap
             ClipboardMetadata.LastCaptureTimestamp = DateTime.Now;
         }
 
-        void DoCapture(object? sender, KeyPressedEventArgs e)
+        async void DoCapture(object? sender, KeyPressedEventArgs e)
         {
             if (isCapturing) return;
             isCapturing = true;
@@ -331,8 +303,11 @@ namespace screenzap
                 Logger.Log("DoCapture triggered");
                 var cursorScreen = Screen.FromPoint(Cursor.Position);
                 using Bitmap frozenScreen = CaptureScreenBitmap(cursorScreen);
-                Overlay ovl = new Overlay(cursorScreen, frozenScreen);
-                var captureRect = ovl.CaptureRect();
+                using var overlay = new CaptureOverlay(cursorScreen.Bounds, frozenScreen);
+                captureOverlay = overlay;
+                var captureRect = await overlay.SelectAsync();
+                captureOverlay = null;
+                if (isShuttingDown) return;
 
                 if (captureRect.Width <= 0 || captureRect.Height <= 0)
                 {
@@ -340,7 +315,7 @@ namespace screenzap
                     return;
                 }
 
-                Bitmap bmpScreenshot = frozenScreen.Clone(captureRect, PixelFormat.Format32bppArgb);
+                using Bitmap bmpScreenshot = frozenScreen.Clone(captureRect, PixelFormat.Format32bppArgb);
 
                 setClipboard(bmpScreenshot);
 
@@ -356,7 +331,7 @@ namespace screenzap
                 NotifyCaptureFailure("Screen capture failed", ex.Message);
             }
 
-            isCapturing = false;
+            finally { captureOverlay = null; isCapturing = false; }
         }
 
         void DoInstantCapture(object? sender, KeyPressedEventArgs e)
@@ -378,7 +353,7 @@ namespace screenzap
                     throw new Exception($"Invalid capture area {captureRect.Width}x{captureRect.Height}");
                 }
 
-                Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
+                using Bitmap bmpScreenshot = new Bitmap(captureRect.Width, captureRect.Height, PixelFormat.Format32bppArgb);
                 using (Graphics gfxScreenshot = Graphics.FromImage(bmpScreenshot))
                 {
                     gfxScreenshot.CopyFromScreen(captureRect.Location, new Point(0, 0), captureRect.Size, CopyPixelOperation.SourceCopy);
@@ -409,11 +384,6 @@ namespace screenzap
             isCapturing = false;
         }
 
-        private void sanitizeClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
-        {
-            ShowClipboardEditorForCurrentData();
-        }
-
         private bool GetStartOnLogin() => Util.IsAutoStartEnabled(autostartAppName);
 
         private void SetStartOnLogin(bool enabled)
@@ -429,20 +399,19 @@ namespace screenzap
             var processPath = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(processPath))
             {
-                processPath = Application.ExecutablePath;
+                processPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Screenzap.exe");
             }
 
             return $"\"{processPath}\"";
         }
 
-        private void saveClipboardToolStripMenuItem_Click(object? sender, EventArgs e)
+        private void SaveClipboard()
         {
-            var img = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
+            using var img = ClipboardImageDecoder.TryRead(Clipboard.GetDataObject());
             if (img != null)
             {
                 var fname = FileUtils.SaveImage(img);
-                notifyIcon1.ShowBalloonTip(2000, "Image saved", $"Saved to {fname}", ToolTipIcon.Info);
-                AttachExplorerLauncher(fname);
+                tray.ShowNotification("Image saved", $"Saved to {fname}", TrayNotificationKind.Info, () => RevealInExplorer(fname));
                 return;
             }
 
@@ -450,34 +419,17 @@ namespace screenzap
             if (!string.IsNullOrEmpty(text))
             {
                 var fname = FileUtils.SaveText(text);
-                notifyIcon1.ShowBalloonTip(2000, "Text saved", $"Saved to {fname}", ToolTipIcon.Info);
-                AttachExplorerLauncher(fname);
+                tray.ShowNotification("Text saved", $"Saved to {fname}", TrayNotificationKind.Info, () => RevealInExplorer(fname));
                 return;
             }
 
-            notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "No image or text data available to save.", ToolTipIcon.Warning);
+            tray.ShowNotification("Clipboard empty", "No image or text data available to save.", TrayNotificationKind.Warning);
         }
 
-        private void AttachExplorerLauncher(string path)
+        private static void RevealInExplorer(string path)
         {
-            var pStartInfo = new ProcessStartInfo
-
-            {
-                FileName = "explorer",
-                Arguments = $"/e, /select,\"{path}\""
-            };
-
-            EventHandler? handler = null;
-
-            handler = (s, ev) =>
-            {
-                Process.Start(pStartInfo);
-                notifyIcon1.BalloonTipClicked -= handler;
-            };
-
-            notifyIcon1.BalloonTipClicked += handler;
+            Process.Start(new ProcessStartInfo { FileName = "explorer", Arguments = $"/e, /select,\"{path}\"" });
         }
-
 
         private bool TrySetNativeCaptureShortcut(Keys keys)
         {
@@ -507,11 +459,6 @@ namespace screenzap
         }
 
 
-
-        private void notifyIcon1_DoubleClick(object? sender, EventArgs e)
-        {
-            ShowClipboardEditorForCurrentData();
-        }
 
         private void ShowClipboardEditorForCurrentData()
         {
@@ -547,7 +494,7 @@ namespace screenzap
             var top = host.HistoryStore.TopItem;
             if (top == null)
             {
-                notifyIcon1.ShowBalloonTip(2000, "Clipboard empty", "Clipboard does not contain image data.", ToolTipIcon.Info);
+                tray.ShowNotification("Clipboard empty", "Clipboard does not contain image data.", TrayNotificationKind.Info);
                 return;
             }
 
@@ -565,10 +512,9 @@ namespace screenzap
 
             if (clipboardEditorWarmupTimer == null)
             {
-                clipboardEditorWarmupTimer = new System.Windows.Forms.Timer
-                {
-                    Interval = 250
-                };
+                clipboardEditorWarmupTimer = dispatcher.CreateTimer();
+                clipboardEditorWarmupTimer.Interval = TimeSpan.FromMilliseconds(250);
+                clipboardEditorWarmupTimer.IsRepeating = false;
                 clipboardEditorWarmupTimer.Tick += (_, _) =>
                 {
                     clipboardEditorWarmupTimer?.Stop();
@@ -631,7 +577,7 @@ namespace screenzap
             host.SetStartupNotificationEnabled = SetStartupNotificationEnabled;
             host.GetCaptureShortcut = () => rectCaptureCombo.Key | rectCaptureCombo.Modifiers;
             host.TrySetCaptureShortcut = TrySetNativeCaptureShortcut;
-            host.SaveClipboardImageRequested = () => saveClipboardToolStripMenuItem_Click(this, EventArgs.Empty);
+            host.SaveClipboardImageRequested = SaveClipboard;
         }
 
         private SystemClipboardHistoryService? systemHistoryService;
@@ -643,7 +589,7 @@ namespace screenzap
                 systemHistoryService?.Dispose();
                 systemHistoryService = new SystemClipboardHistoryService(
                     host.HistoryStore,
-                    this,
+                    action => dispatcher.TryEnqueue(() => { if (!isShuttingDown) action(); }),
                     onItemObserved: host.OnObservedClipboardItem,
                     tryBindPendingCommittedItem: host.TryBindPendingCommittedSystemItem,
                     isInternalWriteWindow: host.IsInternalClipboardWriteWindow);
@@ -675,7 +621,7 @@ namespace screenzap
         internal Action<ClipboardDocumentHost, ImageDocumentEditor>? EditorHostCreated { get; set; }
         internal ClipboardDocumentHost EditorHost => EnsureClipboardHost();
         internal void OpenEditor() => ShowClipboardEditorForCurrentData();
-        internal void StartBackgroundServices() { _ = Handle; OnLoad(EventArgs.Empty); }
+        internal void StartBackgroundServices() => ScheduleClipboardEditorWarmup();
 
         private ImageDocumentEditor EnsureImageEditor()
         {
@@ -706,9 +652,11 @@ namespace screenzap
             return null;
         }
 
-        private void quitToolStripMenuItem_Click(object? sender, EventArgs e)
+        internal void Close()
         {
-            Close();
+            if (isShuttingDown) return;
+            try { Closed?.Invoke(); }
+            finally { Dispose(); }
         }
 
         private static Bitmap CaptureScreenBitmap(Screen screen)
@@ -717,6 +665,7 @@ namespace screenzap
             Bitmap screenshot = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
             if (!TryBitBltCapture(bounds, screenshot))
             {
+                screenshot.Dispose();
                 throw new InvalidOperationException("BitBlt capture failed.");
             }
 
@@ -767,7 +716,7 @@ namespace screenzap
 
             lastErrorNotificationUtc = now;
             Logger.Log($"Capture failure: {title} - {message}");
-            notifyIcon1.ShowBalloonTip(3000, title, message, ToolTipIcon.Error);
+            tray.ShowNotification(title, message, TrayNotificationKind.Error);
         }
 
         private void RegisterRectCaptureHotkeys()
@@ -780,7 +729,7 @@ namespace screenzap
             RegisterHotkeys(seqCaptureHook, seqCaptureCombo, seqCaptureHotkeyIds, "Can't register the instant capture hotkey. Please pick a better one.");
         }
 
-        private static void RegisterHotkeys(KeyboardHook hook, KeyCombo combo, List<int> storage, string failureMessage)
+        private void RegisterHotkeys(KeyboardHook hook, KeyCombo combo, List<int> storage, string failureMessage)
         {
             ClearHotkeys(hook, storage);
             HotkeyModifierKeys baseModifiers = combo.getModifierKeys();
@@ -797,7 +746,7 @@ namespace screenzap
                     Logger.Log($"Failed to register hotkey {modifiers}+{combo.Key}: {ex.Message}");
                     if (modifiers == baseModifiers)
                     {
-                        MessageBox.Show(failureMessage);
+                        tray.ShowNotification("Capture shortcut unavailable", failureMessage, TrayNotificationKind.Error);
                         break;
                     }
                 }

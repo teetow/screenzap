@@ -6,8 +6,6 @@ namespace screenzap.lib
 {
     internal static class WindowLayoutHelper
     {
-        private static readonly Size FallbackMinimumSize = new Size(800, 600);
-
         /// <summary>
         /// The share of the working area an auto-sized window is allowed to take. Screenshots are
         /// usually about as big as the screen they came from, so sizing one to fit at 1:1 nearly
@@ -73,24 +71,6 @@ namespace screenzap.lib
             var left = Math.Max(workArea.Left, Math.Min(workArea.Right - width, proposedBounds.Left));
             var top = Math.Max(workArea.Top, Math.Min(workArea.Bottom - height, proposedBounds.Top));
             return new Rectangle(left, top, width, height);
-        }
-
-        public static void ApplyInitialGeometry(Form target)
-        {
-            if (target == null)
-            {
-                throw new ArgumentNullException(nameof(target));
-            }
-
-            if (!target.StartPosition.Equals(FormStartPosition.Manual) || target.Bounds.Width == 0 || target.Bounds.Height == 0)
-            {
-                // Centre for the size the window will actually have. Centring for a smaller size
-                // and letting WinForms widen it up to MinimumSize afterwards left the window off
-                // centre by half the difference.
-                var minimum = target.MinimumSize.IsEmpty ? FallbackMinimumSize : target.MinimumSize;
-                target.StartPosition = FormStartPosition.Manual;
-                target.Bounds = GetDefaultBounds(minimum);
-            }
         }
 
         private static Point CenterOf(Rectangle rect)

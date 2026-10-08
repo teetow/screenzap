@@ -81,6 +81,15 @@ namespace screenzap.Components
             }
         }
 
+        internal void MoveToFront(ClipboardHistoryItem item)
+        {
+            int index = items.IndexOf(item);
+            if (index <= 0) return;
+            items.RemoveAt(index);
+            items.Insert(0, item);
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+
         public void Activate(ClipboardHistoryItem? item)
         {
             if (ReferenceEquals(activeItem, item))

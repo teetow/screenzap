@@ -24,6 +24,28 @@ internal sealed partial class EditorWindow
     }
 
     private readonly Dictionary<Guid, HistoryTile> historyTiles = new();
+    private HistoryResizeHandle? historyResizeHandle;
+    private Button? useHistoryClipboardButton;
+    private ScrollViewer? historyScroll;
+    private double expandedHistoryHeight = 144;
+
+    private void ToggleHistory()
+    {
+        bool collapsed = historyRow.Height.Value <= 34;
+        if (!collapsed) expandedHistoryHeight = historyRow.Height.Value;
+        historyRow.Height = new GridLength(collapsed ? expandedHistoryHeight : 34);
+        historyDirty = true;
+        RefreshState();
+    }
+
+    private void UseHistoryItemAsClipboard(ClipboardHistoryItem item)
+    {
+        if (!host.SetItemAsClipboard(item)) return;
+        inspectorKey = "";
+        historyDirty = true;
+        RefreshState();
+        historyScroll?.ChangeView(0, null, null, true);
+    }
 
     private void SynchronizeHistory()
     {
@@ -34,7 +56,7 @@ internal sealed partial class EditorWindow
             filmstrip.Children.Remove(historyTiles[id].Button);
             historyTiles.Remove(id);
         }
-        double height = Math.Clamp(historyRow.Height.Value - 82, 16, 80);
+        double height = Math.Clamp(historyRow.Height.Value - 82, 16, 240);
         for (int index = 0; index < items.Length; index++)
         {
             var item = items[index];
@@ -73,6 +95,11 @@ internal sealed partial class EditorWindow
             ResizeCanvas(); RefreshState();
             canvas.Focus(FocusState.Programmatic);
         };
+        var menu = new MenuFlyout();
+        var use = new MenuFlyoutItem { Text = "Use as clipboard", Icon = Icon("\uE77F") };
+        use.Click += (_, _) => UseHistoryItemAsClipboard(item);
+        menu.Items.Add(use);
+        button.ContextFlyout = menu;
         AttachHistoryDrag(button, item);
         return new HistoryTile { Item = item, Button = button, Image = image, Caption = caption };
     }
@@ -84,9 +111,12 @@ internal sealed partial class EditorWindow
         if (tile.ThumbnailHeight != height)
         {
             tile.ThumbnailHeight = height;
+            double width = Math.Clamp(height * 1.5, 96, 240);
+            tile.Image.Width = width;
+            ((StackPanel)tile.Button.Content).Width = width;
             tile.Image.Height = height;
             tile.Button.Height = height + 30;
-            tile.Item.RebuildThumbnail(96, (int)height);
+            tile.Item.RebuildThumbnail((int)width, (int)height);
         }
         var thumbnail = tile.Item.Thumbnail;
         if (thumbnail == null) return;

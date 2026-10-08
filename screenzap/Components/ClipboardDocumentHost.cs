@@ -239,6 +239,13 @@ internal sealed class ClipboardDocumentHost : IDisposable
         var item = historyStore.ActiveItem;
         if (item == null || !item.IsDirty)
             return false;
+        return ExportActiveItemToClipboard();
+    }
+
+    private bool ExportActiveItemToClipboard()
+    {
+        var item = historyStore.ActiveItem;
+        if (item == null) return false;
         using var composite = activePresenter?.GetCurrentContent() as Bitmap;
         if (composite == null)
             return false;
@@ -277,9 +284,10 @@ internal sealed class ClipboardDocumentHost : IDisposable
         }
 
         TrackPendingCommittedItem(item.Id);
+        historyStore.MoveToFront(item);
         historyStore.NotifyItemUpdated(item);
         UpdateCommandStates();
-        UpdateStatusText("Edits committed to clipboard.");
+        UpdateStatusText("Copied to clipboard and moved to the front of history.");
         return true;
     }
 
@@ -342,45 +350,10 @@ internal sealed class ClipboardDocumentHost : IDisposable
         SchedulePersistedHistorySave();
     }
 
-    private void SetItemAsClipboard(ClipboardHistoryItem item)
+    internal bool SetItemAsClipboard(ClipboardHistoryItem item)
     {
-        // Activate in the editor first, then write to the system clipboard.
-        ActivateHistoryItem(item);
-        // The pending write will spawn a new system-history entry. Track this item
-        // so the incoming snapshot re-binds to it instead of inserting a duplicate
-        // row, and suppress the old SystemHistoryId so it doesn't linger as a
-        // separate entry beneath the new top.
-        if (!string.IsNullOrEmpty(item.SystemHistoryId))
-        {
-            item.AddSuppressedSystemHistoryId(item.SystemHistoryId);
-            item.SystemHistoryId = null;
-        }
-
-        TrackPendingCommittedItem(item.Id);
-        BeginInternalClipboardWrite();
-        try
-        {
-            // Prefer composited preview so annotation/text-overlay edits are preserved in Set as Active.
-            var imageToWrite = item.PreviewComposite ?? item.CurrentImage;
-            if (imageToWrite != null)
-            {
-                if (ClipboardImageWriterForDiagnostics != null)
-                {
-                    using var copy = new Bitmap(imageToWrite);
-                    ClipboardImageWriterForDiagnostics(copy);
-                }
-                else if (allowSystemClipboardWrites)
-                {
-                    screenzap.lib.ClipboardImageWriter.WriteImage(imageToWrite);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            screenzap.lib.Logger.Log($"SetItemAsClipboard failed: {ex.Message}");
-        }
-
-        UpdateStatusText("Set as active clipboard content.");
+        if (!historyStore.Items.Contains(item) || !ActivateHistoryItem(item)) return false;
+        return ExportActiveItemToClipboard();
     }
 
     private void DuplicateItem(ClipboardHistoryItem item)

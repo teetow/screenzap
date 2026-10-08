@@ -6,7 +6,7 @@ namespace screenzap.WinUI;
 
 public sealed partial class ScreenzapApplication : Microsoft.UI.Xaml.Application
 {
-    private readonly Screenzap? background;
+    private readonly ScreenzapBackground? background;
     private EditorWindow? editorWindow;
 
     internal ScreenzapApplication()
@@ -15,7 +15,7 @@ public sealed partial class ScreenzapApplication : Microsoft.UI.Xaml.Application
         UnhandledException += (_, args) => Logger.Log($"WinUI exception: {args.Exception}");
 
         if (Environment.GetCommandLineArgs().Contains("--winui-smoke")) return;
-        background = new Screenzap();
+        background = new ScreenzapBackground();
         background.EditorHostCreated = (host, editor) =>
         {
             host.ExternalActivateRequested = () =>
@@ -24,7 +24,7 @@ public sealed partial class ScreenzapApplication : Microsoft.UI.Xaml.Application
                 editorWindow.ShowEditor();
             };
         };
-        background.FormClosed += (_, _) => { editorWindow?.Shutdown(); Exit(); };
+        background.Closed += () => { editorWindow?.Shutdown(); Exit(); };
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

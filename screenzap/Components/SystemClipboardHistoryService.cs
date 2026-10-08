@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 using screenzap.lib;
 using WinRtClipboard = Windows.ApplicationModel.DataTransfer.Clipboard;
 using WinRtClipboardHistoryItem = Windows.ApplicationModel.DataTransfer.ClipboardHistoryItem;
@@ -23,7 +22,7 @@ namespace screenzap.Components
     internal sealed class SystemClipboardHistoryService : IDisposable
     {
         private readonly ClipboardHistoryStore store;
-        private readonly SynchronizationContextPoster poster;
+        private readonly Action<Action> postToUi;
         private readonly Action<ClipboardHistoryItem>? onItemObserved;
         private readonly Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem;
         private readonly Func<bool>? isInternalWriteWindow;
@@ -83,13 +82,13 @@ namespace screenzap.Components
 
         public SystemClipboardHistoryService(
             ClipboardHistoryStore store,
-            Control uiDispatcher,
+            Action<Action> postToUi,
             Action<ClipboardHistoryItem>? onItemObserved,
             Func<ClipboardHistoryItem, ClipboardHistoryItem?>? tryBindPendingCommittedItem,
             Func<bool>? isInternalWriteWindow)
         {
             this.store = store;
-            this.poster = new SynchronizationContextPoster(uiDispatcher);
+            this.postToUi = postToUi;
             this.onItemObserved = onItemObserved;
             this.tryBindPendingCommittedItem = tryBindPendingCommittedItem;
             this.isInternalWriteWindow = isInternalWriteWindow;
@@ -252,7 +251,7 @@ namespace screenzap.Components
                 .OrderByDescending(entry => entry?.timestamp ?? DateTimeOffset.MinValue)
                 .ToList();
 
-            poster.Post(() => ApplySnapshot(translated));
+            postToUi(() => ApplySnapshot(translated));
         }
 
         private static async Task<T?> AwaitWithTimeout<T>(Windows.Foundation.IAsyncOperation<T> operation, string label)
@@ -882,23 +881,5 @@ namespace screenzap.Components
             candidate?.Bitmap.Dispose();
         }
 
-        /// <summary>Marshals actions onto the UI thread of a given Control.</summary>
-        private sealed class SynchronizationContextPoster
-        {
-            private readonly Control target;
-            public SynchronizationContextPoster(Control target) { this.target = target; }
-            public void Post(Action action)
-            {
-                if (target.IsDisposed) return;
-                if (target.InvokeRequired)
-                {
-                    try { target.BeginInvoke(action); } catch { /* form closing */ }
-                }
-                else
-                {
-                    action();
-                }
-            }
-        }
     }
 }
