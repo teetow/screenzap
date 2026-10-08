@@ -822,56 +822,48 @@ namespace screenzap.Components
             var item = historyStore.ActiveItem;
             if (item == null || !item.IsDirty) return false;
 
-            // Stash first so Annotations + base image are captured. Then flatten for clipboard.
-            activePresenter?.StashHistoryItemState(item);
+            using var composite = activePresenter?.GetCurrentContent() as Bitmap;
+            if (composite == null) return false;
 
-            Bitmap? flattened = activePresenter?.GetCurrentContent() as Bitmap;
-
-            // Mark internal write so the system-history observer won't create a duplicate entry.
             BeginInternalClipboardWrite();
-
-            // Tell the editor itself to suppress its own auto-reload of this clipboard event,
-            // otherwise its observer treats the host's write as an external change and reloads
-            // the image — wiping the freshly-restored undo stack from item.UndoSnapshot.
-            if (flattened != null && activePresenter is screenzap.ImageEditor ie)
-            {
-                ie.TrackHostClipboardImageWrite(flattened);
-            }
+            if (activePresenter is screenzap.ImageEditor editor)
+                editor.TrackHostClipboardImageWrite(composite);
 
             try
             {
-                if (flattened != null && allowSystemClipboardWrites)
+                if (ClipboardImageWriterForDiagnostics != null)
                 {
-                    screenzap.lib.ClipboardImageWriter.WriteImage(flattened);
+                    if (!ClipboardImageWriterForDiagnostics(composite))
+                        throw new InvalidOperationException("Clipboard writer rejected the image.");
+                }
+                else if (allowSystemClipboardWrites)
+                {
+                    screenzap.lib.ClipboardImageWriter.WriteImage(composite);
                 }
             }
             catch (Exception ex)
             {
                 screenzap.lib.Logger.Log($"CommitActiveItemEdits clipboard write failed: {ex.Message}");
+                suppressExternalClipboardUntilUtc = null;
+                UpdateStatusText("Could not write to the clipboard. Try Commit again.");
+                return false;
             }
 
-            // Preserve the complete editable document as an undo step before baking the overlays.
-            if (flattened != null)
-            {
-                item.AcceptEdits(flattened);
-                flattened.Dispose();
-            }
+            // Only a successful export seals pending text/gestures and advances the checkpoint.
+            // No document reload or synthetic undo step: existing objects and redo stay live.
+            if (activePresenter is screenzap.ImageEditor imageEditor)
+                imageEditor.RecordSuccessfulClipboardExport();
+            activePresenter?.CaptureLiveStateInto(item);
+            item.RecordClipboardExport(composite);
+            activeItemHasUncapturedEdits = false;
 
             if (!string.IsNullOrEmpty(item.SystemHistoryId))
             {
                 item.AddSuppressedSystemHistoryId(item.SystemHistoryId);
                 item.SystemHistoryId = null;
             }
-
-            historyStore.MarkClean(item);
             TrackPendingCommittedItem(item.Id);
-
-            // Reload cleaned state into presenter. UndoSnapshot is restored here so undo continues
-            // working after commit (per design: push to clipboard but keep undo/revert available).
-            if (activePresenter is screenzap.ImageEditor imageEditor)
-                imageEditor.LoadCommittedHistoryItem(item);
-            else
-                activePresenter?.LoadHistoryItem(item);
+            historyStore.NotifyItemUpdated(item);
             UpdateCommandStates();
             UpdateStatusText("Edits committed to clipboard.");
             return true;
@@ -916,7 +908,7 @@ namespace screenzap.Components
             // whole-image allocations on every single edit, more often than the save that
             // consumed them.
             activeItemHasUncapturedEdits = true;
-            item.MarkDirtyExternally();
+            item.SetDirtyFlagForRestore(activePresenter is screenzap.ImageEditor imageEditor ? imageEditor.DocumentIsDirty : true);
             historyStore.NotifyItemUpdated(item);
 
             UpdateCommandStates();

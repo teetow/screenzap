@@ -70,7 +70,7 @@ Use a Windows .NET 9 SDK with the Windows SDK build tools (restored through NuGe
 
 ```powershell
 dotnet build screenzap/Screenzap.csproj -nr:false -m:1 -p:UseSharedCompilation=false
-dotnet test tests/Screenzap.ViewportTests/Screenzap.ViewportTests.csproj -nr:false -m:1 -p:UseSharedCompilation=false
+powershell -NoProfile -File tools/test-regressions.ps1
 powershell -NoProfile -File tools/test-winui.ps1
 powershell -NoProfile -File tools/test-winui-qa.ps1
 dotnet publish screenzap/Screenzap.csproj -c Release -nr:false -m:1 -p:UseSharedCompilation=false -o "$env:LOCALAPPDATA\Programs\Screenzap"
@@ -90,7 +90,11 @@ presentation so their tests remain available during further backend extraction.
 
 The external-surface regression tests cover native input, tool changes, exact viewport
 size, rendering without visible legacy controls, and Commit preserving zoom, pan and undo.
-The full existing document regression suite also remains required. Actual-window tests
+The full existing document regression suite also remains required. Run it through
+`tools/test-regressions.ps1`: its WinForms compatibility fixtures get real windows on a
+separate hidden Windows desktop, so fitting or showing a test window cannot interrupt the
+user's desktop. Output is written to ignored `local/regressions.log` by default.
+Actual-window tests
 must exercise native menus, pointer capture, typing, dialogs, history and resizing; a
 successful compile cannot validate those interactions.
 

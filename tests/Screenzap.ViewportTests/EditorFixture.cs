@@ -81,6 +81,7 @@ namespace Screenzap.ViewportTests
         /// </summary>
         internal static void PinModifiers(screenzap.ImageEditor editor)
         {
+            editor.TestSetMouseButtonsHeld(System.Windows.Forms.MouseButtons.None);
             editor.TestSetShiftHeld(false);
             editor.TestSetCtrlHeld(false);
             editor.TestSetAltHeld(false);

@@ -140,9 +140,13 @@ namespace Screenzap.ViewportTests
                 Assert.Equal(hostBoundsBefore, kit.Host.Bounds);
                 Assert.False(kit.Host.HistoryStore.ActiveItem!.IsDirty);
                 Assert.False(commit.Enabled);
-                Assert.Equal(0, kit.Editor.ImageLayerCountForTests);
-                Assert.True(((IClipboardDocumentPresenter)kit.Editor).TryExecute(EditorCommandId.Undo));
                 Assert.Equal(1, kit.Editor.ImageLayerCountForTests);
+                Assert.True(((IClipboardDocumentPresenter)kit.Editor).TryExecute(EditorCommandId.Undo));
+                Assert.Equal(0, kit.Editor.ImageLayerCountForTests);
+                Assert.True(kit.Host.HistoryStore.ActiveItem.IsDirty);
+                Assert.True(((IClipboardDocumentPresenter)kit.Editor).TryExecute(EditorCommandId.Redo));
+                Assert.Equal(1, kit.Editor.ImageLayerCountForTests);
+                Assert.False(kit.Host.HistoryStore.ActiveItem.IsDirty);
             });
         }
 

@@ -58,6 +58,35 @@ namespace Screenzap.ViewportTests
             Assert.Same(step3, undone);
         }
 
+        [Fact]
+        public void RevisionIdentity_SurvivesTransferCloneAndUndo_AndChangesOnBranch()
+        {
+            using var stack = new screenzap.UndoRedo();
+            var initial = stack.CurrentRevision;
+            stack.Push(CreateStep());
+            var first = stack.CurrentRevision;
+            stack.Push(CreateStep());
+            var second = stack.CurrentRevision;
+            Assert.NotEqual(initial, first);
+            Assert.NotEqual(first, second);
+            stack.Undo();
+            Assert.Equal(first, stack.CurrentRevision);
+            var snapshot = stack.ExtractState();
+            using var clone = new screenzap.UndoRedo();
+            clone.RestoreState(screenzap.UndoRedo.CloneSnapshot(snapshot));
+            stack.RestoreState(snapshot);
+            Assert.Equal(first, stack.CurrentRevision);
+            Assert.Equal(first, clone.CurrentRevision);
+            clone.Redo();
+            Assert.Equal(second, clone.CurrentRevision);
+            stack.Push(CreateStep());
+            Assert.NotEqual(second, stack.CurrentRevision);
+            stack.Undo();
+            Assert.Equal(first, stack.CurrentRevision);
+            stack.Undo();
+            Assert.Equal(initial, stack.CurrentRevision);
+        }
+
         private static screenzap.ImageUndoStep CreateStep()
         {
             var before = new Bitmap(2, 2);

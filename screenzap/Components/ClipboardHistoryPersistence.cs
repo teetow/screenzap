@@ -193,6 +193,8 @@ namespace screenzap.Components
                 Kind = item.Kind,
                 CreatedUtc = item.CreatedUtc,
                 IsDirty = item.IsDirty,
+                DocumentRevision = item.DocumentRevision,
+                CommittedRevision = item.CommittedRevision,
                 SystemHistoryId = item.SystemHistoryId,
                 SuppressedSystemHistoryIds = item.SuppressedSystemHistoryIds.ToList(),
                 IsSeededFallback = item.IsSeededFallback,
@@ -390,6 +392,8 @@ namespace screenzap.Components
 
             item.Overlay = LoadOverlay(entry);
             item.SetDirtyFlagForRestore(entry.IsDirty);
+            item.DocumentRevision = entry.DocumentRevision ?? Guid.NewGuid();
+            item.CommittedRevision = entry.CommittedRevision ?? (entry.IsDirty ? Guid.NewGuid() : item.DocumentRevision);
         }
 
         private string? ResolveExistingPath(string? relativePath)
@@ -639,6 +643,8 @@ namespace screenzap.Components
             public ClipboardItemKind Kind { get; set; }
             public DateTime CreatedUtc { get; set; }
             public bool IsDirty { get; set; }
+            public Guid? DocumentRevision { get; set; }
+            public Guid? CommittedRevision { get; set; }
             public bool IsSeededFallback { get; set; }
             public bool IsUserDuplicate { get; set; }
             public string? SystemHistoryId { get; set; }

@@ -79,6 +79,11 @@ namespace screenzap
             return new Rectangle(Position, new Size((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height)));
         }
 
+        internal bool ContentEquals(TextAnnotation other) =>
+            Id == other.Id && Position == other.Position && Text == other.Text
+            && FontFamily == other.FontFamily && FontSize == other.FontSize && FontStyle == other.FontStyle
+            && TextColor == other.TextColor && OutlineThickness == other.OutlineThickness && OutlineColor == other.OutlineColor;
+
         public bool IsValid()
         {
             return !string.IsNullOrWhiteSpace(Text);
@@ -1745,6 +1750,7 @@ namespace screenzap
 
             // ── text-editing mode ──────────────────────────────────────────────
             var ta = activeTextAnnotation;
+            textAnnotationSnapshotBeforeEdit ??= CloneTextAnnotations();
             bool shift = e.Shift;
             bool ctrl  = e.Control;
 
@@ -1924,6 +1930,8 @@ namespace screenzap
             if (char.IsControl(e.KeyChar) && e.KeyChar != '\r' && e.KeyChar != '\n')
                 return false;
 
+            textAnnotationSnapshotBeforeEdit ??= CloneTextAnnotations();
+
             // Shift+Enter → newline
             if (e.KeyChar == '\r' || e.KeyChar == '\n')
             {
@@ -1949,7 +1957,9 @@ namespace screenzap
             }
 
             var afterState = CloneTextAnnotations();
-            PushTextUndoStep(textAnnotationSnapshotBeforeEdit, afterState);
+            if (textAnnotationSnapshotBeforeEdit.Count != afterState.Count
+                || !textAnnotationSnapshotBeforeEdit.Zip(afterState, (before, after) => before.ContentEquals(after)).All(equal => equal))
+                PushTextUndoStep(textAnnotationSnapshotBeforeEdit, afterState);
             textAnnotationSnapshotBeforeEdit = null;
         }
 
@@ -1971,6 +1981,8 @@ namespace screenzap
                 return;
             }
 
+            activeTextAnnotation = null;
+            textAnnotationSnapshotBeforeEdit = null;
             textAnnotations.Clear();
             foreach (var annotation in source)
             {

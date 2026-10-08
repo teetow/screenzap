@@ -62,12 +62,20 @@ public class ExternalSurfaceTests
             editor.SurfacePointer(1, new Point(250, 160), MouseButtons.Left);
             editor.SurfacePointer(2, new Point(250, 160), MouseButtons.Left);
             var before = editor.TestViewportMetrics;
+            var arrow = Assert.Single(editor.TestAnnotationShapes);
+            var selected = editor.TestSelectedAnnotation;
+            var tool = editor.CurrentTool;
+            editor.SetSelectionForDiagnostics(new Rectangle(40, 30, 80, 60));
             Assert.True(host.CanExecuteHostCommand(EditorCommandId.CommitEdits));
             Assert.True(host.ExecuteHostCommand(EditorCommandId.CommitEdits));
             Assert.Equal(before.ZoomLevel, editor.TestViewportMetrics.ZoomLevel);
             Assert.Equal(before.PanOffset, editor.TestViewportMetrics.PanOffset);
             Assert.Equal(before.ClientSize, editor.TestViewportMetrics.ClientSize);
             Assert.False(host.HistoryStore.ActiveItem!.IsDirty);
+            Assert.Same(arrow, Assert.Single(editor.TestAnnotationShapes));
+            Assert.Same(selected, editor.TestSelectedAnnotation);
+            Assert.Equal(tool, editor.CurrentTool);
+            Assert.Equal(new Rectangle(40, 30, 80, 60), editor.SelectionDiagnostics.Selection);
             Assert.True(host.CanExecuteHostCommand(EditorCommandId.Undo));
             host.ShowAndActivate(); Assert.Equal(1, activations); Assert.False(host.Visible);
         });
@@ -114,9 +122,10 @@ public class ExternalSurfaceTextTests
             host.ExecuteHostCommand(EditorCommandId.CommitEdits);
             Assert.True(host.CanExecuteHostCommand(EditorCommandId.Undo));
             host.ExecuteHostCommand(EditorCommandId.Undo);
-            Assert.Contains("A", editor.TestDescribeTextAnnotations()); // Undo the flattening boundary first.
-            host.ExecuteHostCommand(EditorCommandId.Undo);
             Assert.Equal(0, editor.TestTextAnnotationCount);
+            Assert.True(host.ExecuteHostCommand(EditorCommandId.Redo));
+            Assert.Contains("A", editor.TestDescribeTextAnnotations());
+            Assert.False(host.HistoryStore.ActiveItem!.IsDirty);
         });
     }
 

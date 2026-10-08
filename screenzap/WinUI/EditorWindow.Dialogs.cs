@@ -18,7 +18,7 @@ internal sealed partial class EditorWindow
     {
         try
         {
-            if (command is EditorCommandId.CommitEdits or EditorCommandId.Save or EditorCommandId.SaveAs or EditorCommandId.Copy or EditorCommandId.Undo or EditorCommandId.Redo) editor.SurfaceFinalizeText();
+            if (command is EditorCommandId.Save or EditorCommandId.SaveAs or EditorCommandId.Copy) editor.SurfaceFinalizeText();
             switch (command)
             {
                 case EditorCommandId.SaveAs: await SaveAsDialog(); break;
@@ -34,7 +34,7 @@ internal sealed partial class EditorWindow
             Logger.Log($"Editor command {command}: {ex}");
             await new ContentDialog { XamlRoot = root.XamlRoot, RequestedTheme = ElementTheme.Dark, Title = "Couldn't complete the operation", Content = ex.Message, CloseButtonText = "Close" }.ShowAsync();
         }
-        finally { inspectorKey = ""; RefreshState(); canvas.Invalidate(); }
+        finally { if (command != EditorCommandId.CommitEdits) inspectorKey = ""; RefreshState(); canvas.Invalidate(); }
     }
     private ContentDialog Dialog(string title, object content, string action = "Apply") => new() { XamlRoot = root.XamlRoot, RequestedTheme = ElementTheme.Dark, Title = title, Content = content, PrimaryButtonText = action, CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
     private async Task ResizeDialog()

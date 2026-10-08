@@ -62,6 +62,16 @@ namespace screenzap
     {
         private readonly List<IUndoStep> _steps = new List<IUndoStep>();
         private int _currentIndex = -1;
+        private Guid _initialRevision = Guid.NewGuid();
+        private readonly List<Guid> _revisions = new();
+
+        internal Guid CurrentRevision => _currentIndex < 0 ? _initialRevision : _revisions[_currentIndex];
+
+        internal void SetInitialRevision(Guid revision)
+        {
+            if (_steps.Count != 0) throw new InvalidOperationException("Cannot reset a populated undo history.");
+            _initialRevision = revision;
+        }
 
         public bool CanUndo => _currentIndex >= 0;
         public bool CanRedo => _currentIndex < _steps.Count - 1;
@@ -74,6 +84,8 @@ namespace screenzap
             }
 
             _steps.Clear();
+            _revisions.Clear();
+            _initialRevision = Guid.NewGuid();
             _currentIndex = -1;
         }
 
@@ -91,10 +103,12 @@ namespace screenzap
                     _steps[i].Dispose();
                 }
 
+                _revisions.RemoveRange(_currentIndex + 1, _steps.Count - (_currentIndex + 1));
                 _steps.RemoveRange(_currentIndex + 1, _steps.Count - (_currentIndex + 1));
             }
 
             _steps.Add(step);
+            _revisions.Add(Guid.NewGuid());
             _currentIndex = _steps.Count - 1;
         }
 
@@ -129,6 +143,8 @@ namespace screenzap
         {
             internal List<IUndoStep> Steps = new List<IUndoStep>();
             internal int Index = -1;
+            internal Guid InitialRevision = Guid.NewGuid();
+            internal List<Guid> Revisions = new();
         }
 
         internal static Snapshot? CloneSnapshot(Snapshot? snapshot)
@@ -140,7 +156,9 @@ namespace screenzap
 
             var clone = new Snapshot
             {
-                Index = snapshot.Index
+                Index = snapshot.Index,
+                InitialRevision = snapshot.InitialRevision,
+                Revisions = new List<Guid>(snapshot.Revisions)
             };
 
             foreach (var step in snapshot.Steps)
@@ -189,9 +207,13 @@ namespace screenzap
             var snapshot = new Snapshot
             {
                 Steps = new List<IUndoStep>(_steps),
-                Index = _currentIndex
+                Index = _currentIndex,
+                InitialRevision = _initialRevision,
+                Revisions = new List<Guid>(_revisions)
             };
             _steps.Clear();
+            _revisions.Clear();
+            _initialRevision = Guid.NewGuid();
             _currentIndex = -1;
             return snapshot;
         }
@@ -204,6 +226,8 @@ namespace screenzap
                 step.Dispose();
             }
             _steps.Clear();
+            _revisions.Clear();
+            _initialRevision = Guid.NewGuid();
             _currentIndex = -1;
 
             if (snapshot == null)
@@ -212,7 +236,10 @@ namespace screenzap
             }
 
             _steps.AddRange(snapshot.Steps);
-            _currentIndex = snapshot.Index;
+            _currentIndex = Math.Clamp(snapshot.Index, -1, _steps.Count - 1);
+            _initialRevision = snapshot.InitialRevision;
+            for (int i = 0; i < _steps.Count; i++)
+                _revisions.Add(i < snapshot.Revisions.Count ? snapshot.Revisions[i] : Guid.NewGuid());
         }
 
         public void Dispose()

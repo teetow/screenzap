@@ -158,6 +158,7 @@ namespace screenzap.Components
             Id = id ?? Guid.NewGuid();
             Kind = kind;
             CreatedUtc = createdUtc ?? DateTime.UtcNow;
+            CommittedRevision = DocumentRevision;
         }
 
         public Guid Id { get; }
@@ -219,6 +220,8 @@ namespace screenzap.Components
         }
 
         public bool IsDirty { get; private set; }
+        internal Guid DocumentRevision { get; set; } = Guid.NewGuid();
+        internal Guid CommittedRevision { get; set; }
         public IReadOnlyCollection<string> SuppressedSystemHistoryIds => suppressedSystemHistoryIds;
         public bool CanRevertToOriginal => IsDirty || !StoredImage.ContentEquals(original, committed);
 
@@ -411,36 +414,21 @@ namespace screenzap.Components
             IsDirty = true;
         }
 
-        /// <summary>
-        /// Record the flattening boundary before replacing the editable document's base bitmap.
-        /// The host stashes live state first, so CurrentImage and Overlay are the pre-accept state.
-        /// </summary>
-        internal void AcceptEdits(Bitmap flattened)
+        /// <summary>Record the published composite without replacing the editable base or overlay.</summary>
+        internal void RecordClipboardExport(Bitmap composite)
         {
-            if (Kind != ClipboardItemKind.Image) return;
-            // Pixel edits already have undo steps. Only flattening live objects changes the
-            // document here; adding an identical bitmap snapshot otherwise hides the last edit.
-            if (Overlay?.IsEmpty == false)
-                AppendImageReplacementUndoStep(flattened);
-            UpdateCurrentImage(flattened);
+            committed = StoredImage.FromBitmap(composite);
+            CommittedRevision = DocumentRevision;
+            IsDirty = false;
+            PruneDecodeCache();
         }
 
         public void MarkClean()
         {
-            // Treat current state as the new committed baseline, but keep OriginalImage immutable.
-            // Sharing the immutable blob means no extra copy.
-            if (current != null)
-            {
-                committed = current;
-            }
-
-            // UndoSnapshot is intentionally preserved so undo/revert remain available after commit.
-            // AcceptEdits captures the bitmap and overlay before clearing the baked objects.
-            // Undoing that boundary restores the editable document before earlier undo steps run.
-            Overlay = null;
-            PruneDecodeCache();
-            SetPreviewComposite(null);
+            committed = PreviewComposite != null ? StoredImage.FromBitmap(PreviewComposite) : current;
+            CommittedRevision = DocumentRevision;
             IsDirty = false;
+            PruneDecodeCache();
         }
 
         public void RevertToOriginal()
@@ -455,6 +443,9 @@ namespace screenzap.Components
                 committed = original;
             }
 
+            DocumentRevision = UndoSnapshot == null ? Guid.NewGuid()
+                : UndoSnapshot.Index < 0 ? UndoSnapshot.InitialRevision : UndoSnapshot.Revisions[UndoSnapshot.Index];
+            CommittedRevision = DocumentRevision;
             IsDirty = false;
             Overlay = null;
             PruneDecodeCache();
@@ -516,6 +507,8 @@ namespace screenzap.Components
             clone.Overlay = Overlay?.Clone();
             clone.UndoSnapshot = UndoRedo.CloneSnapshot(UndoSnapshot);
             clone.IsDirty = IsDirty;
+            clone.DocumentRevision = DocumentRevision;
+            clone.CommittedRevision = CommittedRevision;
             clone.lastThumbMaxWidth = lastThumbMaxWidth;
             clone.lastThumbMaxHeight = lastThumbMaxHeight;
             clone.thumbnailSource = thumbnailSource == null ? null : new Bitmap(thumbnailSource);
@@ -556,7 +549,11 @@ namespace screenzap.Components
         {
             if (other == null) return false;
             // Compares cached 16×16 signatures — never decodes the full images.
-            return StoredImage.ContentEquals(current, other.current);
+            // The published image can differ from the editable base, even when clean.
+            // Match clipboard observations against the last export as well as the base.
+            return StoredImage.ContentEquals(committed, other.committed)
+                || (Overlay?.IsEmpty != false && other.Overlay?.IsEmpty != false
+                    && StoredImage.ContentEquals(current, other.current));
         }
 
         internal void SetDirtyFlagForRestore(bool isDirty)

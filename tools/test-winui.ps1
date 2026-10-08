@@ -124,6 +124,11 @@ try {
  WaitFor { !(Find 'Accept edits').Current.IsEnabled -and (Find 'Undo').Current.IsEnabled } 'commit and undo preserved'
  $afterZoom=(All|Where-Object {$_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text -and $_.Current.Name -match '^\d+(\.\d+)?%$'}|Select-Object -First 1).Current.Name
  if($afterZoom -ne $zoom) {throw "Commit changed zoom: $zoom -> $afterZoom"}
+ WaitFor {(All|Where-Object {$_.Current.Name -eq 'Arrowhead scale'})} 'commit keeps selected editable arrow'
+ Click 'Undo'
+ WaitFor {(Find 'Accept edits').Current.IsEnabled -and (Find 'Redo').Current.IsEnabled} 'undo crosses the export checkpoint'
+ Click 'Redo'
+ WaitFor {!(Find 'Accept edits').Current.IsEnabled} 'redo returns to the clean export checkpoint'
  Click 'Adjust four corners'
  Drag ($bounds.Left+280) ($bounds.Top+240) ($bounds.Left+680) ($bounds.Top+510)
  WaitFor { (Find 'Apply').Current.IsEnabled } 'perspective apply enables after drawing rectangle'
@@ -143,6 +148,14 @@ try {
  [NativeInput]::keybd_event(13,0,2,[UIntPtr]::Zero)
  [NativeInput]::keybd_event(17,0,2,[UIntPtr]::Zero)
  WaitFor { !(Find 'Accept edits').Current.IsEnabled } 'Ctrl+Enter commits live text'
+ [NativeInput]::keybd_event(88,0,0,[UIntPtr]::Zero)
+ [NativeInput]::keybd_event(88,0,2,[UIntPtr]::Zero)
+ WaitFor {(Find 'Accept edits').Current.IsEnabled} 'typing continues after commit'
+ [NativeInput]::keybd_event(17,0,0,[UIntPtr]::Zero)
+ [NativeInput]::keybd_event(90,0,0,[UIntPtr]::Zero)
+ [NativeInput]::keybd_event(90,0,2,[UIntPtr]::Zero)
+ [NativeInput]::keybd_event(17,0,2,[UIntPtr]::Zero)
+ WaitFor {!(Find 'Accept edits').Current.IsEnabled} 'undo live typing returns to export checkpoint'
  Click 'Drag emoji'
  WaitFor { (All|Where-Object {$_.Current.Name -eq 'Add emoji'}).Count -gt 0 } 'native emoji flyout'
  [NativeInput]::keybd_event(27,0,0,[UIntPtr]::Zero)

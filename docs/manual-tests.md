@@ -8,6 +8,15 @@
 4. Press `Ctrl+Shift+Z` to redo and confirm the censored pixels are restored.
 5. Repeat steps 2–4 several times to ensure multiple undo/redo steps are recorded correctly and that the selection rectangle is preserved across operations.
 
+## Commit to clipboard
+
+1. Add an arrow, text, emoji, and a floating image layer. Zoom and pan, then click **Commit**. Confirm the clipboard contains the complete flat composite, while the objects remain selectable and editable, the active tool and viewport stay put, and the dirty indicator clears.
+2. Undo once. Confirm it undoes the last edit immediately and marks the document dirty. Redo that edit and confirm it returns to clean.
+3. Undo, then Commit. Confirm Redo remains available, redoing marks the document dirty, and undoing back to the export point clears it again.
+4. While typing text, press `Ctrl+Enter`. Continue typing, then Undo. Confirm only the text entered after Commit is removed and the document becomes clean.
+5. Switch history items and return. Quit and reopen Screenzap. Confirm the committed document still contains editable objects and appears clean. Undo history is retained while switching items; it is not persisted across restarts.
+6. Copy different content in another app, then return to the committed document in Screenzap history. Confirm its objects are still editable and its dirty state describes edits since its last export.
+
 ## Crop
 
 1. Capture or paste an image and drag a smaller selection that represents the desired crop area.

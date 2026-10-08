@@ -195,51 +195,30 @@ namespace Screenzap.ViewportTests
         }
 
         [Fact]
-        public void Paste_ThenUndoAfterCommit_RestoresUnflattenedBaselineAndEditableLayer()
+        public void Paste_CommitKeepsEditableLayer_AndUndoRemovesThePaste()
         {
             StaTest.Run(() =>
             {
-                using var editor = EditorFixture.WithCanvas(40, 30);
-
-                using var pasted = new Bitmap(8, 8);
-                using (var g = Graphics.FromImage(pasted))
-                {
-                    g.Clear(Color.Magenta);
-                }
+                using var editor = new screenzap.ImageEditor();
+                using var host = new ClipboardEditorHostForm(true, editor);
+                using var original = EditorFixture.Canvas(40, 30);
+                var item = host.HistoryStore.AddObservedImage(original);
+                Assert.True(host.ActivateHistoryItem(item));
+                using var pasted = EditorFixture.Canvas(8, 8, Color.Magenta);
                 editor.SetInternalClipboardImageForDiagnostics(pasted);
                 Assert.True(editor.PasteFromClipboardForDiagnostics());
-
-                // Simulate the host commit cycle: stash → flatten → MarkClean → reload.
-                var presenter = (IClipboardDocumentPresenter)editor;
-                using var original = EditorFixture.Canvas(40, 30);
-                using var item = ClipboardHistoryItem.FromImage(original);
-
-                presenter.StashHistoryItemState(item);
-                using var flattened = (Bitmap)presenter.GetCurrentContent()!;
-                item.AcceptEdits(flattened);
-                item.MarkClean();
-                presenter.LoadHistoryItem(item);
-
-                // Post-commit: layers cleared, base is the flattened (magenta-stamped) bitmap.
-                Assert.Equal(0, editor.ImageLayerCountForTests);
-                using (var afterCommit = editor.CloneBaseBitmapForTests()!)
-                {
-                    Assert.Equal(Color.Magenta.ToArgb(), afterCommit.GetPixel(20, 15).ToArgb());
-                }
-
-                // Undo acceptance restores the unflattened base and editable layer.
-                Assert.True(presenter.CanExecute(EditorCommandId.Undo));
-                Assert.True(presenter.TryExecute(EditorCommandId.Undo));
-
+                Assert.True(host.ExecuteHostCommand(EditorCommandId.CommitEdits));
                 Assert.Equal(1, editor.ImageLayerCountForTests);
-                using (var afterUndo = editor.CloneBaseBitmapForTests()!)
-                {
-                    Assert.Equal(Color.White.ToArgb(), afterUndo.GetPixel(20, 15).ToArgb());
-                }
-                Assert.True(presenter.TryExecute(EditorCommandId.Undo));
+                using (var baseImage = editor.CloneBaseBitmapForTests()!)
+                    Assert.Equal(Color.White.ToArgb(), baseImage.GetPixel(20, 15).ToArgb());
+                Assert.Equal(Color.Magenta.ToArgb(), item.CommittedImage!.GetPixel(20, 15).ToArgb());
+                Assert.True(host.ExecuteHostCommand(EditorCommandId.Undo));
                 Assert.Equal(0, editor.ImageLayerCountForTests);
-                using var originalAgain = editor.BuildCompositeImageForTests();
-                Assert.Equal(Color.White.ToArgb(), originalAgain.GetPixel(20, 15).ToArgb());
+                Assert.True(item.IsDirty);
+                Assert.False(host.ExecuteHostCommand(EditorCommandId.Undo));
+                Assert.True(host.ExecuteHostCommand(EditorCommandId.Redo));
+                Assert.Equal(1, editor.ImageLayerCountForTests);
+                Assert.False(item.IsDirty);
             });
         }
     }

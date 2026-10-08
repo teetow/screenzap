@@ -119,6 +119,9 @@ namespace screenzap
             return args.SuppressKeyPress;
         }
 
+        private MouseButtons? mouseButtons_TestOverride;
+        internal void TestSetMouseButtonsHeld(MouseButtons buttons) => mouseButtons_TestOverride = buttons;
+
         internal void TestFireKeyUp(Keys keyData)
         {
             var args = new KeyEventArgs(keyData);

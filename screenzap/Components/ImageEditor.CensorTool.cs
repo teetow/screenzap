@@ -788,9 +788,10 @@ namespace screenzap
                 return;
             }
 
-            // Undo/redo changes content like a forward edit: the host needs the notification to
-            // re-enable Commit/Revert and refresh the thumbnail (e.g. after undoing a revert).
-            MarkDirtyAndNotify();
+            deJpegRevision++;
+            DocumentIsDirty = undoStack.CurrentRevision != committedDocumentRevision;
+            hasUnsavedChanges = DocumentIsDirty;
+            NotifyDocumentContentChanged();
         }
 
         private void ApplyImageUndoStep(ImageUndoStep step, bool applyAfterState)

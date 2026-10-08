@@ -68,12 +68,19 @@ namespace screenzap
     private string? currentSavePath;
         private bool isPlaceholderImage;
     private bool hasUnsavedChanges;
+    private Guid committedDocumentRevision;
+    internal bool DocumentIsDirty { get; private set; }
     /// <summary>Invoked when the editor's content is dirtied (e.g. by an edit, tool apply or undo push).</summary>
     internal Action? ContentEditedCallback;
     private void MarkDirtyAndNotify()
     {
         deJpegRevision++;
         hasUnsavedChanges = true;
+        DocumentIsDirty = true;
+        NotifyDocumentContentChanged();
+    }
+    private void NotifyDocumentContentChanged()
+    {
         try { ContentEditedCallback?.Invoke(); }
         catch (Exception ex) { lib.Logger.Log($"ContentEditedCallback threw: {ex.Message}"); }
     }
@@ -793,6 +800,8 @@ namespace screenzap
 
             undoStack.Clear();
             hasUnsavedChanges = false;
+            DocumentIsDirty = false;
+            committedDocumentRevision = undoStack.CurrentRevision;
             ClearClipboardNotification();
 
             UpdateCommandUI();
@@ -2653,6 +2662,7 @@ namespace screenzap
                 }
                 else if (e.Modifiers == Keys.Control)
                 {
+                    CompletePendingDocumentEdits();
                     var undoStep = undoStack.Undo();
                     if (undoStep != null)
                     {
@@ -2704,7 +2714,7 @@ namespace screenzap
             // Close keyboard-initiated stamp/clone gestures when their modifier is released.
             // Mouse-initiated gestures are closed by MouseUp instead — while a drag is in
             // flight (button held) the modifier may be released and re-pressed freely.
-            if (MouseButtons == MouseButtons.None)
+            if ((mouseButtons_TestOverride ?? MouseButtons) == MouseButtons.None)
             {
                 if (e.KeyCode == Keys.ControlKey && isCtrlStampingSelection)
                 {
@@ -3543,6 +3553,7 @@ namespace screenzap
                     return ExecuteExpandCanvas();
                 case EditorCommandId.Undo:
                     {
+                        CompletePendingDocumentEdits();
                         var step = undoStack.Undo();
                         if (step == null)
                         {
@@ -3672,13 +3683,36 @@ namespace screenzap
             LoadImage(item.CurrentImage, false, preserveView);
             // LoadImage clears the undo stack, annotations, and layers. Restore the stashed state.
             undoStack.RestoreState(item.UndoSnapshot);
+            if (item.UndoSnapshot == null)
+                undoStack.SetInitialRevision(item.DocumentRevision);
             ApplyOverlay(item.Overlay);
+            committedDocumentRevision = item.IsDirty ? item.CommittedRevision : undoStack.CurrentRevision;
+            // A persisted live edit may not yet have reached an undo step. After restart
+            // it is the initial state, and its former clean state is no longer reachable.
+            if (item.IsDirty && committedDocumentRevision == undoStack.CurrentRevision)
+                committedDocumentRevision = Guid.NewGuid();
+            DocumentIsDirty = item.IsDirty;
             hasUnsavedChanges = item.IsDirty;
             UpdateCommandUI();
             pictureBox1?.Invalidate();
         }
 
-        internal void LoadCommittedHistoryItem(ClipboardHistoryItem item) => LoadHistoryItem(item, preserveView: true);
+        internal void RecordSuccessfulClipboardExport()
+        {
+            CompletePendingDocumentEdits();
+            committedDocumentRevision = undoStack.CurrentRevision;
+            DocumentIsDirty = false;
+            hasUnsavedChanges = false;
+        }
+
+        private void CompletePendingDocumentEdits()
+        {
+            if (annotationSnapshotBeforeEdit != null)
+                CommitAnnotationUndo();
+            else
+                CommitTextAnnotationUndo();
+            CommitLayerInteractionUndo();
+        }
 
         void IClipboardDocumentPresenter.CaptureLiveStateInto(ClipboardHistoryItem item) =>
             CaptureLiveStateInto(item);
@@ -3705,6 +3739,9 @@ namespace screenzap
             }
 
             item.Overlay = CloneOverlay();
+            item.DocumentRevision = undoStack.CurrentRevision;
+            item.CommittedRevision = committedDocumentRevision;
+            item.SetDirtyFlagForRestore(DocumentIsDirty);
 
             // Flattened preview for the thumbnail. Skip the full-res copy when there is nothing
             // to composite — the thumbnail falls back to CurrentImage, which is identical then.
@@ -3738,6 +3775,7 @@ namespace screenzap
                 () => $"dirty={item.IsDirty} hasImage={HasEditableImage}",
                 slowMs: 80);
 
+            CompletePendingDocumentEdits();
             CaptureLiveStateInto(item);
 
             // The only thing a stash does that a capture does not, and the reason the two are
