@@ -477,12 +477,7 @@ namespace screenzap
 
                 if (step.ReplacesImage)
                 {
-                    var replacement = new Bitmap(source);
-                    var currentZoom = ZoomLevel;
-                    viewport.Image = replacement;
-                    ZoomLevel = currentZoom;
-                    viewport.ClampPan();
-                    RecenterViewportAfterImageChange(resizeWindow: true);
+                    ReplaceImageKeepingView(new Bitmap(source));
                 }
                 else
                 {
@@ -513,6 +508,31 @@ namespace screenzap
             var layerState = applyAfterState ? step.LayersAfter : step.LayersBefore;
             ApplyLayerState(layerState);
             viewport.Invalidate();
+        }
+
+        /// <summary>
+        /// Swap the canvas bitmap during undo/redo without moving the camera. The Image setter
+        /// resets zoom, pan and alpha view, so restore them; when the canvas size changed (crop,
+        /// expand, rotate, resize) keep the image centre where it was rather than recentring in
+        /// the viewport. Layer-only steps also take this path (they snapshot the base bitmap),
+        /// so recentring here made undoing a layer nudge yank the view.
+        /// </summary>
+        private void ReplaceImageKeepingView(Bitmap replacement)
+        {
+            var view = viewport.Metrics;
+            bool alphaView = viewport.AlphaViewEnabled;
+            viewport.Image = replacement;
+            var pan = view.PanOffset;
+            if (view.HasImage && replacement.Size != view.ImagePixelSize)
+            {
+                float scale = (float)view.ZoomLevel;
+                pan = new PointF(
+                    MathF.Round(pan.X + (view.ScaledImageSize.Width - replacement.Width * scale) / 2f),
+                    MathF.Round(pan.Y + (view.ScaledImageSize.Height - replacement.Height * scale) / 2f));
+            }
+
+            viewport.RestoreView(view.ZoomLevel, pan, alphaView);
+            _zoomlevel = viewport.ZoomLevel;
         }
 
         private bool CensorSelection()

@@ -17,9 +17,7 @@ public partial class ImageDocumentEditor
         var shapesBefore = CloneAnnotations();
         var textsBefore = CloneTextAnnotations();
         var layersBefore = CloneLayers();
-        var view = viewport.Metrics;
-        viewport.Image = new Bitmap(after);
-        viewport.RestoreView(view.ZoomLevel, view.PanOffset, viewport.AlphaViewEnabled);
+        ReplaceImageKeepingView(new Bitmap(after));
         PushUndoStep(Rectangle.Empty, before, after, Selection, Selection, replacesImage: true, shapesBefore: shapesBefore, shapesAfter: CloneAnnotations(), textsBefore: textsBefore, textsAfter: CloneTextAnnotations(), layersBefore: layersBefore, layersAfter: CloneLayers());
         viewport.Invalidate();
         return true;
