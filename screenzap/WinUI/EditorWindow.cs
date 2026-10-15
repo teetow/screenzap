@@ -52,6 +52,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
     private Button? toolApplyButton;
     private readonly Dictionary<string, NumberBox> inspectorNumbers = new();
     private bool synchronizingInspector;
+    private TextBlock? colorScopeText;
     private string? notification;
     private DateTime notificationUntil;
     private bool canvasInvalidationQueued;
@@ -131,7 +132,8 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         canvas.KeyDown += (_, e) =>
         {
             var keys = KeyData(e.Key);
-            if (keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Enter)) { Execute(EditorCommandId.CommitEdits); e.Handled = true; }
+            if (editor.SurfaceColorAdjusting && !editor.SurfaceEditingText && keys is System.Windows.Forms.Keys.Enter or System.Windows.Forms.Keys.Escape) { EndColorAdjustment(keys == System.Windows.Forms.Keys.Enter); e.Handled = true; }
+            else if (keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Enter)) { Execute(EditorCommandId.CommitEdits); e.Handled = true; }
             else if (keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.R)) { Execute(EditorCommandId.Reload); e.Handled = true; }
             else if (keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Shift | System.Windows.Forms.Keys.S)) { Execute(EditorCommandId.SaveAs); e.Handled = true; }
             else if (editor.SurfaceEditingText && keys == (System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Z)) { Execute(EditorCommandId.Undo); e.Handled = true; }
@@ -377,6 +379,7 @@ internal sealed partial class EditorWindow : Microsoft.UI.Xaml.Window
         try
         {
             if (kind == "FreeRotate") Update("Angle (°)", editor.SurfaceAngleValue);
+            if (colorScopeText != null) colorScopeText.Text = editor.SurfaceColorAdjustsSelection ? "Adjusting the selection." : "Adjusting the whole image. Select an area to limit it.";
             if (kind == "Layer" && editor.SurfaceSelectedLayer is { } layer)
             {
                 Update("X", layer.Frame.X);

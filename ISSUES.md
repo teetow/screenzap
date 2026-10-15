@@ -58,7 +58,7 @@ Covered by `ToolModeRegressionTests` (8 tests, real input pipeline).
 |---|------|-------|
 | ~~U1~~ | Annotation drawing (Arrow, Rectangle) | **Covered** — `AnnotationSelectionTests`, `ShapeKeyboardTransformTests`, `ConstraintAndLayerKeyboardTests` all drive the real input pipeline |
 | ~~U2~~ | Censor / Straighten / Crop tools | **Covered** — `ToolModeRegressionTests` (censor + straighten modal keyboard), `ImageEditorCropTests` |
-| U3 | Color correction | **Still uncovered** — `ToolMenuCommandTests` only asserts the menu item enables; no behavioural test |
+| ~~U3~~ | Color correction | **Covered** — `ExternalSurfaceColorAdjustmentTests` (canvas preview within the live selection, cancel, discard on load), `ExternalSurfaceColorTests` (apply + undo keeps the view) |
 | ~~U4~~ | ClipboardHistoryPanel thumbnail strip | **Covered** — `ThumbnailActionRegressionTests`, `ClipboardHistoryRegressionTests` |
 | ~~U5~~ | Reload / Revert / Duplicate | **Covered** — `ImageEditorReloadTests`, `RevertUndoRegressionTests`, `ThumbnailActionRegressionTests` |
 | U6 | Multi-monitor / DPI scaling | Not covered |

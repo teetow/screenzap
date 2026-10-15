@@ -188,6 +188,7 @@ namespace screenzap
             undoStack.Dispose();
             ClearImageLayers();
             ReleaseCensorPreviewBuffer();
+            ReleaseColorPreview();
             internalClipboardImage?.Dispose();
             viewport.Image?.Dispose();
             viewport.Dispose();
@@ -215,6 +216,7 @@ namespace screenzap
             currentSavePath = null;
             DeactivateCensorTool(false);
             DeactivateStraightenTool(false);
+            SurfaceEndColorAdjustment(false);
             ClearSelection();
             LogViewportDebug($"LoadImage: About to call ResetZoom");
             ResetZoom();
@@ -2135,9 +2137,7 @@ namespace screenzap
                 case EditorCommandId.ReplaceBackground:
                     return ExecuteReplaceWithBackground();
                 case EditorCommandId.ColorCorrect:
-                    if (!HasEditableImage)
-                        return false;
-                    return false;
+                    return BeginColorAdjustment();
                 case EditorCommandId.OptimizeText:
                     return ExecuteOptimizeForText();
                 default:

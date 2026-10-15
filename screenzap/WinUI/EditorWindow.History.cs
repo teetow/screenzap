@@ -40,6 +40,7 @@ internal sealed partial class EditorWindow
 
     private void UseHistoryItemAsClipboard(ClipboardHistoryItem item)
     {
+        if (item == host.HistoryStore.ActiveItem) editor.SurfaceEndColorAdjustment(true);
         if (!host.SetItemAsClipboard(item)) return;
         inspectorKey = "";
         historyDirty = true;

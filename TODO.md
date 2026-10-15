@@ -40,7 +40,7 @@
 
 - [x] ClipboardHistoryPanel thumbnail strip — click to switch items
 - [x] Censor / Straighten / Crop tools
-- [ ] Color correction — the last untested tool; only its menu enablement is asserted
+- [x] Color correction
 - [x] Reload / Revert / Duplicate flows
 - [ ] Multi-monitor / DPI scaling
 - [ ] Persistence reload across app-restart

@@ -19,6 +19,8 @@ internal sealed partial class EditorWindow
         try
         {
             if (command is EditorCommandId.Save or EditorCommandId.SaveAs or EditorCommandId.Copy) editor.SurfaceFinalizeText();
+            // Exports show what the canvas shows, so an open color adjustment is applied first.
+            if (command is EditorCommandId.Save or EditorCommandId.SaveAs or EditorCommandId.Copy or EditorCommandId.CommitEdits or EditorCommandId.CopySvgPoster or EditorCommandId.CopySvgPhoto or EditorCommandId.CopySvgBlackAndWhite) editor.SurfaceEndColorAdjustment(true);
             switch (command)
             {
                 case EditorCommandId.Reload:
@@ -29,7 +31,6 @@ internal sealed partial class EditorWindow
                 case EditorCommandId.ResizeImage: await ResizeDialog(); break;
                 case EditorCommandId.EmojiTool: ShowEmojiFlyout(); break;
                 case EditorCommandId.DeJpeg: await DeJpegDialog(); break;
-                case EditorCommandId.ColorCorrect: await ColorDialog(); break;
                 default: host.ExecuteHostCommand(command); break;
             }
         }
@@ -78,37 +79,45 @@ internal sealed partial class EditorWindow
         catch (OperationCanceledException) { }
         finally { dialog.Hide(); await show; }
     }
-    private async Task ColorDialog()
+    private void BuildColorInspector()
     {
-        using var source = editor.SurfaceCopyBase();
-        if (source == null) return;
-        long revision = editor.SurfaceRevision;
-        var selection = editor.SurfaceSelection;
-        var content = new StackPanel { Spacing = 12, MinWidth = 360 };
-        var preview = new Microsoft.UI.Xaml.Controls.Image { Height = 180, Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform };
-        content.Children.Add(preview);
-        NumberBox Add(string label, double value, double min, double max) { var box = NumericInput(value, min, max, label is "Gamma" or "Exposure (stops)" ? .1 : 1, label); content.Children.Add(box); return box; }
-        var exposure = Add("Exposure (stops)", 0, -3, 3);
-        var contrast = Add("Contrast (%)", 0, -100, 100);
-        var saturation = Add("Saturation (%)", 100, 0, 200);
-        var gamma = Add("Gamma", 1, .1, 3);
-        var dialog = Dialog("Color correction", content);
-        int generation = 0;
-        async Task UpdatePreview()
+        // Non-modal: the canvas itself is the preview, and the fields answer the wheel on hover
+        // so the canvas keeps the keyboard (Enter applies, Escape cancels).
+        colorScopeText = new TextBlock { FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap };
+        inspector.Children.Add(colorScopeText);
+        var current = editor.SurfaceColorAdjustment;
+        var fields = new StackPanel { Spacing = 4 };
+        ScrubField Add(string label, double value, double min, double max, double step, double neutral, Func<double, string> format)
         {
-            int current = ++generation;
-            bool valid = double.IsFinite(exposure.Value) && double.IsFinite(contrast.Value) && double.IsFinite(saturation.Value) && double.IsFinite(gamma.Value);
-            dialog.IsPrimaryButtonEnabled = valid;
-            if (!valid) return;
-            using var processed = ColorCorrectionProcessor.Apply(source, selection, (float)exposure.Value, (float)contrast.Value, (float)saturation.Value, (float)gamma.Value);
-            using var composite = editor.SurfacePreviewComposite(processed);
-            var bitmap = await BitmapSource(composite);
-            if (current == generation) preview.Source = bitmap;
+            var field = new ScrubField(label, value, min, max, step, neutral, format);
+            field.EditFinished += () => canvas.Focus(FocusState.Programmatic);
+            fields.Children.Add(field);
+            return field;
         }
-        foreach (var box in new[] { exposure, contrast, saturation, gamma }) box.ValueChanged += async (_, _) => await UpdatePreview();
-        await UpdatePreview();
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary && editor.SurfaceRevision == revision) editor.SurfaceColorCorrection((float)exposure.Value, (float)contrast.Value, (float)saturation.Value, (float)gamma.Value);
-        generation++;
+        var exposure = Add("Exposure", current.Exposure, -3, 3, .05, 0, v => $"{v:+0.00;-0.00;0.00} EV");
+        var contrast = Add("Contrast", current.Contrast, -100, 100, 1, 0, v => $"{v:+0;-0;0}%");
+        var saturation = Add("Saturation", current.Saturation, 0, 200, 1, 100, v => $"{v:0}%");
+        var gamma = Add("Gamma", current.Gamma, .1, 3, .05, 1, v => $"{v:0.00}");
+        var all = new[] { exposure, contrast, saturation, gamma };
+        void Push() => editor.SurfaceSetColorAdjustment(new((float)exposure.Value, (float)contrast.Value, (float)saturation.Value, (float)gamma.Value));
+        foreach (var field in all) field.ValueChanged += _ => Push();
+        inspector.Children.Add(fields);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var apply = new Button { Content = "Apply", Style = (Style)Microsoft.UI.Xaml.Application.Current.Resources["AccentButtonStyle"] };
+        apply.Click += (_, _) => EndColorAdjustment(true);
+        var cancel = new Button { Content = "Cancel" };
+        cancel.Click += (_, _) => EndColorAdjustment(false);
+        var reset = new Button { Content = "Reset" };
+        reset.Click += (_, _) => { foreach (var field in all) field.Value = field.Neutral; Push(); };
+        row.Children.Add(apply); row.Children.Add(cancel); row.Children.Add(reset);
+        inspector.Children.Add(row);
+    }
+    private void EndColorAdjustment(bool apply)
+    {
+        editor.SurfaceEndColorAdjustment(apply);
+        inspectorKey = "";
+        RefreshState();
+        canvas.Focus(FocusState.Programmatic);
     }
     private void BuildCensorInspector(Action<string, UIElement> field, Action<string, double, double, double, Action<float>> number)
     {

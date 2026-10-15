@@ -155,6 +155,28 @@ namespace screenzap.Components.Shared
         public bool HasImage => image != null;
 
         /// <summary>
+        /// Pixels drawn in place of <see cref="Image"/> without becoming the document: a live
+        /// adjustment preview. Ignored unless it matches the image's size, so geometry, hit
+        /// testing and the view never depend on it. The caller owns the bitmap.
+        /// </summary>
+        public Image? PreviewImage
+        {
+            get => previewImage;
+            set
+            {
+                if (previewImage == value)
+                {
+                    return;
+                }
+
+                previewImage = value;
+                Invalidate();
+            }
+        }
+
+        private Image? previewImage;
+
+        /// <summary>
         /// True (default): the image is alpha-composited over a checkerboard, like every other
         /// image editor's transparency view. False: alpha is ignored and every pixel is drawn
         /// fully opaque, revealing the raw RGB underneath any masked/transparent regions. A pure
@@ -424,6 +446,7 @@ namespace screenzap.Components.Shared
             e.Graphics.Clear(BackColor);
             if (image != null)
             {
+                var shown = previewImage != null && previewImage.Size == image.Size ? previewImage : image;
                 var destRect = GetImageClientRectangle();
                 e.Graphics.InterpolationMode = interpolationMode;
                 if (interpolationMode == InterpolationMode.NearestNeighbor)
@@ -439,11 +462,11 @@ namespace screenzap.Components.Shared
                     brush.ResetTransform();
                     brush.TranslateTransform(destRect.X, destRect.Y);
                     e.Graphics.FillRectangle(brush, destRect);
-                    e.Graphics.DrawImage(image, destRect);
+                    e.Graphics.DrawImage(shown, destRect);
                 }
                 else
                 {
-                    e.Graphics.DrawImage(image, Rectangle.Round(destRect), 0f, 0f, image.Width, image.Height, GraphicsUnit.Pixel, GetForceOpaqueImageAttributes());
+                    e.Graphics.DrawImage(shown, Rectangle.Round(destRect), 0f, 0f, shown.Width, shown.Height, GraphicsUnit.Pixel, GetForceOpaqueImageAttributes());
                 }
             }
 

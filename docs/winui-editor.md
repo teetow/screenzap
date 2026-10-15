@@ -80,10 +80,16 @@ Windows ML is provided by WindowsAppSDK's ML dependency to keep managed and nati
 Runtime versions aligned. De-JPEG registers installed certified providers and falls back
 to the bundled CPU provider; it does not install providers during cleanup.
 
-Resize, color correction, capture shortcut and transparency color settings use native XAML
-dialogs. Save As and capture folder selection use Windows file/folder pickers associated
+Resize, capture shortcut and transparency color settings use native XAML dialogs. Save As and capture folder selection use Windows file/folder pickers associated
 with the WinUI HWND. De-JPEG retains the existing cancellation, revision guard and alpha
-restoration. Color correction has a preview and preserves overlays and the view when applied.
+restoration.
+
+Color correction is not a dialog. It opens in the inspector as a live adjustment: the canvas
+shows the corrected pixels (limited to the selection, which can change while it is open) and
+the document is untouched until Apply, which bakes it as one undo step that keeps overlays and
+the view. Enter applies, Escape cancels, exports apply it first, and loading another image
+discards it. Its fields are Blender-style scrub bars: wheel over them without focus, drag
+sideways to scrub, click to type, right-click to reset.
 
 ## Build and verification
 

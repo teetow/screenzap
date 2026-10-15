@@ -5,7 +5,7 @@ The image editor has two horizontal bars and a vertical rail. Place commands by 
 | Surface | Purpose | Commands |
 | --- | --- | --- |
 | File bar (first horizontal row) | Save, export, and recover the document | Commit, Save, Save As, Copy, Copy SVG, Reload, Undo, Redo; Find on text documents |
-| Image operations (second horizontal row) | Run an operation or open its dialog | Crop, Resize, Expand Canvas, Rotate 90°, Flip Horizontal / Vertical, Replace Background, Color Correction, De-JPEG, Optimize for Text |
+| Image operations (second horizontal row) | Run an operation, open its dialog, or open a live adjustment in the inspector | Crop, Resize, Expand Canvas, Rotate 90°, Flip Horizontal / Vertical, Replace Background, Color Correction, De-JPEG, Optimize for Text |
 | Canvas tool rail | Choose what clicking and dragging on the image does | Move / Select; Annotate: Arrow, Rectangle, Highlighter, Text, Emoji; Protect: Censor; Transform: Free Rotate, Perspective |
 | Contextual controls | Configure and finish the active tool or selected object | Font, colors, thickness, dimensions, angle, Apply / Cancel; Merge Layer for a selected image layer |
 | History panel | Manage clipboard history entries | Compact direct buttons for Duplicate, Revert, Delete; thumbnail context menus retain their entry actions |

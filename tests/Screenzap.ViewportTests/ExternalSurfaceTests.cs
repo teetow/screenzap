@@ -197,7 +197,10 @@ public class ExternalSurfaceColorTests
             editor.SurfaceSetZoom(2);
             editor.TestPanViewportBy(new Size(-30, -40));
             var before = editor.TestViewportMetrics;
-            editor.SurfaceColorCorrection(1, 0, 100, 1);
+            Assert.True(host.ExecuteHostCommand(EditorCommandId.ColorCorrect));
+            editor.SurfaceSetColorAdjustment(new ColorAdjustment(1, 0, 100, 1));
+            editor.SurfaceEndColorAdjustment(true);
+            Assert.False(editor.SurfaceColorAdjusting);
             Assert.Equal(before.ZoomLevel, editor.TestViewportMetrics.ZoomLevel);
             Assert.Equal(before.PanOffset, editor.TestViewportMetrics.PanOffset);
             using (var changed = editor.SurfaceCopyBase()) Assert.InRange(changed!.GetPixel(0, 0).R, 78, 82);
@@ -205,6 +208,114 @@ public class ExternalSurfaceColorTests
             using var undone = editor.SurfaceCopyBase();
             Assert.Equal(source.GetPixel(0, 0).ToArgb(), undone!.GetPixel(0, 0).ToArgb());
         });
+    }
+}
+
+public class ExternalSurfaceColorAdjustmentTests
+{
+    [Fact]
+    public void AdjustmentPreviewsOnTheCanvasWithinTheSelectionWithoutTouchingTheDocument()
+    {
+        StaTest.Run(() =>
+        {
+            using var editor = EditorFixture.WithCanvas(100, 100, g => g.Clear(Color.FromArgb(40, 60, 80)), new Size(300, 300));
+            editor.ResizeSurface(new Size(300, 300));
+            editor.SurfaceSetZoom(1);
+            editor.SetSelectionForDiagnostics(new Rectangle(0, 0, 50, 100));
+            Assert.True(((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.ColorCorrect));
+            Assert.Equal("Color", editor.SurfaceInspectorKind);
+            editor.SurfaceSetColorAdjustment(new ColorAdjustment(1, 0, 100, 1));
+
+            var origin = Point.Round(editor.TestViewportMetrics.ImageClientRectangle.Location);
+            using (var frame = Render(editor))
+            {
+                Assert.InRange(frame.GetPixel(origin.X + 25, origin.Y + 50).R, 78, 82);
+                Assert.Equal(40, frame.GetPixel(origin.X + 75, origin.Y + 50).R);
+            }
+            using (var document = editor.SurfaceCopyBase()) Assert.Equal(40, document!.GetPixel(25, 50).R);
+
+            // The preview follows the selection rather than the one it was opened with.
+            editor.SetSelectionForDiagnostics(new Rectangle(50, 0, 50, 100));
+            using (var frame = Render(editor))
+            {
+                Assert.Equal(40, frame.GetPixel(origin.X + 25, origin.Y + 50).R);
+                Assert.InRange(frame.GetPixel(origin.X + 75, origin.Y + 50).R, 78, 82);
+            }
+
+            editor.SurfaceEndColorAdjustment(false);
+            Assert.False(editor.SurfaceColorAdjusting);
+            using (var frame = Render(editor)) Assert.Equal(40, frame.GetPixel(origin.X + 75, origin.Y + 50).R);
+            using (var document = editor.SurfaceCopyBase()) Assert.Equal(40, document!.GetPixel(75, 50).R);
+        });
+    }
+
+    [Fact]
+    public void ReshapingTheSelectionWithThePointerWhileTweakingMovesTheAdjustment()
+    {
+        StaTest.Run(() =>
+        {
+            using var editor = EditorFixture.WithCanvas(100, 100, g => g.Clear(Color.FromArgb(40, 60, 80)), new Size(300, 300));
+            editor.ResizeSurface(new Size(300, 300));
+            editor.SurfaceSetZoom(1);
+            var o = Point.Round(editor.TestViewportMetrics.ImageClientRectangle.Location);
+            void Drag(int x0, int y0, int x1, int y1, bool release = true)
+            {
+                editor.SurfacePointer(0, new Point(o.X + x0, o.Y + y0), MouseButtons.Left);
+                editor.SurfacePointer(1, new Point(o.X + x1, o.Y + y1), MouseButtons.Left);
+                if (release) editor.SurfacePointer(2, new Point(o.X + x1, o.Y + y1), MouseButtons.Left);
+            }
+            void AssertBrightened(bool left, bool right)
+            {
+                using var frame = Render(editor);
+                Assert.Equal(left, frame.GetPixel(o.X + 10, o.Y + 50).R > 40);
+                Assert.Equal(right, frame.GetPixel(o.X + 60, o.Y + 50).R > 40);
+            }
+
+            Drag(2, 2, 40, 90);
+            Assert.True(((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.ColorCorrect));
+            editor.SurfaceSetColorAdjustment(new ColorAdjustment(1, 0, 100, 1));
+            AssertBrightened(true, false);
+            editor.SurfaceSetColorAdjustment(new ColorAdjustment(1.5f, 0, 100, 1));
+            Drag(20, 50, 70, 50); // move the marquee right
+            AssertBrightened(false, true);
+            Drag(1, 1, 30, 95, release: false); // a new marquee, still being dragged
+            AssertBrightened(true, false);
+            editor.SurfacePointer(2, new Point(o.X + 30, o.Y + 95), MouseButtons.Left);
+            AssertBrightened(true, false);
+            using (var document = editor.SurfaceCopyBase())
+            {
+                Assert.Equal(40, document!.GetPixel(10, 50).R);
+                Assert.Equal(40, document.GetPixel(60, 50).R);
+            }
+
+            editor.SurfaceEndColorAdjustment(true);
+            using var applied = editor.SurfaceCopyBase();
+            Assert.True(applied!.GetPixel(10, 50).R > 40);
+            Assert.Equal(40, applied.GetPixel(60, 50).R);
+        });
+    }
+
+    [Fact]
+    public void LoadingAnotherImageDiscardsAnOpenAdjustment()
+    {
+        StaTest.Run(() =>
+        {
+            using var editor = EditorFixture.WithCanvas(40, 40);
+            Assert.True(((IClipboardDocumentPresenter)editor).TryExecute(EditorCommandId.ColorCorrect));
+            editor.SurfaceSetColorAdjustment(new ColorAdjustment(-1, 0, 100, 1));
+            using var next = new Bitmap(40, 40);
+            editor.LoadImage(next);
+            Assert.False(editor.SurfaceColorAdjusting);
+            Assert.NotEqual("Color", editor.SurfaceInspectorKind);
+        });
+    }
+
+    private static Bitmap Render(ImageDocumentEditor editor)
+    {
+        var frame = new Bitmap(editor.SurfaceViewportSize.Width, editor.SurfaceViewportSize.Height);
+        using var graphics = Graphics.FromImage(frame);
+        editor.RenderSurface(graphics);
+        return frame;
     }
 }
 

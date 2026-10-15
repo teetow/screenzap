@@ -25,7 +25,11 @@ public partial class ImageDocumentEditor
             viewport.ClientSize = size;
     }
 
-    internal void RenderSurface(Graphics graphics) => viewport.Render(graphics);
+    internal void RenderSurface(Graphics graphics)
+    {
+        RefreshColorPreview();
+        viewport.Render(graphics);
+    }
     internal void SurfacePointer(int phase, Point point, MouseButtons button, int clicks = 1)
     {
         pointerPosition = point;
@@ -146,7 +150,7 @@ public partial class ImageDocumentEditor
         ActiveTool.Censor => censorRegions.Any(r => r.Selected),
         _ => true
     };
-    internal string SurfaceInspectorKind => CurrentTool is ActiveTool.Straighten or ActiveTool.Censor or ActiveTool.FreeRotate ? CurrentTool.ToString() : selectedTexts.Count > 0 || CurrentTool == ActiveTool.Text ? "Text" : selectedAnnotation?.Type.ToString() ?? (HasSelectedLayer ? "Layer" : CurrentTool.ToString());
+    internal string SurfaceInspectorKind => colorAdjustment.HasValue ? "Color" : CurrentTool is ActiveTool.Straighten or ActiveTool.Censor or ActiveTool.FreeRotate ? CurrentTool.ToString() : selectedTexts.Count > 0 || CurrentTool == ActiveTool.Text ? "Text" : selectedAnnotation?.Type.ToString() ?? (HasSelectedLayer ? "Layer" : CurrentTool.ToString());
     internal Color SurfaceColor => SurfaceInspectorKind == "Text" ? selectedTextAnnotation?.TextColor ?? textToolColor : GetRepresentativeSelectionColor() ?? ActiveToolDefaultColor;
     internal float SurfaceWidth => selectedAnnotation?.LineThickness ?? (CurrentTool == ActiveTool.Highlighter ? annotationHighlighterThickness : annotationLineThickness);
     internal decimal SurfaceArrowSize => selectedAnnotation?.ArrowSize ?? annotationArrowSize;
@@ -334,15 +338,6 @@ public partial class ImageDocumentEditor
         }
     }
 
-    internal void SurfaceColorCorrection(float exposure, float contrast, float saturation, float gamma)
-    {
-        if (viewport.Image == null)
-            return;
-        FinalizeActiveTextAnnotation();
-        using var source = new Bitmap(viewport.Image);
-        using var result = ColorCorrectionProcessor.Apply(source, Selection, exposure, contrast, saturation, gamma);
-        ApplyDeJpeg(result, deJpegRevision); // Same guarded full-canvas replacement and undo contract.
-    }
 }
 
 public partial class ImageDocumentEditor
@@ -384,16 +379,6 @@ public partial class ImageDocumentEditor
     }
 
     internal Rectangle SurfaceSelection => Selection;
-
-    internal Bitmap SurfacePreviewComposite(Bitmap image)
-    {
-        var result = new Bitmap(image);
-        using var graphics = Graphics.FromImage(result);
-        DrawImageLayers(graphics, AnnotationSurface.Image);
-        DrawAnnotations(graphics, AnnotationSurface.Image);
-        DrawTextAnnotations(graphics, AnnotationSurface.Image);
-        return result;
-    }
 
     internal bool SurfaceSaveAs(string path) => SaveImageAs(path);
     internal bool SurfaceReloadConfirmed() => TryReloadImageFromClipboard();

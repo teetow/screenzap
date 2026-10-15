@@ -76,7 +76,8 @@ internal sealed partial class EditorWindow
         inspector.Children.Clear();
         toolApplyButton = null;
         inspectorNumbers.Clear();
-        string title = kind switch { "None" => "Selection", "Straighten" => "Perspective", "FreeRotate" => "Free rotate", _ => kind };
+        colorScopeText = null;
+        string title = kind switch { "None" => "Selection", "Straighten" => "Perspective", "FreeRotate" => "Free rotate", "Color" => "Color correction", _ => kind };
         inspector.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         void Field(string label, UIElement control)
         {
@@ -145,6 +146,8 @@ internal sealed partial class EditorWindow
                 ToolApplyButtons(); break;
             case "Layer":
                 BuildLayerInspector(Field, Number); break;
+            case "Color":
+                BuildColorInspector(); return;
             default:
                 break;
         }
